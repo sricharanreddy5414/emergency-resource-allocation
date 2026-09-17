@@ -1,0 +1,32 @@
+flowchart TD
+
+    U[User / Client]
+
+    API[Amazon API Gateway<br/>POST /allocate]
+
+    L[AWS Lambda<br/>Allocation Engine]
+
+    R[(DynamoDB<br/>Resources)]
+    ER[(DynamoDB<br/>EmergencyRequests)]
+    A[(DynamoDB<br/>Allocations)]
+
+    EB[Amazon EventBridge<br/>ResourceAllocated Event]
+
+    SNS[Amazon SNS<br/>EmergencyResourceNotifications]
+
+    EMAIL[Email Notification]
+
+    CW[Amazon CloudWatch<br/>Logs + Metrics + Alarm]
+
+    U --> API
+    API --> L
+
+    L --> R
+    L --> ER
+    L --> A
+
+    L --> EB
+    EB --> SNS
+    SNS --> EMAIL
+
+    L --> CW
