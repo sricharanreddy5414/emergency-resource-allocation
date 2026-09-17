@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Emergency Resource Allocation Platform</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+
+        <div class="logo">
+            <div class="logo-icon">ER</div>
+            <div>
+                <h2>ERAP</h2>
+                <span>Resource Platform</span>
+            </div>
+        </div>
+
+        <nav>
+            <a href="#" class="nav-item active">
+                <span>▣</span>
+                Dashboard
+            </a>
+
+            <a href="#resources" class="nav-item">
+                <span>◈</span>
+                Resources
+            </a>
+
+            <a href="#requests" class="nav-item">
+                <span>◆</span>
+                Requests
+            </a>
+
+            <a href="#allocations" class="nav-item">
+                <span>✓</span>
+                Allocations
+            </a>
+        </nav>
+
+        <div class="sidebar-bottom">
+            <div class="system-status">
+                <span class="status-dot"></span>
+                System Operational
+            </div>
+        </div>
+
+    </aside>
+
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+        <!-- Header -->
+        <header class="topbar">
+
+            <div>
+                <p class="welcome">Emergency Coordination</p>
+                <h1>Resource Dashboard</h1>
+            </div>
+
+            <div class="topbar-right">
+                <span class="aws-badge">AWS CLOUD</span>
+                <div class="profile">
+                    <div class="profile-icon">SC</div>
+                    <span>Admin</span>
+                </div>
+            </div>
+
+        </header>
+
+
+        <!-- Dashboard -->
+        <section class="dashboard">
+
+            <!-- Statistics -->
+            <div class="stats-grid">
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span>Total Resources</span>
+                        <div class="stat-icon">◈</div>
+                    </div>
+
+                    <h2 id="totalResources">3</h2>
+                    <p>Registered resources</p>
+                </div>
+
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span>Available</span>
+                        <div class="stat-icon">✓</div>
+                    </div>
+
+                    <h2 id="availableResources">0</h2>
+                    <p>Ready for allocation</p>
+                </div>
+
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span>Allocated</span>
+                        <div class="stat-icon">→</div>
+                    </div>
+
+                    <h2 id="allocatedResources">3</h2>
+                    <p>Currently allocated</p>
+                </div>
+
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span>System Status</span>
+                        <div class="stat-icon">●</div>
+                    </div>
+
+                    <h2 class="operational">Operational</h2>
+                    <p>All services running</p>
+                </div>
+
+            </div>
+
+
+            <!-- Main Grid -->
+            <div class="content-grid">
+
+                <!-- Create Request -->
+                <section class="panel request-panel">
+
+                    <div class="panel-header">
+                        <div>
+                            <h2>Create Resource Request</h2>
+                            <p>Submit a new emergency resource request</p>
+                        </div>
+                    </div>
+
+
+                    <form id="allocationForm">
+
+                        <div class="form-row">
+
+                            <div class="form-group">
+                                <label for="requestId">Request ID</label>
+
+                                <input
+                                    type="text"
+                                    id="requestId"
+                                    placeholder="Example: REQ007"
+                                    required
+                                >
+                            </div>
+
+
+                            <div class="form-group">
+                                <label for="resourceType">Resource Type</label>
+
+                                <select id="resourceType" required>
+                                    <option value="">Select resource</option>
+                                    <option value="ICU_BED">ICU Bed</option>
+                                    <option value="GENERAL_BED">General Bed</option>
+                                </select>
+                            </div>
+
+                        </div>
+
+
+                        <div class="form-row">
+
+                            <div class="form-group">
+                                <label for="location">Location</label>
+
+                                <input
+                                    type="text"
+                                    id="location"
+                                    placeholder="Example: Bangalore"
+                                    required
+                                >
+                            </div>
+
+
+                            <div class="form-group">
+                                <label for="priority">Priority</label>
+
+                                <select id="priority" required>
+                                    <option value="">Select priority</option>
+                                    <option value="1">Priority 1 - Critical</option>
+                                    <option value="2">Priority 2 - High</option>
+                                    <option value="3">Priority 3 - Normal</option>
+                                </select>
+                            </div>
+
+                        </div>
+
+
+                        <button type="submit" class="allocate-btn">
+                            Allocate Resource
+                        </button>
+
+                    </form>
+
+
+                    <!-- Result -->
+                    <div id="result" class="result-box hidden"></div>
+
+                </section>
+
+
+                <!-- Quick Actions -->
+                <section class="panel">
+
+                    <div class="panel-header">
+                        <div>
+                            <h2>Quick Actions</h2>
+                            <p>Platform operations</p>
+                        </div>
+                    </div>
+
+
+                    <div class="quick-actions">
+
+                        <button class="quick-action">
+                            <span>＋</span>
+                            Register Resource
+                        </button>
+
+                        <button class="quick-action">
+                            <span>↻</span>
+                            Refresh Data
+                        </button>
+
+                        <button class="quick-action">
+                            <span>▣</span>
+                            View Allocations
+                        </button>
+
+                        <button class="quick-action">
+                            <span>⚙</span>
+                            System Settings
+                        </button>
+
+                    </div>
+
+                </section>
+
+            </div>
+
+
+            <!-- Resources -->
+            <section class="panel" id="resources">
+
+                <div class="panel-header">
+
+                    <div>
+                        <h2>Resource Availability</h2>
+                        <p>Current resource inventory</p>
+                    </div>
+
+                    <button class="refresh-btn" onclick="loadResources()">
+                        Refresh
+                    </button>
+
+                </div>
+
+
+                <div class="table-container">
+
+                    <table>
+
+                        <thead>
+                            <tr>
+                                <th>Resource ID</th>
+                                <th>Type</th>
+                                <th>Location</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="resourcesTable">
+
+                            <tr>
+                                <td>R001</td>
+                                <td>ICU_BED</td>
+                                <td>Bangalore</td>
+                                <td>
+                                    <span class="status unavailable">
+                                        Allocated
+                                    </span>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td>R002</td>
+                                <td>ICU_BED</td>
+                                <td>Bangalore</td>
+                                <td>
+                                    <span class="status unavailable">
+                                        Allocated
+                                    </span>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td>R003</td>
+                                <td>GENERAL_BED</td>
+                                <td>Bangalore</td>
+                                <td>
+                                    <span class="status unavailable">
+                                        Allocated
+                                    </span>
+                                </td>
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </section>
+
+
+            <!-- Recent Allocations -->
+            <section class="panel" id="allocations">
+
+                <div class="panel-header">
+
+                    <div>
+                        <h2>Recent Allocations</h2>
+                        <p>Latest successful resource allocations</p>
+                    </div>
+
+                </div>
+
+
+                <div class="table-container">
+
+                    <table>
+
+                        <thead>
+                            <tr>
+                                <th>Request ID</th>
+                                <th>Resource ID</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                            <tr>
+                                <td>REQ006</td>
+                                <td>R002</td>
+                                <td>
+                                    <span class="priority priority-high">
+                                        2
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="status allocated">
+                                        Allocated
+                                    </span>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td>REQ005</td>
+                                <td>R001</td>
+                                <td>
+                                    <span class="priority priority-critical">
+                                        1
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="status allocated">
+                                        Allocated
+                                    </span>
+                                </td>
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </section>
+
+
+            <!-- System Architecture -->
+            <section class="panel architecture-panel">
+
+                <div class="panel-header">
+
+                    <div>
+                        <h2>Cloud Architecture</h2>
+                        <p>Powered by AWS serverless services</p>
+                    </div>
+
+                </div>
+
+
+                <div class="architecture-flow">
+
+                    <div class="architecture-box">
+                        <strong>API Gateway</strong>
+                        <span>Request Entry</span>
+                    </div>
+
+                    <div class="arrow">→</div>
+
+                    <div class="architecture-box">
+                        <strong>Lambda</strong>
+                        <span>Allocation Engine</span>
+                    </div>
+
+                    <div class="arrow">→</div>
+
+                    <div class="architecture-box">
+                        <strong>DynamoDB</strong>
+                        <span>Data Storage</span>
+                    </div>
+
+                    <div class="arrow">→</div>
+
+                    <div class="architecture-box">
+                        <strong>EventBridge</strong>
+                        <span>Events</span>
+                    </div>
+
+                    <div class="arrow">→</div>
+
+                    <div class="architecture-box">
+                        <strong>SNS</strong>
+                        <span>Notifications</span>
+                    </div>
+
+                </div>
+
+            </section>
+
+        </section>
+
+
+        <!-- Footer -->
+        <footer>
+
+            <p>
+                Emergency Resource Allocation Platform
+                <span>•</span>
+                AWS Serverless Application
+            </p>
+
+        </footer>
+
+    </main>
+
+
+    <script src="app.js"></script>
+
+</body>
+</html>
