@@ -3019,31 +3019,66 @@ function renderAllocations() {
 
 
     const filtered =
-        allocations.filter(
-            item => {
+    allocations.filter(
+        item => {
 
-                return (
+            return (
 
-                    !query ||
+                !query ||
 
-                    String(
-                        item.request_id ||
-                        ""
-                    )
-                        .toLowerCase()
-                        .includes(query) ||
+                String(
+                    item.allocation_id ||
+                    ""
+                )
+                    .toLowerCase()
+                    .includes(query) ||
 
-                    String(
-                        item.resource_id ||
-                        ""
-                    )
-                        .toLowerCase()
-                        .includes(query)
+                String(
+                    item.request_id ||
+                    ""
+                )
+                    .toLowerCase()
+                    .includes(query) ||
 
-                );
+                String(
+                    item.resource_id ||
+                    ""
+                )
+                    .toLowerCase()
+                    .includes(query) ||
 
-            }
-        );
+                String(
+                    item.resource_type ||
+                    ""
+                )
+                    .toLowerCase()
+                    .includes(query) ||
+
+                String(
+                    item.location ||
+                    ""
+                )
+                    .toLowerCase()
+                    .includes(query) ||
+
+                String(
+                    item.priority ??
+                    ""
+                )
+                    .toLowerCase()
+                    .includes(query) ||
+
+                String(
+                    item.status ||
+                    ""
+                )
+                    .toLowerCase()
+                    .includes(query)
+
+            );
+
+        }
+    );
 
 
     table.innerHTML =
