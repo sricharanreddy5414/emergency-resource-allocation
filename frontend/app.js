@@ -1605,23 +1605,26 @@ const status =
         "UNKNOWN"
     ).toUpperCase();
 
-        let statusClass = "status-badge";
 
+        let statusClass = "status-badge";
+        let statusLabel = status;
 
         if (status === "ALLOCATED") {
 
             statusClass += " status-allocated";
+            statusLabel = "✓ ALLOCATED";
 
         } else if (status === "PENDING") {
 
             statusClass += " status-pending";
+            statusLabel = "◷ PENDING";
 
         } else if (status === "WAITING") {
 
             statusClass += " status-waiting";
+            statusLabel = "⌛ WAITING";
 
         }
-
 
         return `
             <tr>
@@ -1648,7 +1651,7 @@ const status =
 
                 <td>
                     <span class="${statusClass}">
-                        ${escapeHtml(status)}
+                        ${escapeHtml(statusLabel)}
                     </span>
                 </td>
 
