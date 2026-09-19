@@ -1420,7 +1420,7 @@ async function loadRequests() {
 
     table.innerHTML = `
         <tr>
-            <td colspan="5">
+            <td colspan="6">
                 Loading requests...
             </td>
         </tr>
@@ -1479,7 +1479,7 @@ async function loadRequests() {
 
         table.innerHTML = `
             <tr>
-                <td colspan="5">
+                <td colspan="6">
                     Unable to load requests from AWS.
                 </td>
             </tr>
@@ -1567,7 +1567,7 @@ function renderRequests() {
 
         table.innerHTML = `
             <tr>
-                <td colspan="5">
+                <td colspan="6">
                     No matching requests found.
                 </td>
             </tr>
@@ -1604,6 +1604,11 @@ const status =
         request.Status ??
         "UNKNOWN"
     ).toUpperCase();
+
+const createdAt =
+    request.CreatedAt ??
+    request.createdAt ??
+    "-";
 
 
         let statusClass = "status-badge";
@@ -1653,6 +1658,10 @@ const status =
                     <span class="${statusClass}">
                         ${escapeHtml(statusLabel)}
                     </span>
+                </td>
+
+                <td>
+                    ${escapeHtml(createdAt)}
                 </td>
 
             </tr>
