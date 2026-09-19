@@ -2,9 +2,13 @@ flowchart TD
 
     U[User / Client]
 
-    API[Amazon API Gateway<br/>POST /allocate]
+    S3[Amazon S3<br/>Static Website]
 
-    L[AWS Lambda<br/>Allocation Engine]
+    API[Amazon API Gateway<br/>REST API]
+
+    AL[Lambda<br/>Allocation Handler]
+    RL[Lambda<br/>Request Handler]
+    RESL[Lambda<br/>Resource Handler]
 
     R[(DynamoDB<br/>Resources)]
     ER[(DynamoDB<br/>EmergencyRequests)]
@@ -18,15 +22,44 @@ flowchart TD
 
     CW[Amazon CloudWatch<br/>Logs + Metrics + Alarm]
 
-    U --> API
-    API --> L
+    IAM[AWS IAM<br/>Least-Privilege Permissions]
 
-    L --> R
-    L --> ER
-    L --> A
+    BUDGET[AWS Budgets<br/>Cost Monitoring]
 
-    L --> EB
+    U --> S3
+    S3 --> API
+
+    API -->|POST /allocate| AL
+    API -->|GET /requests<br/>POST /requests| RL
+    API -->|GET /allocate/resources| RESL
+    API -->|GET /allocate/allocations| AL
+
+    AL --> R
+    AL --> ER
+    AL --> A
+
+    RL --> ER
+    RESL --> R
+
+    AL --> EB
     EB --> SNS
     SNS --> EMAIL
 
-    L --> CW
+    AL --> CW
+    RL --> CW
+    RESL --> CW
+
+    IAM -.-> AL
+    IAM -.-> RL
+    IAM -.-> RESL
+
+    BUDGET -.-> S3
+    BUDGET -.-> API
+    BUDGET -.-> AL
+    BUDGET -.-> RL
+    BUDGET -.-> RESL
+    BUDGET -.-> R
+    BUDGET -.-> ER
+    BUDGET -.-> A
+    BUDGET -.-> EB
+    BUDGET -.-> SNS
