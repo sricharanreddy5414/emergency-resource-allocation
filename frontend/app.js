@@ -3098,7 +3098,7 @@ function renderAllocations() {
                                     class="status-badge allocated"
                                 >
 
-                                    ${escapeHtml(
+                                    ✓ ${escapeHtml(
                                         item.status ||
                                         "ALLOCATED"
                                     )}
