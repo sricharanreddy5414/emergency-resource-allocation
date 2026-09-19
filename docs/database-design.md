@@ -14,34 +14,34 @@ The project uses three separate DynamoDB tables:
 
 ---
 
-## 1. Resources Table
+# 1. Resources Table
 
-### Table Name
+## Table Name
 
 `Resources`
 
-### Primary Key
+## Primary Key
 
 `resource_id`
 
-### Key Type
+## Key Type
 
 `String`
 
-### Purpose
+## Purpose
 
 The `Resources` table stores information about resources that can be allocated.
 
-### Attributes
+## Attributes
 
-| Attribute   | Type    | Description                                 |
-| ----------- | ------- | ------------------------------------------- |
-| resource_id | String  | Unique resource identifier                  |
-| Type        | String  | Type of resource                            |
-| Location    | String  | Resource location                           |
-| Available   | Boolean | Indicates whether the resource is available |
+| Attribute | Type | Description |
+|---|---|---|
+| `resource_id` | String | Unique resource identifier |
+| `Type` | String | Type of resource |
+| `Location` | String | Resource location |
+| `Available` | Boolean | Indicates whether the resource is currently available |
 
-### Example Item
+## Example Item
 
 ```json
 {
@@ -50,85 +50,97 @@ The `Resources` table stores information about resources that can be allocated.
   "Location": "Bangalore",
   "Available": true
 }
-```
 
----
+Resource Availability
 
-## 2. EmergencyRequests Table
+The Available attribute controls whether a resource can be considered for allocation.
 
-### Table Name
+Available = true
+        |
+        v
+Resource can be selected
 
-`EmergencyRequests`
+After successful allocation:
 
-### Primary Key
+Available = false
+        |
+        v
+Resource cannot be selected
+2. EmergencyRequests Table
+Table Name
 
-`request_id`
+EmergencyRequests
 
-### Key Type
+Primary Key
 
-`String`
+request_id
 
-### Purpose
+Key Type
 
-The `EmergencyRequests` table stores incoming resource requests.
+String
 
-### Attributes
+Purpose
 
-| Attribute    | Type   | Description                |
-| ------------ | ------ | -------------------------- |
-| request_id   | String | Unique request identifier  |
-| ResourceType | String | Required resource type     |
-| Location     | String | Required resource location |
-| Priority     | Number | Request priority           |
-| Status       | String | Current request status     |
+The EmergencyRequests table stores incoming resource requests submitted to the platform.
 
-### Example Item
-
-```json
+Attributes
+Attribute	Type	Description
+request_id	String	Unique request identifier
+ResourceType	String	Required resource type
+Location	String	Required resource location
+Priority	Number	Request priority
+Status	String	Current request status
+CreatedAt	String	Request creation timestamp
+Example Item
 {
   "request_id": "REQ004",
   "ResourceType": "ICU_BED",
   "Location": "Bangalore",
   "Priority": 1,
-  "Status": "PENDING"
+  "Status": "PENDING",
+  "CreatedAt": "2026-09-19T17:34:17.657184+00:00"
 }
-```
+Request Status
 
----
+The application primarily uses the following request states:
 
-## 3. Allocations Table
+PENDING
+   |
+   v
+Allocation Processing
+   |
+   v
+ALLOCATED
 
-### Table Name
+A request remains PENDING when no suitable resource is available.
 
-`Allocations`
+3. Allocations Table
+Table Name
 
-### Primary Key
+Allocations
 
-`allocation_id`
+Primary Key
 
-### Key Type
+allocation_id
 
-`String`
+Key Type
 
-### Purpose
+String
 
-The `Allocations` table stores successful resource allocation records.
+Purpose
 
-### Attributes
+The Allocations table stores records of successfully allocated resources.
 
-| Attribute     | Type   | Description                  |
-| ------------- | ------ | ---------------------------- |
-| allocation_id | String | Unique allocation identifier |
-| request_id    | String | Associated request           |
-| resource_id   | String | Allocated resource           |
-| resource_type | String | Type of allocated resource   |
-| location      | String | Resource location            |
-| priority      | Number | Request priority             |
-| status        | String | Allocation status            |
-
-### Example Item
-
-```json
+Attributes
+Attribute	Type	Description
+allocation_id	String	Unique allocation identifier
+request_id	String	Associated request identifier
+resource_id	String	Allocated resource identifier
+resource_type	String	Type of allocated resource
+location	String	Resource location
+priority	Number	Request priority
+status	String	Allocation status
+Example Item
 {
   "allocation_id": "ALLOC-REQ003",
   "request_id": "REQ003",
@@ -138,17 +150,12 @@ The `Allocations` table stores successful resource allocation records.
   "priority": 1,
   "status": "ALLOCATED"
 }
-```
-
----
-
-## Database Relationship
+Database Relationship
 
 DynamoDB is a NoSQL database, so these tables do not use traditional relational foreign-key constraints.
 
 However, the application logically connects records using identifiers.
 
-```text
 EmergencyRequests
        |
        | request_id
@@ -158,11 +165,9 @@ Allocations
        | resource_id
        v
 Resources
-```
 
 Example:
 
-```text
 REQ003
    |
    v
@@ -170,184 +175,282 @@ ALLOC-REQ003
    |
    v
 R001
-```
 
 This allows the application to determine which resource was allocated to a particular request.
 
----
+Request Lifecycle
 
-## Request Lifecycle
+An emergency resource request follows this workflow:
 
-An emergency request follows a simple lifecycle:
-
-```text
 PENDING
    |
    v
 Allocation Processing
    |
-   +------ Resource Available ------> ALLOCATED
+   +------ Suitable Resource ------> ALLOCATED
    |
-   +------ No Resource --------------> Remains PENDING
-```
+   +------ No Suitable Resource ---> Remains PENDING
+PENDING
 
-### PENDING
+The request has been created and is waiting for resource allocation.
 
-The request is waiting for allocation.
-
-### ALLOCATED
+ALLOCATED
 
 A suitable resource has been successfully reserved and an allocation record has been created.
 
----
+Resource Matching
 
-## Resource Lifecycle
+The allocation engine searches the Resources table for a resource satisfying all required conditions.
 
-Resources have an availability state.
-
-```text
+Resource Type matches request
+          AND
+Location matches request
+          AND
 Available = true
-       |
-       v
-Allocation
-       |
-       v
-Available = false
-```
 
-A resource marked as unavailable cannot be selected by the allocation engine.
+For example:
 
----
+Request:
+ResourceType = ICU_BED
+Location = Bangalore
 
-## Conditional Resource Reservation
+Resource:
+Type = ICU_BED
+Location = Bangalore
+Available = true
+
+The resource satisfies the required matching conditions.
+
+Priority Processing
+
+Pending requests are processed according to their predefined priority.
+
+The project uses:
+
+Priority 1 → Higher priority
+Priority 2 → Medium priority
+Priority 3 → Lower priority
+
+The allocation Lambda processes pending requests in priority order before attempting allocation.
+
+Conditional Resource Reservation
 
 The allocation engine uses a DynamoDB conditional update when reserving a resource.
 
 Conceptually:
 
-```text
 IF Available == true
         |
         v
 Set Available = false
-```
 
 If another request has already reserved the resource:
 
-```text
 Available == false
         |
         v
 Conditional check fails
         |
         v
-Try another resource
-```
+Resource cannot be reserved by that request
 
-This provides protection against double allocation during concurrent requests.
+The implemented condition is:
 
----
+Available = true
 
-## Allocation Identifier
+before changing the resource to:
 
-Each successful allocation receives a unique identifier based on the request.
+Available = false
+
+This provides protection against successful double allocation during the tested concurrent scenario.
+
+Allocation Identifier
+
+Each successful allocation receives an identifier based on the request identifier.
 
 Example:
 
-```text
 Request ID:
 REQ003
 
 Allocation ID:
 ALLOC-REQ003
-```
 
-This provides a simple way to associate an allocation record with its original request.
+This provides a simple logical association between the request and its allocation record.
 
----
+Database Operations During Allocation
 
-## Database Operations During Allocation
+The Allocation Lambda performs the following database operations:
 
-The Lambda function performs the following database operations:
+Allocation Lambda
+       |
+       +----> Scan EmergencyRequests
+       |
+       +----> Scan Resources
+       |
+       +----> Conditionally update selected Resource
+       |
+       +----> Put Allocation record
+       |
+       +----> Update EmergencyRequest
 
-```text
-Lambda
-   |
-   +----> Read EmergencyRequests
-   |
-   +----> Read Resources
-   |
-   +----> Update selected Resource
-   |
-   +----> Create Allocation
-   |
-   +----> Update EmergencyRequest
-```
+The resource update uses a conditional expression so that a resource is reserved only when it is still available.
 
-The resource update uses a conditional expression so that a resource is reserved only when its availability condition is satisfied.
+Database Operations by Lambda
+Allocation Lambda
 
----
+The Allocation Lambda interacts with:
 
-## Current Example Data
+Resources
+EmergencyRequests
+Allocations
 
-Example resources used during testing:
+It performs operations required for allocation processing and allocation retrieval.
 
-| Resource ID | Type        | Location  | Availability        |
-| ----------- | ----------- | --------- | ------------------- |
-| R001        | ICU_BED     | Bangalore | Available/Allocated |
-| R002        | ICU_BED     | Bangalore | Available/Allocated |
-| R003        | GENERAL_BED | Bangalore | Available/Allocated |
+Request Lambda
 
-Example request identifiers used during testing:
+The Request Lambda creates request records in:
 
-```text
+EmergencyRequests
+Resource Lambda
+
+The Resource Lambda retrieves resource information from:
+
+Resources
+Current Example Data
+
+Example resources used during testing include:
+
+Resource ID	Type	Location	Availability
+R001	ICU_BED	Bangalore	Allocated
+R002	ICU_BED	Bangalore	Allocated
+R003	GENERAL_BED	Bangalore	Allocated
+R-AUDIT-001	AUDIT_BED	AUDIT-LAB	Test Resource
+
+The R-AUDIT-001 resource was created as an isolated test resource for validating the allocation workflow.
+
+Example request identifiers used during testing include:
+
 REQ001
 REQ002
 REQ003
 REQ004
 REQ005
 REQ006
-```
+REQ007
+REQ008
+REQ009
+REQ010
+REQ011
+REQ-TEST-001
+REQ-TEST-002
+REQ-TEST-003
+REQ-TEST-004
+REQ-AUDIT-001
+REQ-API-AUDIT-001
+REQ-SUCCESS-AUDIT-001
+DynamoDB and API Integration
 
----
+The DynamoDB tables are accessed by AWS Lambda functions through API Gateway endpoints.
 
-## Why DynamoDB?
+The high-level flow is:
+
+Frontend
+   |
+   v
+API Gateway
+   |
+   v
+Lambda
+   |
+   v
+DynamoDB
+
+For allocation:
+
+POST /allocate
+       |
+       v
+Allocation Lambda
+       |
+       +----> EmergencyRequests
+       |
+       +----> Resources
+       |
+       +----> Allocations
+
+For request creation:
+
+POST /requests
+       |
+       v
+Request Lambda
+       |
+       v
+EmergencyRequests
+
+For resource retrieval:
+
+GET /allocate/resources
+       |
+       v
+Resource Lambda
+       |
+       v
+Resources
+Why DynamoDB?
 
 DynamoDB was selected because:
 
-* It is fully managed.
-* It integrates directly with AWS Lambda.
-* It provides fast key-value and document access.
-* It supports conditional writes.
-* It scales without requiring database server management.
-* It fits well with a serverless architecture.
-
----
-
-## Database Design Summary
+It is fully managed.
+It integrates directly with AWS Lambda.
+It provides fast key-value and document access.
+It supports conditional writes.
+It scales without requiring database server management.
+It fits well with a serverless architecture.
+It reduces infrastructure management requirements for the project.
+Database Design Summary
 
 The database separates the three main concepts:
 
-```text
 Resources
     |
-    +---- Available resources
+    +---- Available and allocated resources
+
 
 EmergencyRequests
     |
-    +---- Incoming allocation requests
+    +---- Incoming resource requests
+
 
 Allocations
     |
     +---- Successful allocation records
-```
 
-This separation keeps application state organized and allows the Lambda allocation engine to process requests efficiently.
+The separation keeps application state organized and allows the Lambda allocation engine to process requests using the appropriate DynamoDB tables.
 
----
+Data Consistency and Concurrency
 
-## Project Scope
+The application uses a conditional update when reserving resources.
 
-The database contains fictional/test data for demonstrating cloud resource coordination.
+The important operation is:
 
-It is not designed as a production medical database and does not store real patient information.
+Check:
+Available == true
+
+Then:
+Available = false
+
+This ensures that the resource must still be available at the time of the conditional update.
+
+If the condition is no longer satisfied, the update does not succeed.
+
+This mechanism was tested during the concurrent request scenario and prevented both tested requests from successfully reserving the same resource.
+
+Project Scope
+
+The DynamoDB tables contain fictional/test data for demonstrating cloud-based resource coordination.
+
+The database does not contain real patient information and is not designed as a production medical database.
+
+For a production system, additional requirements would be needed, including stronger security controls, encryption policies, backup strategies, auditing, access controls, compliance requirements, and disaster recovery mechanisms.
