@@ -1543,7 +1543,7 @@ function renderRequests() {
     ).toLowerCase();
 
         const status =
-    String(request.status || "").toUpperCase();
+    String(request.status ?? request.Status ?? "").toUpperCase();
 
 
         const matchesSearch =
