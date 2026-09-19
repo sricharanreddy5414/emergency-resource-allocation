@@ -2992,7 +2992,7 @@ function renderAllocations() {
 
             <tr>
 
-                <td colspan="4">
+                <td colspan="7">
 
                     No allocation records captured
                     in this browser session.
@@ -3053,7 +3053,7 @@ function renderAllocations() {
 
                 <tr>
 
-                    <td colspan="4">
+                    <td colspan="7">
 
                         No matching allocations found.
 
@@ -3071,43 +3071,64 @@ function renderAllocations() {
 
                         <tr>
 
-                            <td>
-                                ${escapeHtml(
-                                    item.request_id ||
-                                    "-"
-                                )}
-                            </td>
+    <td>
+        ${escapeHtml(
+            item.allocation_id ||
+            "-"
+        )}
+    </td>
 
-                            <td>
-                                ${escapeHtml(
-                                    item.resource_id ||
-                                    "-"
-                                )}
-                            </td>
+    <td>
+        ${escapeHtml(
+            item.request_id ||
+            "-"
+        )}
+    </td>
 
-                            <td>
-                                ${escapeHtml(
-                                    item.priority ??
-                                    "-"
-                                )}
-                            </td>
+    <td>
+        ${escapeHtml(
+            item.resource_id ||
+            "-"
+        )}
+    </td>
 
-                            <td>
+    <td>
+        ${escapeHtml(
+            item.resource_type ||
+            "-"
+        )}
+    </td>
 
-                                <span
-                                    class="status-badge allocated"
-                                >
+    <td>
+        ${escapeHtml(
+            item.location ||
+            "-"
+        )}
+    </td>
 
-                                    ✓ ${escapeHtml(
-                                        item.status ||
-                                        "ALLOCATED"
-                                    )}
+    <td>
+        ${escapeHtml(
+            item.priority ??
+            "-"
+        )}
+    </td>
 
-                                </span>
+    <td>
 
-                            </td>
+        <span
+            class="status-badge allocated"
+        >
 
-                        </tr>
+            ✓ ${escapeHtml(
+                item.status ||
+                "ALLOCATED"
+            )}
+
+        </span>
+
+    </td>
+
+</tr>
 
                     `
                 )
@@ -3135,44 +3156,52 @@ function exportAllocations() {
     }
 
 
-    const header =
-        "Request ID,Resource ID,Priority,Status";
+   const header =
+    "Allocation ID,Request ID,Resource ID,Resource Type,Location,Priority,Status";
 
 
-    const rows =
-        allocations.map(
-            item => {
+const rows =
+    allocations.map(
+        item => {
 
-                return [
+            return [
 
-                    item.request_id ||
-                    "",
+                item.allocation_id ||
+                "",
 
-                    item.resource_id ||
-                    "",
+                item.request_id ||
+                "",
 
-                    item.priority ||
-                    "",
+                item.resource_id ||
+                "",
 
-                    item.status ||
-                    ""
+                item.resource_type ||
+                "",
 
-                ]
+                item.location ||
+                "",
 
-                .map(
-                    value =>
-                        `"${String(value)
-                            .replaceAll(
-                                '"',
-                                '""'
-                            )}"`
-                )
+                item.priority ||
+                "",
 
-                .join(",");
+                item.status ||
+                ""
 
-            }
-        );
+            ]
 
+            .map(
+                value =>
+                    `"${String(value)
+                        .replaceAll(
+                            '"',
+                            '""'
+                        )}"`
+            )
+
+            .join(",");
+
+        }
+    );
 
     const csv =
         [
