@@ -2390,6 +2390,10 @@
                         requestModalResult.className =
                             "request-modal-result success";
 
+                        if (typeof loadRequests === "function") {
+                            loadRequests();
+                        }
+
 
                         /* SAVE SESSION HISTORY */
 
