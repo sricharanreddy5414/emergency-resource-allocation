@@ -2460,3 +2460,135 @@ tbody tr:hover {
         width: 100%;
     }
 }
+
+/* =========================================================
+   ALLOCATIONS PAGE — ENTERPRISE UI POLISH
+========================================================= */
+
+#allocations {
+    animation: pageSectionIn 0.28s ease-out;
+}
+
+#allocations .page-header {
+    margin-bottom: 26px;
+}
+
+#allocations .page-header h1 {
+    letter-spacing: -0.02em;
+}
+
+#allocations input[type="text"],
+#allocations input[type="search"] {
+    height: 56px;
+    padding: 0 18px;
+    border: 1px solid #d5dee9;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #18263a;
+    font-size: 15px;
+    transition:
+        border-color 0.18s ease,
+        box-shadow 0.18s ease,
+        background 0.18s ease;
+}
+
+#allocations input[type="text"]:hover,
+#allocations input[type="search"]:hover {
+    border-color: #b9c8d9;
+}
+
+#allocations input[type="text"]:focus,
+#allocations input[type="search"]:focus {
+    outline: none;
+    border-color: #2f80ed;
+    box-shadow: 0 0 0 3px rgba(47, 128, 237, 0.10);
+}
+
+#allocations table tbody tr {
+    transition:
+        background 0.16s ease,
+        box-shadow 0.16s ease;
+}
+
+#allocations table tbody tr:hover {
+    background: #f8fafc;
+}
+
+#allocations table tbody td {
+    height: 64px;
+    border-bottom: 1px solid #e5ebf2;
+    vertical-align: middle;
+}
+
+#allocations table tbody td:first-child,
+#allocations table tbody td:nth-child(2),
+#allocations table tbody td:nth-child(3) {
+    font-weight: 600;
+    color: #173f6f;
+}
+
+#allocations table tbody td:nth-child(4) {
+    font-weight: 500;
+    color: #27384d;
+}
+
+#allocations table tbody td:nth-child(5) {
+    color: #52657a;
+}
+
+#allocations table tbody td:nth-child(6) {
+    font-weight: 600;
+    color: #34495e;
+}
+
+#allocations table tbody td:last-child {
+    white-space: nowrap;
+}
+
+#allocations table tbody tr:hover td:first-child {
+    color: #1266b1;
+}
+
+#allocations .status-badge {
+    transition:
+        transform 0.16s ease,
+        box-shadow 0.16s ease;
+}
+
+#allocations table tbody tr:hover .status-badge {
+    transform: translateY(-1px);
+}
+
+#allocationRefreshBtn {
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease;
+}
+
+#allocationRefreshBtn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 7px 18px rgba(24, 48, 78, 0.08);
+}
+
+#allocations button {
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease;
+}
+
+#allocations button:hover {
+    transform: translateY(-1px);
+}
+
+@media (max-width: 900px) {
+    #allocations table {
+        min-width: 980px;
+    }
+
+    #allocations input[type="text"],
+    #allocations input[type="search"] {
+        width: 100%;
+    }
+}
