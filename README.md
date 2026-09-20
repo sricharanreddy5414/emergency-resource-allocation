@@ -1,1 +1,679 @@
-﻿# Emergency Resource Allocation PlatformA serverless, event-driven AWS application for coordinating fictional resource requests using predefined priority-based allocation rules.> **Educational scope:** This project uses fictional/test data for learning and demonstration. It is not a real medical system, emergency-dispatch system, or medical decision-making system.---## Project OverviewThe Emergency Resource Allocation Platform demonstrates how AWS serverless and event-driven services can be combined to build a cloud-based resource coordination application.The platform allows users to:- Create resource requests- View resource availability- View existing requests- Process resource allocation- Match resources by type and location- Process pending requests using predefined priorities- Prevent successful double allocation during concurrent reservations- Store allocation records- Update request status- Publish allocation events- Send email notifications- Monitor backend activity with CloudWatch---## Architecture```text                         User / Client                              |                              v                    Amazon S3 Static Website                              |                              v                     Amazon API Gateway                              |             +----------------+----------------+             |                |                |             v                v                v      POST /allocate    /requests       /allocate/resources             |                |                |             v                v                v     Allocation Lambda   Request Lambda   Resource Lambda             |             |             v          DynamoDB      +------+-------+----------------+      |              |                |      v              v                v Resources    EmergencyRequests   Allocations      |      |      v Conditional Resource Update      |      v  Amazon EventBridge      |      v  Amazon SNS      |      v Email Notification Lambda Activity      |      v Amazon CloudWatch Logs + Metrics + Alarm AWS IAM      |      v Permission Control AWS Budgets      |      v Cost Monitoring Architecture diagram source:architecture/architecture.mmdRendered diagram:architecture/architecture-diagram.pngAWS Services UsedAWS Service	PurposeAmazon S3	Hosts the static frontendAmazon API Gateway	Provides REST API endpointsAWS Lambda	Runs backend application logicAmazon DynamoDB	Stores resources, requests, and allocationsAmazon EventBridge	Routes successful allocation eventsAmazon SNS	Sends notification emailsAmazon CloudWatch	Provides logs, metrics, and alarmsAWS IAM	Controls service permissionsAWS Budgets	Monitors project spendingSystem WorkflowUser  |  vS3 Static Website  |  vAPI Gateway  |  +-----------------------------+  |              |              |  v              v              v/allocate     /requests     /allocate/resources  |              |              |  v              v              vAllocation     Request       ResourceLambda         Lambda        Lambda  |  vCheck Pending Requests  |  vApply Priority Rules  |  vMatch Resource Type  |  vMatch Location  |  vCheck Availability  |  vConditionally Reserve Resource  |  vCreate Allocation Record  |  vUpdate Request Status  |  vPublish ResourceAllocated Event  |  vEventBridge  |  vSNS  |  vEmail NotificationAllocation LogicThe allocation engine uses deterministic, predefined rules rather than Artificial Intelligence or Machine Learning.The process is:Read pending requests.Sort pending requests by priority.Process higher-priority requests first.Match the requested resource type.Match the requested location.Check whether the resource is available.Conditionally reserve the resource.Create an allocation record.Update the request status to ALLOCATED.Publish a ResourceAllocated event.Deliver a notification through SNS.A suitable resource must satisfy:Resource Type matches requested typeANDLocation matches requested locationANDAvailable = trueConcurrency ProtectionThe allocation Lambda uses a DynamoDB conditional update when reserving a resource.Conceptually:Condition:Available == trueUpdate:Available = falseIf another request has already reserved the resource, the condition is no longer satisfied.This provides protection against successful double allocation during the tested concurrent scenario.Database DesignThe project uses three DynamoDB tables.1. ResourcesPrimary key:resource_idImportant attributes:resource_idTypeLocationAvailableExample:{  "resource_id": "R001",  "Type": "ICU_BED",  "Location": "Bangalore",  "Available": true}2. EmergencyRequestsPrimary key:request_idImportant attributes:request_idResourceTypeLocationPriorityStatusCreatedAt3. AllocationsPrimary key:allocation_idImportant attributes:allocation_idrequest_idresource_idresource_typelocationprioritystatusDetailed database documentation is available in:docs/database-design.mdAPIThe deployed API uses Amazon API Gateway.Base URL:https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/devAvailable EndpointsMethod	Endpoint	PurposePOST	/allocate	Process resource allocationGET	/requests	Retrieve requestsPOST	/requests	Create a requestOPTIONS	/requests	CORS supportGET	/allocate/resources	Retrieve resourcesGET	/allocate/allocations	Retrieve allocationsAllocation RequestEndpoint:POST /allocateExample:{  "request_id": "REQ009",  "resource_type": "ICU_BED",  "location": "Bangalore",  "priority": 1}Successful allocation response:{  "message": "Resource allocated successfully",  "request_id": "REQ009",  "resource_id": "R001",  "allocation_id": "ALLOC-REQ009",  "status": "ALLOCATED"}When no suitable resource exists:{  "message": "No suitable resource available",  "request_id": "REQ009"}Event-Driven NotificationsAfter a successful allocation, the Allocation Lambda publishes a ResourceAllocated event to Amazon EventBridge.Event source:emergency.resource.allocationDetail type:ResourceAllocatedExample:{  "detail-type": "ResourceAllocated",  "source": "emergency.resource.allocation",  "detail": {    "request_id": "REQ001",    "resource_id": "R001",    "allocation_id": "ALLOC-REQ001",    "resource_type": "ICU_BED",    "location": "Bangalore",    "priority": 1,    "status": "ALLOCATED"  }}EventBridge rule:EmergencyResourceAllocatedRuleSNS topic:EmergencyResourceNotificationsNotification flow:Lambda  |  vEventBridge  |  vSNS  |  vConfirmed Email SubscriptionMonitoringAmazon CloudWatch is used for backend monitoring.Lambda log group:/aws/lambda/emergency-resource-allocationCloudWatch provides:Lambda execution logsError monitoringMetricsTroubleshooting informationCloudWatch alarm:EmergencyResourceAllocation-Lambda-ErrorsThe alarm monitors Lambda errors.IAM SecurityThe Lambda execution role follows a least-privilege approach.Required DynamoDB operations include:dynamodb:Scandynamodb:UpdateItemdynamodb:PutItemRequired EventBridge permission:events:PutEventsBroad permissions that were removed during IAM cleanup include:AmazonEventBridgeFullAccessAmazonDynamoDBFullAccessAmazonDynamoDBReadOnlyAccessAWS credentials are not stored in the GitHub repository.Testing and ValidationThe project was tested at both application and AWS levels.Automated TestsThe local Pytest suite contains 5 tests.Latest verified result:5 passed in 0.02sThe test suite covers scenarios including:Successful allocationResource type mismatchLocation mismatchUnavailable resourcePriority-based allocationRun the tests with:python -m pytestLive API ValidationThe deployed API was also tested.Requests APILatest verified response:Requests retrieved successfullyCount: 18Resources APILatest verified resource count:4 resourcesThe resources included:R001R002R003R-AUDIT-001Allocations APILatest verified response:Allocations retrieved successfullyCount: 12Successful Live Allocation ValidationA dedicated fictional audit resource was used to validate the complete allocation workflow.Request:REQ-SUCCESS-AUDIT-001Resource:R-AUDIT-001Resource type:AUDIT_BEDLocation:AUDIT-LABSuccessful allocation:ALLOC-REQ-SUCCESS-AUDIT-001Final status:ALLOCATEDThe resource was subsequently reported as:Available = falseThis confirmed the allocation and resource reservation through the deployed API.Cost ManagementAWS Budgets is configured for project spending monitoring.Budget name:Emergency-Resource-Allocation-BudgetThe budget provides spending monitoring and threshold alerts.AWS Budgets provides spending awareness and alerts. It is not a hard spending limit that automatically stops all AWS services.Actual AWS charges depend on service usage, configuration, region, and applicable pricing or free-tier eligibility.Detailed cost information is available in:docs/cost-analysis.mdLocal DevelopmentTechnologiesPythonBoto3PytestVisual Studio CodeGitGitHubAWSPython version used during validation:Python 3.14.7Clone Repositorygit clone https://github.com/sricharanreddy5414/emergency-resource-allocation.gitcd emergency-resource-allocationInstall Dependenciespython -m pip install -r requirements.txtRun Testspython -m pytestExpected result:5 passedFrontendThe frontend is located in:frontend/Files:frontend/â”œâ”€â”€ index.htmlâ”œâ”€â”€ style.cssâ””â”€â”€ app.jsThe frontend provides:DashboardResource management viewRequest management viewAllocation viewNotification viewSearch and filteringHelp and FAQAuthentication interfaceThe frontend communicates with the deployed API Gateway backend.Project Structureemergency-resource-allocation/â”‚â”œâ”€â”€ architecture/â”‚   â”œâ”€â”€ architecture.mmdâ”‚   â””â”€â”€ architecture-diagram.pngâ”‚â”œâ”€â”€ docs/â”‚   â”œâ”€â”€ architecture.mdâ”‚   â”œâ”€â”€ cost-analysis.mdâ”‚   â”œâ”€â”€ database-design.mdâ”‚   â””â”€â”€ testing.mdâ”‚â”œâ”€â”€ frontend/â”‚   â”œâ”€â”€ index.htmlâ”‚   â”œâ”€â”€ style.cssâ”‚   â””â”€â”€ app.jsâ”‚â”œâ”€â”€ src/â”‚   â”œâ”€â”€ __init__.pyâ”‚   â”‚â”‚   â”œâ”€â”€ allocation/â”‚   â”‚   â”œâ”€â”€ __init__.pyâ”‚   â”‚   â””â”€â”€ handler.pyâ”‚   â”‚â”‚   â”œâ”€â”€ request/â”‚   â”‚   â””â”€â”€ handler.pyâ”‚   â”‚â”‚   â””â”€â”€ resource/â”‚       â””â”€â”€ handler.pyâ”‚â”œâ”€â”€ tests/â”‚   â””â”€â”€ test_allocation.pyâ”‚â”œâ”€â”€ README.mdâ”œâ”€â”€ requirements.txtâ””â”€â”€ .gitignoreProject ObjectivesThe main objectives are to:Build a practical serverless AWS application.Integrate API Gateway with Lambda.Store application data in DynamoDB.Implement rule-based resource allocation.Process requests using predefined priorities.Handle concurrent reservations safely.Use DynamoDB conditional writes.Implement event-driven processing.Send automated notifications using SNS.Monitor application behavior using CloudWatch.Apply IAM least-privilege principles.Perform automated testing with Pytest.Practice Git and GitHub version control.Understand practical AWS cloud architecture.AWS RegionThe deployed backend resources used for this project are located in:Europe (Stockholm)eu-north-1Current Project StatusDevelopment              COMPLETEAWS Deployment           COMPLETEFrontend                 COMPLETEDocumentation            COMPLETEAutomated Testing        5/5 PASSEDLive API Validation      COMPLETEGitHub Repository        SYNCHRONIZEDThe project is currently a working educational prototype.Future EnhancementsPossible future improvements include:Amazon CloudFront HTTPS delivery after account verificationStronger authentication and authorizationAdditional REST API endpointsAllocation history improvementsAdvanced CloudWatch dashboardsDead-letter queue for failed event processingInfrastructure as Code using AWS CDK, CloudFormation, or TerraformCI/CD pipelineMore integration and concurrency testsMore efficient DynamoDB access patternsProduction-grade security and compliance controlsLearning OutcomesThis project demonstrates practical experience with:Serverless computingEvent-driven architectureREST APIsAmazon API GatewayAWS LambdaAmazon DynamoDBConditional writesConcurrency controlAmazon EventBridgeAmazon SNSAmazon CloudWatchAWS IAMAWS BudgetsPythonBoto3PytestGitGitHubCloud securityCloud monitoringDisclaimerThis project uses fictional/test data and is intended only for educational and demonstration purposes.It does not:Diagnose medical conditionsRecommend medical treatmentDispatch real emergency servicesMake patient-specific medical decisionsReplace professional emergency-response systemsAuthorSri Charan ReddyBTech â€” Computer Science EngineeringAlliance University, BangaloreProjectEmergency Resource Allocation PlatformA practical AWS cloud project demonstrating serverless architecture, event-driven processing, rule-based resource allocation, cloud monitoring, security, automated testing, and GitHub-based development.### Live Application VerificationThe deployed application was also manually verified through the frontend and AWS-backed APIs.| Scenario | Expected Result | Verified Result ||---|---|---|| No matching resource available | Request remains PENDING | PASS || No matching resource available | No allocation record created | PASS || Matching resource available | Resource allocated successfully | PASS || Successful allocation | Allocation record created | PASS || Successful allocation | Resource becomes unavailable | PASS || Resources page | AWS resource data displayed | PASS || Requests page | AWS request data displayed | PASS || Allocations page | Allocation records displayed | PASS || Allocation export | CSV generated successfully | PASS || Notifications | Notification page and clear action work | PASS || Help & FAQ | FAQ expand/collapse works | PASS |## Project Status**Core allocation workflow and UI implemented and verified**The project includes a functional AWS-backed allocation workflow, authenticated frontend, resource/request/allocation views, notification workflow integration, automated tests, and live application verification.Resource registration through the frontend remains a planned backend enhancement.
+# Emergency Resource Allocation Platform
+
+A serverless, event-driven AWS application for coordinating fictional resource requests using predefined priority-based allocation rules.
+
+> **Educational scope:** This project uses fictional/test data for learning and demonstration. It is not a real medical system, emergency-dispatch system, or medical decision-making system.
+
+---
+
+## Project Overview
+
+The Emergency Resource Allocation Platform demonstrates how AWS serverless and event-driven services can be combined to build a cloud-based resource coordination application.
+
+The platform allows users to:
+
+- Create resource requests
+- View resource availability
+- View existing requests
+- Process resource allocation
+- Match resources by type and location
+- Process pending requests using predefined priorities
+- Prevent successful double allocation during concurrent reservations
+- Store allocation records
+- Update request status
+- Publish allocation events
+- Send email notifications
+- Monitor backend activity with CloudWatch
+
+---
+
+## Architecture
+
+```text
+                         User / Client
+                              |
+                              v
+                    Amazon S3 Static Website
+                              |
+                              v
+                     Amazon API Gateway
+                              |
+             +----------------+----------------+
+             |                |                |
+             v                v                v
+      POST /allocate    /requests       /allocate/resources
+             |                |                |
+             v                v                v
+     Allocation Lambda   Request Lambda   Resource Lambda
+             |
+             |
+             v
+          DynamoDB
+      +------+-------+----------------+
+      |              |                |
+      v              v                v
+ Resources    EmergencyRequests   Allocations
+      |
+      |
+      v
+ Conditional Resource Update
+      |
+      v
+  Amazon EventBridge
+      |
+      v
+  Amazon SNS
+      |
+      v
+ Email Notification
+
+ Lambda Activity
+      |
+      v
+ Amazon CloudWatch
+ Logs + Metrics + Alarm
+
+ AWS IAM
+      |
+      v
+ Permission Control
+
+ AWS Budgets
+      |
+      v
+ Cost Monitoring
+
+ Architecture diagram source:
+
+architecture/architecture.mmd
+
+Rendered diagram:
+
+architecture/architecture-diagram.png
+AWS Services Used
+AWS Service	Purpose
+Amazon S3	Hosts the static frontend
+Amazon API Gateway	Provides REST API endpoints
+AWS Lambda	Runs backend application logic
+Amazon DynamoDB	Stores resources, requests, and allocations
+Amazon EventBridge	Routes successful allocation events
+Amazon SNS	Sends notification emails
+Amazon CloudWatch	Provides logs, metrics, and alarms
+AWS IAM	Controls service permissions
+AWS Budgets	Monitors project spending
+System Workflow
+User
+  |
+  v
+S3 Static Website
+  |
+  v
+API Gateway
+  |
+  +-----------------------------+
+  |              |              |
+  v              v              v
+/allocate     /requests     /allocate/resources
+  |              |              |
+  v              v              v
+Allocation     Request       Resource
+Lambda         Lambda        Lambda
+  |
+  v
+Check Pending Requests
+  |
+  v
+Apply Priority Rules
+  |
+  v
+Match Resource Type
+  |
+  v
+Match Location
+  |
+  v
+Check Availability
+  |
+  v
+Conditionally Reserve Resource
+  |
+  v
+Create Allocation Record
+  |
+  v
+Update Request Status
+  |
+  v
+Publish ResourceAllocated Event
+  |
+  v
+EventBridge
+  |
+  v
+SNS
+  |
+  v
+Email Notification
+Allocation Logic
+
+The allocation engine uses deterministic, predefined rules rather than Artificial Intelligence or Machine Learning.
+
+The process is:
+
+Read pending requests.
+Sort pending requests by priority.
+Process higher-priority requests first.
+Match the requested resource type.
+Match the requested location.
+Check whether the resource is available.
+Conditionally reserve the resource.
+Create an allocation record.
+Update the request status to ALLOCATED.
+Publish a ResourceAllocated event.
+Deliver a notification through SNS.
+
+A suitable resource must satisfy:
+
+Resource Type matches requested type
+AND
+Location matches requested location
+AND
+Available = true
+Concurrency Protection
+
+The allocation Lambda uses a DynamoDB conditional update when reserving a resource.
+
+Conceptually:
+
+Condition:
+Available == true
+
+Update:
+Available = false
+
+If another request has already reserved the resource, the condition is no longer satisfied.
+
+This provides protection against successful double allocation during the tested concurrent scenario.
+
+Database Design
+
+The project uses three DynamoDB tables.
+
+1. Resources
+
+Primary key:
+
+resource_id
+
+Important attributes:
+
+resource_id
+Type
+Location
+Available
+
+Example:
+
+{
+  "resource_id": "R001",
+  "Type": "ICU_BED",
+  "Location": "Bangalore",
+  "Available": true
+}
+2. EmergencyRequests
+
+Primary key:
+
+request_id
+
+Important attributes:
+
+request_id
+ResourceType
+Location
+Priority
+Status
+CreatedAt
+3. Allocations
+
+Primary key:
+
+allocation_id
+
+Important attributes:
+
+allocation_id
+request_id
+resource_id
+resource_type
+location
+priority
+status
+
+Detailed database documentation is available in:
+
+docs/database-design.md
+API
+
+The deployed API uses Amazon API Gateway.
+
+Base URL:
+
+https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev
+Available Endpoints
+Method	Endpoint	Purpose
+POST	/allocate	Process resource allocation
+GET	/requests	Retrieve requests
+POST	/requests	Create a request
+OPTIONS	/requests	CORS support
+GET	/allocate/resources	Retrieve resources
+GET	/allocate/allocations	Retrieve allocations
+Allocation Request
+
+Endpoint:
+
+POST /allocate
+
+Example:
+
+{
+  "request_id": "REQ009",
+  "resource_type": "ICU_BED",
+  "location": "Bangalore",
+  "priority": 1
+}
+
+Successful allocation response:
+
+{
+  "message": "Resource allocated successfully",
+  "request_id": "REQ009",
+  "resource_id": "R001",
+  "allocation_id": "ALLOC-REQ009",
+  "status": "ALLOCATED"
+}
+
+When no suitable resource exists:
+
+{
+  "message": "No suitable resource available",
+  "request_id": "REQ009"
+}
+Event-Driven Notifications
+
+After a successful allocation, the Allocation Lambda publishes a ResourceAllocated event to Amazon EventBridge.
+
+Event source:
+
+emergency.resource.allocation
+
+Detail type:
+
+ResourceAllocated
+
+Example:
+
+{
+  "detail-type": "ResourceAllocated",
+  "source": "emergency.resource.allocation",
+  "detail": {
+    "request_id": "REQ001",
+    "resource_id": "R001",
+    "allocation_id": "ALLOC-REQ001",
+    "resource_type": "ICU_BED",
+    "location": "Bangalore",
+    "priority": 1,
+    "status": "ALLOCATED"
+  }
+}
+
+EventBridge rule:
+
+EmergencyResourceAllocatedRule
+
+SNS topic:
+
+EmergencyResourceNotifications
+
+Notification flow:
+
+Lambda
+  |
+  v
+EventBridge
+  |
+  v
+SNS
+  |
+  v
+Confirmed Email Subscription
+Monitoring
+
+Amazon CloudWatch is used for backend monitoring.
+
+Lambda log group:
+
+/aws/lambda/emergency-resource-allocation
+
+CloudWatch provides:
+
+Lambda execution logs
+Error monitoring
+Metrics
+Troubleshooting information
+
+CloudWatch alarm:
+
+EmergencyResourceAllocation-Lambda-Errors
+
+The alarm monitors Lambda errors.
+
+IAM Security
+
+The Lambda execution role follows a least-privilege approach.
+
+Required DynamoDB operations include:
+
+dynamodb:Scan
+dynamodb:UpdateItem
+dynamodb:PutItem
+
+Required EventBridge permission:
+
+events:PutEvents
+
+Broad permissions that were removed during IAM cleanup include:
+
+AmazonEventBridgeFullAccess
+AmazonDynamoDBFullAccess
+AmazonDynamoDBReadOnlyAccess
+
+AWS credentials are not stored in the GitHub repository.
+
+Testing and Validation
+
+The project was tested at both application and AWS levels.
+
+Automated Tests
+
+The local Pytest suite contains 5 tests.
+
+Latest verified result:
+
+5 passed in 0.02s
+
+The test suite covers scenarios including:
+
+Successful allocation
+Resource type mismatch
+Location mismatch
+Unavailable resource
+Priority-based allocation
+
+Run the tests with:
+
+python -m pytest
+Live API Validation
+
+The deployed API was also tested.
+
+Requests API
+
+Latest verified response:
+
+Requests retrieved successfully
+Count: 18
+Resources API
+
+Latest verified resource count:
+
+4 resources
+
+The resources included:
+
+R001
+R002
+R003
+R-AUDIT-001
+Allocations API
+
+Latest verified response:
+
+Allocations retrieved successfully
+Count: 12
+Successful Live Allocation Validation
+
+A dedicated fictional audit resource was used to validate the complete allocation workflow.
+
+Request:
+
+REQ-SUCCESS-AUDIT-001
+
+Resource:
+
+R-AUDIT-001
+
+Resource type:
+
+AUDIT_BED
+
+Location:
+
+AUDIT-LAB
+
+Successful allocation:
+
+ALLOC-REQ-SUCCESS-AUDIT-001
+
+Final status:
+
+ALLOCATED
+
+The resource was subsequently reported as:
+
+Available = false
+
+This confirmed the allocation and resource reservation through the deployed API.
+
+Cost Management
+
+AWS Budgets is configured for project spending monitoring.
+
+Budget name:
+
+Emergency-Resource-Allocation-Budget
+
+The budget provides spending monitoring and threshold alerts.
+
+AWS Budgets provides spending awareness and alerts. It is not a hard spending limit that automatically stops all AWS services.
+
+Actual AWS charges depend on service usage, configuration, region, and applicable pricing or free-tier eligibility.
+
+Detailed cost information is available in:
+
+docs/cost-analysis.md
+Local Development
+Technologies
+Python
+Boto3
+Pytest
+Visual Studio Code
+Git
+GitHub
+AWS
+
+Python version used during validation:
+
+Python 3.14.7
+Clone Repository
+git clone https://github.com/sricharanreddy5414/emergency-resource-allocation.git
+cd emergency-resource-allocation
+Install Dependencies
+python -m pip install -r requirements.txt
+Run Tests
+python -m pytest
+
+Expected result:
+
+5 passed
+Frontend
+
+The frontend is located in:
+
+frontend/
+
+Files:
+
+frontend/
+├── index.html
+├── style.css
+└── app.js
+
+The frontend provides:
+
+Dashboard
+Resource management view
+Request management view
+Allocation view
+Notification view
+Search and filtering
+Help and FAQ
+Authentication interface
+
+The frontend communicates with the deployed API Gateway backend.
+
+Project Structure
+emergency-resource-allocation/
+│
+├── architecture/
+│   ├── architecture.mmd
+│   └── architecture-diagram.png
+│
+├── docs/
+│   ├── architecture.md
+│   ├── cost-analysis.md
+│   ├── database-design.md
+│   └── testing.md
+│
+├── frontend/
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
+│
+├── src/
+│   ├── __init__.py
+│   │
+│   ├── allocation/
+│   │   ├── __init__.py
+│   │   └── handler.py
+│   │
+│   ├── request/
+│   │   └── handler.py
+│   │
+│   └── resource/
+│       └── handler.py
+│
+├── tests/
+│   └── test_allocation.py
+│
+├── README.md
+├── requirements.txt
+└── .gitignore
+Project Objectives
+
+The main objectives are to:
+
+Build a practical serverless AWS application.
+Integrate API Gateway with Lambda.
+Store application data in DynamoDB.
+Implement rule-based resource allocation.
+Process requests using predefined priorities.
+Handle concurrent reservations safely.
+Use DynamoDB conditional writes.
+Implement event-driven processing.
+Send automated notifications using SNS.
+Monitor application behavior using CloudWatch.
+Apply IAM least-privilege principles.
+Perform automated testing with Pytest.
+Practice Git and GitHub version control.
+Understand practical AWS cloud architecture.
+AWS Region
+
+The deployed backend resources used for this project are located in:
+
+Europe (Stockholm)
+eu-north-1
+Current Project Status
+Development              COMPLETE
+AWS Deployment           COMPLETE
+Frontend                 COMPLETE
+Documentation            COMPLETE
+Automated Testing        5/5 PASSED
+Live API Validation      COMPLETE
+GitHub Repository        SYNCHRONIZED
+
+The project is currently a working educational prototype.
+
+Future Enhancements
+
+Possible future improvements include:
+
+Amazon CloudFront HTTPS delivery after account verification
+Stronger authentication and authorization
+Additional REST API endpoints
+Allocation history improvements
+Advanced CloudWatch dashboards
+Dead-letter queue for failed event processing
+Infrastructure as Code using AWS CDK, CloudFormation, or Terraform
+CI/CD pipeline
+More integration and concurrency tests
+More efficient DynamoDB access patterns
+Production-grade security and compliance controls
+Learning Outcomes
+
+This project demonstrates practical experience with:
+
+Serverless computing
+Event-driven architecture
+REST APIs
+Amazon API Gateway
+AWS Lambda
+Amazon DynamoDB
+Conditional writes
+Concurrency control
+Amazon EventBridge
+Amazon SNS
+Amazon CloudWatch
+AWS IAM
+AWS Budgets
+Python
+Boto3
+Pytest
+Git
+GitHub
+Cloud security
+Cloud monitoring
+Disclaimer
+
+This project uses fictional/test data and is intended only for educational and demonstration purposes.
+
+It does not:
+
+Diagnose medical conditions
+Recommend medical treatment
+Dispatch real emergency services
+Make patient-specific medical decisions
+Replace professional emergency-response systems
+Author
+
+Sri Charan Reddy
+
+BTech — Computer Science Engineering
+
+Alliance University, Bangalore
+
+Project
+
+Emergency Resource Allocation Platform
+
+A practical AWS cloud project demonstrating serverless architecture, event-driven processing, rule-based resource allocation, cloud monitoring, security, automated testing, and GitHub-based development.
