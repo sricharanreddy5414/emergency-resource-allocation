@@ -2773,6 +2773,52 @@ function closeProfile() {
 
 }
 
+/* =========================================================
+   EDIT PROFILE
+========================================================= */
+
+function openEditProfile() {
+
+    const name =
+        currentUser.name || "";
+
+    const phone =
+        currentUser.phone || "";
+
+    const newName =
+        window.prompt(
+            "Enter your name:",
+            name
+        );
+
+    if (newName === null) {
+        return;
+    }
+
+    const newPhone =
+        window.prompt(
+            "Enter your mobile number:",
+            phone
+        );
+
+    if (newPhone === null) {
+        return;
+    }
+
+    currentUser.name =
+        newName.trim() || name;
+
+    currentUser.phone =
+        newPhone.trim() || phone;
+
+    updateUserInterface();
+
+    showToast(
+        "Profile updated for this session."
+    );
+
+}
+
 
 /* =========================================================
    REGISTER RESOURCE MODAL
@@ -3353,12 +3399,21 @@ function initializeEvents() {
         );
 
 
-    /* Profile modal */
+        /* Profile modal */
 
     $("profileModalClose")
         ?.addEventListener(
             "click",
             closeProfile
+        );
+
+
+    /* Edit Profile */
+
+    $("editProfileBtn")
+        ?.addEventListener(
+            "click",
+            openEditProfile
         );
 
 
