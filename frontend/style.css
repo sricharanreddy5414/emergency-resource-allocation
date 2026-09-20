@@ -2692,3 +2692,63 @@ tbody tr:hover {
         text-align: center;
     }
 }
+
+/* =========================================================
+   HELP & FAQ PAGE — ENTERPRISE UI POLISH
+========================================================= */
+
+#help {
+    animation: pageSectionIn 0.28s ease-out;
+}
+
+#help .page-header {
+    margin-bottom: 26px;
+}
+
+#help .page-header h1 {
+    letter-spacing: -0.02em;
+}
+
+#help .faq-item {
+    border-color: #d5dee9;
+    transition:
+        border-color 0.18s ease,
+        box-shadow 0.18s ease,
+        transform 0.18s ease;
+}
+
+#help .faq-item:hover {
+    border-color: #c4d2e1;
+    box-shadow: 0 10px 24px rgba(24, 48, 78, 0.07);
+    transform: translateY(-1px);
+}
+
+#help .faq-question {
+    transition:
+        color 0.16s ease,
+        background 0.16s ease;
+}
+
+#help .faq-question:hover {
+    color: #1266b1;
+}
+
+#help .faq-answer {
+    color: #60758b;
+    line-height: 1.7;
+}
+
+#help .faq-item[open] {
+    border-color: #c7d7e8;
+    box-shadow: 0 12px 28px rgba(24, 48, 78, 0.08);
+}
+
+#help .faq-item[open] .faq-question {
+    color: #173f6f;
+}
+
+@media (max-width: 760px) {
+    #help .faq-item {
+        width: 100%;
+    }
+}
