@@ -2861,50 +2861,71 @@ function closeRegisterModal() {
 ========================================================= */
 
 async function registerResource() {
+    const id = $("newResourceId").value.trim();
+    const type = $("newResourceType").value;
+    const location = $("newResourceLocation").value.trim();
 
-    const id =
-        $("newResourceId")
-            .value
-            .trim();
-
-
-    const type =
-        $("newResourceType")
-            .value;
-
-
-    const location =
-        $("newResourceLocation")
-            .value
-            .trim();
-
-
-    if (
-        !id ||
-        !type ||
-        !location
-    ) {
-
-        showToast(
-            "Please complete all resource details."
-        );
-
+    if (!id || !type || !location) {
+        showToast("Please complete all resource details.");
         return;
-
     }
 
+    try {
+        const response = await fetch(
+            RESOURCES_API_URL,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    resource_id: id,
+                    Type: type,
+                    Location: location,
+                    Available: true
+                })
+            }
+        );
 
-    showToast(
-        "Resource registration API is not deployed yet."
-    );
+        const data = await response.json();
 
+        if (!response.ok) {
+            showToast(
+                data.message ||
+                "Failed to register resource."
+            );
+            return;
+        }
 
-    addNotification(
-        "Registration unavailable",
+        showToast("Resource registered successfully.");
 
-        "The frontend is ready, but a backend resource-registration endpoint is required."
-    );
+        addNotification(
+            "Resource registered",
+            `${id} was added to the resource inventory.`
+        );
 
+        const modal = $("registerResourceModal");
+
+        if (modal) {
+            modal.classList.remove("open");
+        }
+
+        $("newResourceId").value = "";
+        $("newResourceType").value = "";
+        $("newResourceLocation").value = "";
+
+        await loadResources();
+
+    } catch (error) {
+        console.error(
+            "Resource registration failed:",
+            error
+        );
+
+        showToast(
+            "Unable to register resource. Please try again."
+        );
+    }
 }
 
 
