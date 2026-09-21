@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    ERAP - Emergency Resource Allocation Platform
    Cognito Authentication + AWS API Integration
 ========================================================= */
@@ -31,8 +31,7 @@ const COGNITO_DOMAIN =
 const COGNITO_CLIENT_ID =
     "3je7latr22bqhggoavlva00hp5";
 
-const REDIRECT_URI =
-    "http://localhost:5500";
+const REDIRECT_URI = window.location.origin;
 
 const COGNITO_SCOPES =
     "openid";
