@@ -13,6 +13,8 @@ const API_URL =
 
 const RESOURCES_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/resources";
+const RELEASE_RESOURCE_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/resources/release";
 
 const REQUESTS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/requests";
@@ -1928,7 +1930,7 @@ function renderResourcesTable() {
 
             <tr>
 
-                <td colspan="4">
+                <td colspan="5">
                     No resource data available.
                 </td>
 
@@ -2030,7 +2032,7 @@ function renderResourcesPage() {
 
             <tr>
 
-                <td colspan="4">
+                <td colspan="5">
                     No resource data available.
                 </td>
 
@@ -2052,6 +2054,30 @@ function renderResourcesPage() {
                         getResourceStatus(
                             resource
                         );
+
+
+                    const action =
+                        status === "ALLOCATED"
+
+                            ? `
+
+                                <button
+                                    type="button"
+                                    class="release-resource-btn"
+                                    onclick="releaseResource('${escapeHtml(resource.id)}')"
+                                >
+                                    Release
+                                </button>
+
+                              `
+
+                            : `
+
+                                <span class="resource-action-muted">
+                                    —
+                                </span>
+
+                              `;
 
 
                     return `
@@ -2097,6 +2123,10 @@ function renderResourcesPage() {
 
                             </td>
 
+                            <td>
+                                ${action}
+                            </td>
+
                         </tr>
 
                     `;
@@ -2107,6 +2137,89 @@ function renderResourcesPage() {
 
 
     applyResourcePageFilters();
+
+}
+
+/* =========================================================
+   RELEASE RESOURCE
+========================================================= */
+
+async function releaseResource(resourceId) {
+
+    const confirmed =
+        window.confirm(
+            `Release resource ${resourceId}?`
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        showToast(
+            "Releasing resource..."
+        );
+
+        const response =
+            await fetch(
+                RELEASE_RESOURCE_API_URL,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        resource_id: resourceId
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok) {
+
+            showToast(
+                data.message ||
+                "Failed to release resource."
+            );
+
+            return;
+
+        }
+
+
+        showToast(
+            "Resource released successfully."
+        );
+
+
+        addNotification(
+            "Resource released",
+            `${resourceId} is now available.`
+        );
+
+
+        await loadResources();
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Resource release failed:",
+            error
+        );
+
+
+        showToast(
+            "Unable to release resource. Please try again."
+        );
+
+    }
 
 }
 
@@ -2286,35 +2399,27 @@ function applyResourcePageFilters() {
     const search =
         $("resourcesPageSearch");
 
-
     const filter =
         $("resourcesPageFilter");
 
-
     const table =
         $("resourcesPageTable");
-
 
     if (
         !search ||
         !filter ||
         !table
     ) {
-
         return;
-
     }
-
 
     const query =
         search.value
             .trim()
             .toLowerCase();
 
-
     const selected =
         filter.value;
-
 
     const filtered =
         resources.filter(
@@ -2324,7 +2429,6 @@ function applyResourcePageFilters() {
                     getResourceStatus(
                         resource
                     );
-
 
                 const matchesSearch =
                     !query ||
@@ -2347,34 +2451,26 @@ function applyResourcePageFilters() {
                         .toLowerCase()
                         .includes(query);
 
-
                 const matchesFilter =
                     selected === "ALL" ||
                     selected === status;
-
 
                 return (
                     matchesSearch &&
                     matchesFilter
                 );
-
             }
         );
-
 
     table.innerHTML =
         filtered.length === 0
 
             ? `
-
                 <tr>
-
-                    <td colspan="4">
+                    <td colspan="5">
                         No matching resources found.
                     </td>
-
                 </tr>
-
               `
 
             :
@@ -2388,19 +2484,36 @@ function applyResourcePageFilters() {
                                 resource
                             );
 
+                        const action =
+                            status === "ALLOCATED"
+
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="release-resource-btn"
+                                        onclick="releaseResource('${escapeHtml(resource.id)}')"
+                                    >
+                                        Release
+                                    </button>
+                                  `
+
+                                : `
+                                    <span
+                                        class="resource-action-muted"
+                                    >
+                                        —
+                                    </span>
+                                  `;
 
                         return `
-
                             <tr>
 
                                 <td>
-
                                     <strong>
                                         ${escapeHtml(
                                             resource.id
                                         )}
                                     </strong>
-
                                 </td>
 
                                 <td>
@@ -2425,15 +2538,16 @@ function applyResourcePageFilters() {
                                                 : "allocated"
                                         }"
                                     >
-
                                         ${status}
-
                                     </span>
 
                                 </td>
 
-                            </tr>
+                                <td>
+                                    ${action}
+                                </td>
 
+                            </tr>
                         `;
 
                     }
@@ -2441,7 +2555,6 @@ function applyResourcePageFilters() {
                 .join("");
 
 }
-
 
 /* =========================================================
    ALLOCATION REQUEST

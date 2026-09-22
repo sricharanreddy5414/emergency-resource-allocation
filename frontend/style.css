@@ -2752,3 +2752,37 @@ tbody tr:hover {
         width: 100%;
     }
 }
+
+/* =========================================================
+   RESOURCE RELEASE ACTION
+========================================================= */
+
+.release-resource-btn {
+    border: 1px solid #d7a84a;
+    background: #fff8e8;
+    color: #8a6500;
+    padding: 7px 12px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        transform 0.2s ease;
+}
+
+.release-resource-btn:hover {
+    background: #fff1cc;
+    border-color: #c99527;
+    transform: translateY(-1px);
+}
+
+.release-resource-btn:active {
+    transform: translateY(0);
+}
+
+.resource-action-muted {
+    color: #9aa4b2;
+    font-size: 14px;
+}
