@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -975,6 +975,126 @@
 
 
 
+    <!-- =====================================================
+         ADVANCED ANALYTICS
+    ====================================================== -->
+
+    <section class="analytics-section">
+
+        <div class="analytics-header">
+
+            <div>
+                <span class="panel-label">
+                    PLATFORM ANALYTICS
+                </span>
+
+                <h2>
+                    Resource & Request Insights
+                </h2>
+
+                <p>
+                    Live operational overview based on current AWS data.
+                </p>
+            </div>
+
+        </div>
+
+
+        <div class="analytics-kpi-grid">
+
+            <div class="analytics-kpi">
+                <span>Total Requests</span>
+                <strong id="analyticsTotalRequests">0</strong>
+            </div>
+
+            <div class="analytics-kpi">
+                <span>Allocated Requests</span>
+                <strong id="analyticsAllocatedRequests">0</strong>
+            </div>
+
+            <div class="analytics-kpi">
+                <span>Pending Requests</span>
+                <strong id="analyticsPendingRequests">0</strong>
+            </div>
+
+            <div class="analytics-kpi">
+                <span>Released Requests</span>
+                <strong id="analyticsReleasedRequests">0</strong>
+            </div>
+
+        </div>
+
+
+        <div class="analytics-grid">
+
+            <div class="analytics-card">
+
+                <div class="analytics-card-header">
+                    <div>
+                        <span class="panel-label">
+                            RESOURCE STATUS
+                        </span>
+
+                        <h3>
+                            Current Resource Availability
+                        </h3>
+                    </div>
+                </div>
+
+                <div
+                    id="resourceStatusChart"
+                    class="analytics-chart"
+                ></div>
+
+            </div>
+
+
+            <div class="analytics-card">
+
+                <div class="analytics-card-header">
+                    <div>
+                        <span class="panel-label">
+                            REQUEST STATUS
+                        </span>
+
+                        <h3>
+                            Request Distribution
+                        </h3>
+                    </div>
+                </div>
+
+                <div
+                    id="requestStatusChart"
+                    class="analytics-chart"
+                ></div>
+
+            </div>
+
+
+            <div class="analytics-card analytics-card-wide">
+
+                <div class="analytics-card-header">
+                    <div>
+                        <span class="panel-label">
+                            PRIORITY ANALYSIS
+                        </span>
+
+                        <h3>
+                            Requests by Priority
+                        </h3>
+                    </div>
+                </div>
+
+                <div
+                    id="priorityChart"
+                    class="analytics-chart priority-chart"
+                ></div>
+
+            </div>
+
+        </div>
+
+    </section>
 <!-- =====================================================
      RESOURCES PAGE
 ====================================================== -->
@@ -2615,4 +2735,3 @@
 </body>
 
 </html>
-

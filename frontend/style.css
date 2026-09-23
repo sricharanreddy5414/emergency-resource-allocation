@@ -1,5 +1,5 @@
 /* =========================================================
-   ERAP — Emergency Resource Allocation Platform
+   ERAP â€” Emergency Resource Allocation Platform
    Professional Government / Enterprise Dashboard
 ========================================================= */
 
@@ -1683,7 +1683,7 @@ tbody tr:hover {
 
 
 /* =========================================================
-   RESPONSIVE — TABLET
+   RESPONSIVE â€” TABLET
 ========================================================= */
 
 @media (max-width: 1100px) {
@@ -1713,7 +1713,7 @@ tbody tr:hover {
 
 
 /* =========================================================
-   RESPONSIVE — MOBILE
+   RESPONSIVE â€” MOBILE
 ========================================================= */
 
 @media (max-width: 768px) {
@@ -2188,7 +2188,7 @@ tbody tr:hover {
 }
 
 /* =========================================================
-   RESOURCES PAGE — ENTERPRISE UI POLISH
+   RESOURCES PAGE â€” ENTERPRISE UI POLISH
 ========================================================= */
 
 #resources {
@@ -2306,7 +2306,7 @@ tbody tr:hover {
 }
 
 /* =========================================================
-   REQUESTS PAGE — ENTERPRISE UI POLISH
+   REQUESTS PAGE â€” ENTERPRISE UI POLISH
 ========================================================= */
 
 #requests {
@@ -2462,7 +2462,7 @@ tbody tr:hover {
 }
 
 /* =========================================================
-   ALLOCATIONS PAGE — ENTERPRISE UI POLISH
+   ALLOCATIONS PAGE â€” ENTERPRISE UI POLISH
 ========================================================= */
 
 #allocations {
@@ -2594,7 +2594,7 @@ tbody tr:hover {
 }
 
 /* =========================================================
-   NOTIFICATIONS PAGE — ENTERPRISE UI POLISH
+   NOTIFICATIONS PAGE â€” ENTERPRISE UI POLISH
 ========================================================= */
 
 #notifications {
@@ -2694,7 +2694,7 @@ tbody tr:hover {
 }
 
 /* =========================================================
-   HELP & FAQ PAGE — ENTERPRISE UI POLISH
+   HELP & FAQ PAGE â€” ENTERPRISE UI POLISH
 ========================================================= */
 
 #help {
@@ -2886,6 +2886,211 @@ tbody tr:hover {
 
     .resource-history-transition {
         flex-wrap: wrap;
+    }
+
+}
+
+/* =========================================================
+   ADVANCED ANALYTICS
+========================================================= */
+
+.analytics-section {
+    margin-top: 20px;
+}
+
+.analytics-header {
+    margin-bottom: 14px;
+}
+
+.analytics-header h2 {
+    margin-top: 5px;
+    font-size: 18px;
+    letter-spacing: -0.2px;
+}
+
+.analytics-header p {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+/* KPI SUMMARY */
+
+.analytics-kpi-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.analytics-kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    min-height: 82px;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.analytics-kpi:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 8px 20px rgba(20, 43, 70, 0.07);
+    border-color: #cbd8e6;
+}
+
+.analytics-kpi span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.analytics-kpi strong {
+    display: block;
+    color: var(--primary);
+    font-size: 24px;
+    line-height: 1;
+}
+
+/* CHART GRID */
+
+.analytics-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.analytics-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    min-height: 0;
+    transition:
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.analytics-card:hover {
+    box-shadow:
+        0 8px 22px rgba(20, 43, 70, 0.07);
+    border-color: #cbd8e6;
+}
+
+.analytics-card-wide {
+    grid-column: 1 / -1;
+}
+
+.analytics-card-header {
+    margin-bottom: 14px;
+}
+
+.analytics-card-header h3 {
+    margin-top: 5px;
+    font-size: 14px;
+    letter-spacing: -0.1px;
+}
+
+/* BARS */
+
+.analytics-chart {
+    min-height: 110px;
+}
+
+.analytics-bar-row {
+    display: grid;
+    grid-template-columns:
+        92px minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 11px;
+}
+
+.analytics-bar-row:last-child {
+    margin-bottom: 0;
+}
+
+.analytics-bar-label {
+    color: var(--text);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.analytics-bar-track {
+    height: 8px;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.analytics-bar-fill {
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    border-radius: inherit;
+    transition: width 0.45s ease;
+}
+
+.analytics-bar-value {
+    text-align: right;
+    color: var(--primary);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.analytics-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 90px;
+    color: var(--muted);
+    font-size: 11px;
+    text-align: center;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1100px) {
+
+    .analytics-kpi-grid {
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+    }
+
+}
+
+@media (max-width: 760px) {
+
+    .analytics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .analytics-card-wide {
+        grid-column: auto;
+    }
+
+}
+
+@media (max-width: 560px) {
+
+    .analytics-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .analytics-bar-row {
+        grid-template-columns:
+            76px minmax(0, 1fr) 32px;
+        gap: 8px;
     }
 
 }

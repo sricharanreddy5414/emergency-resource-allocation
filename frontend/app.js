@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
    ERAP - Emergency Resource Allocation Platform
    Cognito Authentication + AWS API Integration
 ========================================================= */
@@ -1370,6 +1370,7 @@ async function loadResources() {
         normalizeResources();
 
         updateDashboardStats();
+        updateAnalytics();
 
         renderResourcesTable();
 
@@ -1394,6 +1395,7 @@ async function loadResources() {
 
 
         updateDashboardStats();
+        updateAnalytics();
 
         renderResourcesTable();
 
@@ -1470,6 +1472,8 @@ async function loadRequests() {
 
         }
 
+
+        updateAnalytics();
 
         renderRequests();
 
@@ -1896,6 +1900,262 @@ function isResourceAvailable(
 
 }
 
+
+
+/* =========================================================
+   ADVANCED ANALYTICS
+========================================================= */
+
+function updateAnalytics() {
+
+    const totalResources =
+        resources.length;
+
+    const availableResources =
+        resources.filter(
+            resource =>
+                isResourceAvailable(resource)
+        ).length;
+
+    const allocatedResources =
+        totalResources -
+        availableResources;
+
+
+    const totalRequests =
+        requests.length;
+
+    const allocatedRequests =
+        requests.filter(
+            request =>
+                String(
+                    request.status ??
+                    request.Status ??
+                    ""
+                ).toUpperCase() ===
+                "ALLOCATED"
+        ).length;
+
+    const pendingRequests =
+        requests.filter(
+            request =>
+                String(
+                    request.status ??
+                    request.Status ??
+                    ""
+                ).toUpperCase() ===
+                "PENDING"
+        ).length;
+
+    const releasedRequests =
+        requests.filter(
+            request =>
+                String(
+                    request.status ??
+                    request.Status ??
+                    ""
+                ).toUpperCase() ===
+                "RELEASED"
+        ).length;
+
+
+    if ($("analyticsTotalRequests")) {
+        $("analyticsTotalRequests")
+            .textContent =
+            totalRequests;
+    }
+
+    if ($("analyticsAllocatedRequests")) {
+        $("analyticsAllocatedRequests")
+            .textContent =
+            allocatedRequests;
+    }
+
+    if ($("analyticsPendingRequests")) {
+        $("analyticsPendingRequests")
+            .textContent =
+            pendingRequests;
+    }
+
+    if ($("analyticsReleasedRequests")) {
+        $("analyticsReleasedRequests")
+            .textContent =
+            releasedRequests;
+    }
+
+
+    renderAnalyticsBars(
+        "resourceStatusChart",
+        [
+            {
+                label: "Available",
+                value: availableResources
+            },
+            {
+                label: "Allocated",
+                value: allocatedResources
+            }
+        ]
+    );
+
+
+    renderAnalyticsBars(
+        "requestStatusChart",
+        [
+            {
+                label: "Allocated",
+                value: allocatedRequests
+            },
+            {
+                label: "Pending",
+                value: pendingRequests
+            },
+            {
+                label: "Released",
+                value: releasedRequests
+            }
+        ]
+    );
+
+
+    const priorityCounts = {
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+        5: 0
+    };
+
+
+    requests.forEach(
+        request => {
+
+            const priority =
+                Number(
+                    request.priority ??
+                    request.Priority
+                );
+
+            if (
+                priority >= 1 &&
+                priority <= 5
+            ) {
+                priorityCounts[priority]++;
+            }
+
+        }
+    );
+
+
+    renderAnalyticsBars(
+        "priorityChart",
+        [
+            {
+                label: "Priority 1",
+                value: priorityCounts[1]
+            },
+            {
+                label: "Priority 2",
+                value: priorityCounts[2]
+            },
+            {
+                label: "Priority 3",
+                value: priorityCounts[3]
+            },
+            {
+                label: "Priority 4",
+                value: priorityCounts[4]
+            },
+            {
+                label: "Priority 5",
+                value: priorityCounts[5]
+            }
+        ]
+    );
+}
+
+
+function renderAnalyticsBars(
+    elementId,
+    items
+) {
+
+    const container =
+        $(elementId);
+
+    if (!container) {
+        return;
+    }
+
+
+    const total =
+        items.reduce(
+            (
+                sum,
+                item
+            ) =>
+                sum + item.value,
+            0
+        );
+
+
+    if (total === 0) {
+
+        container.innerHTML = `
+            <div class="analytics-empty">
+                No data available yet.
+            </div>
+        `;
+
+        return;
+    }
+
+
+    container.innerHTML =
+        items
+            .map(
+                item => {
+
+                    const percentage =
+                        Math.max(
+                            0,
+                            Math.min(
+                                100,
+                                (
+                                    item.value /
+                                    total
+                                ) *
+                                100
+                            )
+                        );
+
+                    return `
+                        <div class="analytics-bar-row">
+
+                            <span class="analytics-bar-label">
+                                ${item.label}
+                            </span>
+
+                            <div class="analytics-bar-track">
+
+                                <div
+                                    class="analytics-bar-fill"
+                                    style="width: ${percentage}%"
+                                ></div>
+
+                            </div>
+
+                            <span class="analytics-bar-value">
+                                ${item.value}
+                            </span>
+
+                        </div>
+                    `;
+
+                }
+            )
+            .join("");
+}
 
 function getResourceStatus(
     resource
@@ -3495,6 +3755,7 @@ async function loadAllocations() {
         }
 
         renderAllocations();
+        updateAnalytics();
 
     } catch (error) {
 
@@ -4426,6 +4687,7 @@ async function initializeApp() {
     renderAllocations();
 
     updateDashboardStats();
+        updateAnalytics();
 
 
     /*
@@ -4452,10 +4714,3 @@ document.addEventListener(
     "DOMContentLoaded",
     initializeApp
 );
-
-
-
-
-
-
-
