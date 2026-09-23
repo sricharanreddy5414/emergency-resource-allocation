@@ -2022,6 +2022,7 @@ function renderResourcesPage() {
 
 
     if (!table) return;
+        populateResourcePageFilters();
 
 
     if (
@@ -2388,7 +2389,111 @@ function applyResourceDashboardFilters() {
                 .join("");
 
 }
+function populateResourcePageFilters() {
 
+    const typeFilter =
+        $("resourcesPageTypeFilter");
+
+    const locationFilter =
+        $("resourcesPageLocationFilter");
+
+    if (
+        !typeFilter ||
+        !locationFilter
+    ) {
+        return;
+    }
+
+
+    const currentType =
+        typeFilter.value;
+
+    const currentLocation =
+        locationFilter.value;
+
+
+    const types = [
+        ...new Set(
+            resources
+                .map(
+                    resource =>
+                        String(
+                            resource.type || ""
+                        ).trim()
+                )
+                .filter(Boolean)
+        )
+    ].sort();
+
+
+    const locations = [
+        ...new Set(
+            resources
+                .map(
+                    resource =>
+                        String(
+                            resource.location || ""
+                        ).trim()
+                )
+                .filter(Boolean)
+        )
+    ].sort();
+
+
+    typeFilter.innerHTML = `
+        <option value="ALL">
+            All Types
+        </option>
+    `;
+
+    types.forEach(
+        type => {
+
+            typeFilter.innerHTML += `
+                <option value="${escapeHtml(type)}">
+                    ${escapeHtml(type)}
+                </option>
+            `;
+
+        }
+    );
+
+
+    locationFilter.innerHTML = `
+        <option value="ALL">
+            All Locations
+        </option>
+    `;
+
+    locations.forEach(
+        location => {
+
+            locationFilter.innerHTML += `
+                <option value="${escapeHtml(location)}">
+                    ${escapeHtml(location)}
+                </option>
+            `;
+
+        }
+    );
+
+
+    if (
+        types.includes(currentType)
+    ) {
+        typeFilter.value =
+            currentType;
+    }
+
+
+    if (
+        locations.includes(currentLocation)
+    ) {
+        locationFilter.value =
+            currentLocation;
+    }
+
+}
 
 /* =========================================================
    RESOURCE PAGE FILTER
@@ -2399,27 +2504,46 @@ function applyResourcePageFilters() {
     const search =
         $("resourcesPageSearch");
 
-    const filter =
+    const statusFilter =
         $("resourcesPageFilter");
+
+    const typeFilter =
+        $("resourcesPageTypeFilter");
+
+    const locationFilter =
+        $("resourcesPageLocationFilter");
 
     const table =
         $("resourcesPageTable");
 
     if (
         !search ||
-        !filter ||
+        !statusFilter ||
+        !typeFilter ||
+        !locationFilter ||
         !table
     ) {
         return;
     }
+
 
     const query =
         search.value
             .trim()
             .toLowerCase();
 
-    const selected =
-        filter.value;
+
+    const selectedStatus =
+        statusFilter.value;
+
+
+    const selectedType =
+        typeFilter.value;
+
+
+    const selectedLocation =
+        locationFilter.value;
+
 
     const filtered =
         resources.filter(
@@ -2430,47 +2554,76 @@ function applyResourcePageFilters() {
                         resource
                     );
 
+
+                const resourceType =
+                    String(
+                        resource.type || ""
+                    );
+
+
+                const resourceLocation =
+                    String(
+                        resource.location || ""
+                    );
+
+
                 const matchesSearch =
                     !query ||
 
                     String(
-                        resource.id
+                        resource.id || ""
                     )
                         .toLowerCase()
                         .includes(query) ||
 
-                    String(
-                        resource.type
-                    )
+                    resourceType
                         .toLowerCase()
                         .includes(query) ||
 
-                    String(
-                        resource.location
-                    )
+                    resourceLocation
                         .toLowerCase()
                         .includes(query);
 
-                const matchesFilter =
-                    selected === "ALL" ||
-                    selected === status;
+
+                const matchesStatus =
+                    selectedStatus === "ALL" ||
+                    selectedStatus === status;
+
+
+                const matchesType =
+                    selectedType === "ALL" ||
+                    resourceType === selectedType;
+
+
+                const matchesLocation =
+                    selectedLocation === "ALL" ||
+                    resourceLocation === selectedLocation;
+
 
                 return (
                     matchesSearch &&
-                    matchesFilter
+                    matchesStatus &&
+                    matchesType &&
+                    matchesLocation
                 );
+
             }
         );
+
 
     table.innerHTML =
         filtered.length === 0
 
             ? `
+
                 <tr>
+
                     <td colspan="5">
                         No matching resources found.
                     </td>
+
                 </tr>
+
               `
 
             :
@@ -2484,10 +2637,12 @@ function applyResourcePageFilters() {
                                 resource
                             );
 
+
                         const action =
                             status === "ALLOCATED"
 
                                 ? `
+
                                     <button
                                         type="button"
                                         class="release-resource-btn"
@@ -2495,25 +2650,32 @@ function applyResourcePageFilters() {
                                     >
                                         Release
                                     </button>
+
                                   `
 
                                 : `
+
                                     <span
                                         class="resource-action-muted"
                                     >
                                         —
                                     </span>
+
                                   `;
 
+
                         return `
+
                             <tr>
 
                                 <td>
+
                                     <strong>
                                         ${escapeHtml(
                                             resource.id
                                         )}
                                     </strong>
+
                                 </td>
 
                                 <td>
@@ -2548,6 +2710,7 @@ function applyResourcePageFilters() {
                                 </td>
 
                             </tr>
+
                         `;
 
                     }
@@ -3672,6 +3835,18 @@ function initializeEvents() {
             applyResourcePageFilters
         );
 
+    $("resourcesPageTypeFilter")
+        ?.addEventListener(
+            "change",
+            applyResourcePageFilters
+        );
+
+    $("resourcesPageLocationFilter")
+        ?.addEventListener(
+            "change",
+            applyResourcePageFilters
+        );
+
 
     /* Allocation search */
 
@@ -3936,3 +4111,6 @@ document.addEventListener(
     "DOMContentLoaded",
     initializeApp
 );
+
+
+
