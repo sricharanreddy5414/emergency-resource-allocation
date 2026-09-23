@@ -16,6 +16,9 @@ const RESOURCES_API_URL =
 const RELEASE_RESOURCE_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/resources/release";
 
+const RESOURCE_HISTORY_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/resources/history";
+
 const REQUESTS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/requests";
 
@@ -2057,28 +2060,31 @@ function renderResourcesPage() {
                         );
 
 
-                    const action =
-                        status === "ALLOCATED"
+                    const action = `
 
-                            ? `
+                        <button
+                            type="button"
+                            class="resource-history-btn"
+                            data-resource-id="${escapeHtml(resource.id)}"
+                        >
+                            History
+                        </button>
 
-                                <button
-                                    type="button"
-                                    class="release-resource-btn"
-                                    onclick="releaseResource('${escapeHtml(resource.id)}')"
-                                >
-                                    Release
-                                </button>
+                        ${
+                            status === "ALLOCATED"
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="release-resource-btn"
+                                        onclick="releaseResource('${escapeHtml(resource.id)}')"
+                                    >
+                                        Release
+                                    </button>
+                                  `
+                                : ""
+                        }
 
-                              `
-
-                            : `
-
-                                <span class="resource-action-muted">
-                                    —
-                                </span>
-
-                              `;
+                    `;
 
 
                     return `
@@ -2144,6 +2150,188 @@ function renderResourcesPage() {
 /* =========================================================
    RELEASE RESOURCE
 ========================================================= */
+
+function showResourceHistoryModal(resourceId, history) {
+
+    const modal =
+        document.getElementById(
+            "resourceHistoryModal"
+        );
+
+    const resourceIdElement =
+        document.getElementById(
+            "resourceHistoryResourceId"
+        );
+
+    const content =
+        document.getElementById(
+            "resourceHistoryContent"
+        );
+
+    if (!modal || !resourceIdElement || !content) {
+        return;
+    }
+
+    resourceIdElement.textContent =
+        resourceId;
+
+    if (!Array.isArray(history) || history.length === 0) {
+
+        content.innerHTML = `
+            <div class="resource-history-empty">
+                No status history available.
+            </div>
+        `;
+
+    } else {
+
+        content.innerHTML =
+            history.map(item => {
+
+                const previousStatus =
+                    item.previous_status ||
+                    "UNKNOWN";
+
+                const newStatus =
+                    item.new_status ||
+                    "UNKNOWN";
+
+                const reason =
+                    item.reason ||
+                    "STATUS_CHANGED";
+
+                const changedAt =
+                    item.changed_at
+                        ? new Date(
+                            item.changed_at
+                          ).toLocaleString()
+                        : "Unknown time";
+
+                const requestId =
+                    item.request_id ||
+                    "";
+
+                const allocationId =
+                    item.allocation_id ||
+                    "";
+
+                return `
+                    <div class="resource-history-item">
+
+                        <div class="resource-history-transition">
+
+                            <span class="history-status">
+                                ${escapeHtml(previousStatus)}
+                            </span>
+
+                            <span class="history-arrow">
+                                →
+                            </span>
+
+                            <span class="history-status">
+                                ${escapeHtml(newStatus)}
+                            </span>
+
+                        </div>
+
+                        <div class="resource-history-meta">
+
+                            <strong>
+                                ${escapeHtml(reason)}
+                            </strong>
+
+                            <span>
+                                ${escapeHtml(changedAt)}
+                            </span>
+
+                        </div>
+
+                        ${
+                            requestId
+                                ? `
+                                    <div class="resource-history-reference">
+                                        Request:
+                                        ${escapeHtml(requestId)}
+                                    </div>
+                                  `
+                                : ""
+                        }
+
+                        ${
+                            allocationId
+                                ? `
+                                    <div class="resource-history-reference">
+                                        Allocation:
+                                        ${escapeHtml(allocationId)}
+                                    </div>
+                                  `
+                                : ""
+                        }
+
+                    </div>
+                `;
+
+            }).join("");
+
+    }
+
+    modal.style.display = "flex";
+}
+
+
+function closeResourceHistoryModal() {
+
+    const modal =
+        document.getElementById(
+            "resourceHistoryModal"
+        );
+
+    if (modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+async function viewResourceHistory(resourceId) {
+
+    try {
+
+        const response =
+            await fetch(
+                `${RESOURCE_HISTORY_API_URL}?resource_id=${encodeURIComponent(resourceId)}`,
+                {
+                    method: "GET"
+                }
+            );
+
+        if (!response.ok) {
+            throw new Error(
+                `History request failed: ${response.status}`
+            );
+        }
+
+        const history =
+            await response.json();
+
+        showResourceHistoryModal(
+            resourceId,
+            history
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Resource history error:",
+            error
+        );
+
+        showToast(
+            "Unable to load resource history."
+        );
+
+    }
+}
+
 
 async function releaseResource(resourceId) {
 
@@ -2638,30 +2826,31 @@ function applyResourcePageFilters() {
                             );
 
 
-                        const action =
-                            status === "ALLOCATED"
+                        const action = `
 
-                                ? `
+                            <button
+                                type="button"
+                                class="resource-history-btn"
+                                data-resource-id="${escapeHtml(resource.id)}"
+                            >
+                                History
+                            </button>
 
-                                    <button
-                                        type="button"
-                                        class="release-resource-btn"
-                                        onclick="releaseResource('${escapeHtml(resource.id)}')"
-                                    >
-                                        Release
-                                    </button>
+                            ${
+                                status === "ALLOCATED"
+                                    ? `
+                                        <button
+                                            type="button"
+                                            class="release-resource-btn"
+                                            onclick="releaseResource('${escapeHtml(resource.id)}')"
+                                        >
+                                            Release
+                                        </button>
+                                      `
+                                    : ""
+                            }
 
-                                  `
-
-                                : `
-
-                                    <span
-                                        class="resource-action-muted"
-                                    >
-                                        —
-                                    </span>
-
-                                  `;
+                        `;
 
 
                         return `
@@ -3755,6 +3944,32 @@ const rows =
    EVENT LISTENERS
 ========================================================= */
 
+function resourceHistoryDelegatedClick(event) {
+
+    const button =
+        event.target.closest(
+            ".resource-history-btn"
+        );
+
+    if (!button) {
+        return;
+    }
+
+    const resourceId =
+        button.dataset.resourceId;
+
+    if (!resourceId) {
+        console.error(
+            "Resource history button has no resource ID."
+        );
+        return;
+    }
+
+    viewResourceHistory(resourceId);
+
+}
+
+
 function initializeEvents() {
 
 
@@ -4184,6 +4399,29 @@ async function initializeApp() {
     initializeEvents();
 
     initializeNotifications();
+
+
+    document.addEventListener(
+        "click",
+        resourceHistoryDelegatedClick
+    );
+
+
+
+    const resourceHistoryModalClose =
+        document.getElementById(
+            "resourceHistoryModalClose"
+        );
+
+    if (resourceHistoryModalClose) {
+
+        resourceHistoryModalClose.addEventListener(
+            "click",
+            closeResourceHistoryModal
+        );
+
+    }
+
 
     renderAllocations();
 

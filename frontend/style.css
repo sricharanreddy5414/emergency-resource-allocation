@@ -2786,3 +2786,106 @@ tbody tr:hover {
     color: #9aa4b2;
     font-size: 14px;
 }
+
+/* =========================================================
+   RESOURCE STATUS HISTORY
+========================================================= */
+
+.resource-history-btn {
+    border: 1px solid #c9d2df;
+    background: #f6f8fb;
+    color: #445268;
+    padding: 7px 12px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        transform 0.2s ease;
+}
+
+.resource-history-btn:hover {
+    background: #eef2f7;
+    border-color: #aeb9c8;
+    transform: translateY(-1px);
+}
+
+.resource-history-btn:active {
+    transform: translateY(0);
+}
+
+.resource-history-modal-card {
+    width: min(680px, calc(100vw - 32px));
+}
+
+.resource-history-content {
+    margin-top: 18px;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.resource-history-empty {
+    padding: 24px;
+    text-align: center;
+    color: #7b8798;
+    background: #f7f9fc;
+    border: 1px solid #e1e6ee;
+    border-radius: 10px;
+}
+
+.resource-history-item {
+    padding: 14px 0;
+    border-bottom: 1px solid #e7ebf0;
+}
+
+.resource-history-item:last-child {
+    border-bottom: 0;
+}
+
+.resource-history-transition {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    color: #243247;
+}
+
+.history-status {
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: #eef2f6;
+    color: #526174;
+}
+
+.history-arrow {
+    color: #8a95a5;
+}
+
+.resource-history-meta {
+    margin-top: 8px;
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+    color: #6c7788;
+}
+
+.resource-history-reference {
+    margin-top: 5px;
+    font-size: 12px;
+    color: #526174;
+}
+
+@media (max-width: 760px) {
+
+    .resource-history-modal-card {
+        width: calc(100vw - 24px);
+    }
+
+    .resource-history-transition {
+        flex-wrap: wrap;
+    }
+
+}

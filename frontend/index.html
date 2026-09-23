@@ -2036,6 +2036,50 @@
 
 
 <!-- =====================================================
+     RESOURCE HISTORY MODAL
+===================================================== -->
+
+<div
+    id="resourceHistoryModal"
+    class="modal-overlay"
+    style="display:none;"
+>
+
+    <div class="modal-card resource-history-modal-card">
+
+        <button
+            type="button"
+            id="resourceHistoryModalClose"
+            class="modal-close"
+            aria-label="Close resource history"
+        >
+            ×
+        </button>
+
+        <div class="modal-avatar">
+            H
+        </div>
+
+        <h2>Resource Status History</h2>
+
+        <p class="modal-subtitle">
+            Status changes recorded for
+            <strong id="resourceHistoryResourceId">Resource</strong>
+        </p>
+
+        <div
+            id="resourceHistoryContent"
+            class="resource-history-content"
+        >
+            Loading history...
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
      CREATE REQUEST MODAL
 ===================================================== -->
 
