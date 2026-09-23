@@ -3094,3 +3094,38 @@ tbody tr:hover {
     }
 
 }
+/* =========================================================
+   ADMIN DASHBOARD
+========================================================= */
+
+.admin-stats-grid {
+    margin-bottom: 22px;
+}
+
+.admin-overview-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+}
+
+.admin-overview-row:last-child {
+    border-bottom: none;
+}
+
+.admin-overview-row span {
+    color: var(--muted);
+}
+
+.admin-overview-row strong {
+    color: var(--primary);
+    font-size: 13px;
+}
+
+@media (max-width: 760px) {
+    .admin-stats-grid {
+        margin-bottom: 16px;
+    }
+}

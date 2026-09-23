@@ -559,7 +559,11 @@ function loadAuthenticatedUser() {
 
         phone:
             claims.phone_number ||
-            "Phone unavailable"
+            "Phone unavailable",
+
+        isAdmin:
+            Array.isArray(claims["cognito:groups"]) &&
+            claims["cognito:groups"].includes("Admin")
 
     };
 
@@ -628,6 +632,13 @@ function updateUserInterface() {
 
     }
 
+
+    if ($("adminNavItem")) {
+
+        $("adminNavItem").style.display =
+            currentUser.isAdmin ? "" : "none";
+
+    }
 
     if ($("modalAvatar")) {
 
@@ -974,6 +985,14 @@ function navigateTo(sectionId) {
     );
 
 
+    document.querySelectorAll(".dashboard-only-section").forEach(section => {
+
+        section.style.display =
+            sectionId === "dashboard" ? "" : "none";
+
+    });
+
+
     const target =
         $(sectionId);
 
@@ -1053,6 +1072,15 @@ function navigateTo(sectionId) {
     if (
         sectionId ===
         "allocations"
+    ) {
+
+        loadAllocations();
+
+    }
+
+    if (
+        sectionId ===
+        "admin"
     ) {
 
         loadAllocations();
@@ -1247,6 +1275,118 @@ function updateNotificationCount() {
 }
 
 
+function updateAdminDashboard() {
+
+    if (!currentUser || !currentUser.isAdmin) {
+        return;
+    }
+
+    const totalResources =
+        resources.length;
+
+    const availableResources =
+        resources.filter(resource =>
+            isResourceAvailable(resource)
+        ).length;
+
+    const totalRequests =
+        requests.length;
+
+    const activeAllocations =
+        allocations.filter(allocation =>
+            String(
+                allocation.status ??
+                allocation.Status ??
+                ""
+            ).toUpperCase() === "ALLOCATED"
+        ).length;
+
+    if ($("adminTotalResources")) {
+        $("adminTotalResources").textContent =
+            totalResources;
+    }
+
+    if ($("adminAvailableResources")) {
+        $("adminAvailableResources").textContent =
+            availableResources;
+    }
+
+    if ($("adminTotalRequests")) {
+        $("adminTotalRequests").textContent =
+            totalRequests;
+    }
+
+    if ($("adminActiveAllocations")) {
+        $("adminActiveAllocations").textContent =
+            activeAllocations;
+    }
+
+    const allocatedResources =
+        totalResources -
+        availableResources;
+
+    if ($("adminResourceOverview")) {
+        $("adminResourceOverview").innerHTML = `
+            <div class="admin-overview-row">
+                <span>Available</span>
+                <strong>${availableResources}</strong>
+            </div>
+
+            <div class="admin-overview-row">
+                <span>Allocated</span>
+                <strong>${allocatedResources}</strong>
+            </div>
+
+            <div class="admin-overview-row">
+                <span>Total</span>
+                <strong>${totalResources}</strong>
+            </div>
+        `;
+    }
+
+    const pendingRequests =
+        requests.filter(request =>
+            String(
+                request.status ??
+                request.Status ??
+                ""
+            ).toUpperCase() === "PENDING"
+        ).length;
+
+    const releasedRequests =
+        requests.filter(request =>
+            String(
+                request.status ??
+                request.Status ??
+                ""
+            ).toUpperCase() === "RELEASED"
+        ).length;
+
+    if ($("adminRequestOverview")) {
+        $("adminRequestOverview").innerHTML = `
+            <div class="admin-overview-row">
+                <span>Pending</span>
+                <strong>${pendingRequests}</strong>
+            </div>
+
+            <div class="admin-overview-row">
+                <span>Allocated</span>
+                <strong>${activeAllocations}</strong>
+            </div>
+
+            <div class="admin-overview-row">
+                <span>Released</span>
+                <strong>${releasedRequests}</strong>
+            </div>
+
+            <div class="admin-overview-row">
+                <span>Total</span>
+                <strong>${totalRequests}</strong>
+            </div>
+        `;
+    }
+}
+
 /* =========================================================
    LOAD RESOURCES FROM API GATEWAY
 ========================================================= */
@@ -1371,6 +1511,7 @@ async function loadResources() {
 
         updateDashboardStats();
         updateAnalytics();
+        updateAdminDashboard();
 
         renderResourcesTable();
 
@@ -1396,6 +1537,7 @@ async function loadResources() {
 
         updateDashboardStats();
         updateAnalytics();
+        updateAdminDashboard();
 
         renderResourcesTable();
 
@@ -1474,6 +1616,7 @@ async function loadRequests() {
 
 
         updateAnalytics();
+        updateAdminDashboard();
 
         renderRequests();
 
@@ -3690,7 +3833,7 @@ async function loadAllocations() {
 
     const table = $("allocationsTable");
 
-    if (!table) return;
+    if (table) {
 
     table.innerHTML = `
         <tr>
@@ -3699,6 +3842,7 @@ async function loadAllocations() {
             </td>
         </tr>
     `;
+    }
 
     try {
 
@@ -3756,6 +3900,7 @@ async function loadAllocations() {
 
         renderAllocations();
         updateAnalytics();
+        updateAdminDashboard();
 
     } catch (error) {
 

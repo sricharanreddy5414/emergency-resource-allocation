@@ -77,6 +77,25 @@
 
 
         <button
+            class="nav-item admin-only"
+            data-section="admin"
+            type="button"
+            id="adminNavItem"
+            style="display: none;"
+        >
+
+            <span>
+                🛡️
+            </span>
+
+            <span>
+                Admin Dashboard
+            </span>
+
+        </button>
+
+
+        <button
             class="nav-item"
             data-section="resources"
             type="button"
@@ -979,7 +998,7 @@
          ADVANCED ANALYTICS
     ====================================================== -->
 
-    <section class="analytics-section">
+    <section class="analytics-section dashboard-only-section">
 
         <div class="analytics-header">
 
@@ -1095,6 +1114,171 @@
         </div>
 
     </section>
+<!-- =====================================================
+     ADMIN DASHBOARD
+====================================================== -->
+
+<section
+    class="page-section admin-page-section"
+    id="admin"
+>
+
+
+    <div class="section-hero">
+
+        <div>
+
+            <span class="panel-label">
+                ADMINISTRATION
+            </span>
+
+            <h2>
+                Admin Dashboard
+            </h2>
+
+            <p>
+                Administrative overview of emergency resource operations.
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="stats-grid admin-stats-grid">
+
+
+        <div class="stat-card">
+
+            <span>
+                Total Resources
+            </span>
+
+            <h2 id="adminTotalResources">
+                0
+            </h2>
+
+            <p>
+                Registered resources
+            </p>
+
+        </div>
+
+
+        <div class="stat-card">
+
+            <span>
+                Available Resources
+            </span>
+
+            <h2 id="adminAvailableResources">
+                0
+            </h2>
+
+            <p>
+                Ready for allocation
+            </p>
+
+        </div>
+
+
+        <div class="stat-card">
+
+            <span>
+                Total Requests
+            </span>
+
+            <h2 id="adminTotalRequests">
+                0
+            </h2>
+
+            <p>
+                Emergency requests
+            </p>
+
+        </div>
+
+
+        <div class="stat-card">
+
+            <span>
+                Active Allocations
+            </span>
+
+            <h2 id="adminActiveAllocations">
+                0
+            </h2>
+
+            <p>
+                Currently allocated
+            </p>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="content-grid">
+
+
+        <div class="panel">
+
+            <div class="panel-header">
+
+                <div>
+
+                    <span class="panel-label">
+                        RESOURCE OPERATIONS
+                    </span>
+
+                    <h3>
+                        Resource Overview
+                    </h3>
+
+                </div>
+
+            </div>
+
+
+            <div id="adminResourceOverview">
+                Loading resource information...
+            </div>
+
+        </div>
+
+
+        <div class="panel">
+
+            <div class="panel-header">
+
+                <div>
+
+                    <span class="panel-label">
+                        REQUEST OPERATIONS
+                    </span>
+
+                    <h3>
+                        Request Overview
+                    </h3>
+
+                </div>
+
+            </div>
+
+
+            <div id="adminRequestOverview">
+                Loading request information...
+            </div>
+
+        </div>
+
+
+    </div>
+
+
+</section>
+
 <!-- =====================================================
      RESOURCES PAGE
 ====================================================== -->
