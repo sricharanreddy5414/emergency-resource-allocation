@@ -3524,6 +3524,107 @@ function renderAllocations() {
 
 
 /* =========================================================
+   EXPORT REQUESTS
+========================================================= */
+
+function exportRequests() {
+
+    if (
+        requests.length === 0
+    ) {
+
+        showToast(
+            "No requests available to export."
+        );
+
+        return;
+
+    }
+
+    const header =
+        "Request ID,Resource Type,Location,Priority,Status";
+
+    const rows =
+        requests.map(
+            item => {
+
+                return [
+                    item.request_id ?? "",
+                    item.resource_type ?? item.ResourceType ?? "",
+                    item.location ?? item.Location ?? "",
+                    item.priority ?? item.Priority ?? "",
+                    item.status ?? item.Status ?? ""
+                ]
+
+                .map(
+                    value =>
+                        `"${String(value)
+                            .replaceAll(
+                                '"',
+                                '""'
+                            )}"`
+                )
+
+                .join(",");
+
+            }
+        );
+
+    const csv =
+        [
+            header,
+            ...rows
+        ]
+        .join("\n");
+
+    const blob =
+        new Blob(
+            [csv],
+            {
+                type:
+                    "text/csv;charset=utf-8;"
+            }
+        );
+
+    const url =
+        URL.createObjectURL(
+            blob
+        );
+
+    const link =
+        document.createElement(
+            "a"
+        );
+
+    link.href =
+        url;
+
+    link.download =
+        "erap-request-history.csv";
+
+    document.body.appendChild(
+        link
+    );
+
+    link.click();
+
+    link.remove();
+
+    URL.revokeObjectURL(
+        url
+    );
+
+    showToast(
+        "Request report exported."
+    );
+
+}
+
+
+/* =========================================================
+   EXPORT ALLOCATIONS
+========================================================= */
+/* =========================================================
    EXPORT ALLOCATIONS
 ========================================================= */
 
@@ -3855,6 +3956,8 @@ function initializeEvents() {
             "input",
             renderAllocations
         );
+    $("exportRequestsBtn")?.addEventListener("click", exportRequests);
+
     /* Requests search + filter + refresh */
 
 initializeRequestControls();
@@ -4111,6 +4214,10 @@ document.addEventListener(
     "DOMContentLoaded",
     initializeApp
 );
+
+
+
+
 
 
 
