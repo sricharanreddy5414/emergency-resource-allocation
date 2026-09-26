@@ -3938,7 +3938,7 @@ function renderAllocations() {
 
             <tr>
 
-                <td colspan="7">
+                <td colspan="8">
 
                     No allocation records captured
                     in this browser session.
@@ -3965,66 +3965,66 @@ function renderAllocations() {
 
 
     const filtered =
-    allocations.filter(
-        item => {
+        allocations.filter(
+            item => {
 
-            return (
+                return (
 
-                !query ||
+                    !query ||
 
-                String(
-                    item.allocation_id ||
-                    ""
-                )
-                    .toLowerCase()
-                    .includes(query) ||
+                    String(
+                        item.allocation_id ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query) ||
 
-                String(
-                    item.request_id ||
-                    ""
-                )
-                    .toLowerCase()
-                    .includes(query) ||
+                    String(
+                        item.request_id ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query) ||
 
-                String(
-                    item.resource_id ||
-                    ""
-                )
-                    .toLowerCase()
-                    .includes(query) ||
+                    String(
+                        item.resource_id ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query) ||
 
-                String(
-                    item.resource_type ||
-                    ""
-                )
-                    .toLowerCase()
-                    .includes(query) ||
+                    String(
+                        item.resource_type ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query) ||
 
-                String(
-                    item.location ||
-                    ""
-                )
-                    .toLowerCase()
-                    .includes(query) ||
+                    String(
+                        item.location ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query) ||
 
-                String(
-                    item.priority ??
-                    ""
-                )
-                    .toLowerCase()
-                    .includes(query) ||
+                    String(
+                        item.priority ??
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query) ||
 
-                String(
-                    item.status ||
-                    ""
-                )
-                    .toLowerCase()
-                    .includes(query)
+                    String(
+                        item.status ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
 
-            );
+                );
 
-        }
-    );
+            }
+        );
 
 
     table.innerHTML =
@@ -4034,7 +4034,7 @@ function renderAllocations() {
 
                 <tr>
 
-                    <td colspan="7">
+                    <td colspan="8">
 
                         No matching allocations found.
 
@@ -4048,75 +4048,107 @@ function renderAllocations() {
 
               filtered
                 .map(
-                    item => `
+                    item => {
 
-                        <tr>
+                        const status =
+                            String(
+                                item.status ||
+                                "ALLOCATED"
+                            ).toUpperCase();
 
-    <td>
-        ${escapeHtml(
-            item.allocation_id ||
-            "-"
-        )}
-    </td>
+                        const action =
+                            status === "ALLOCATED"
 
-    <td>
-        ${escapeHtml(
-            item.request_id ||
-            "-"
-        )}
-    </td>
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="release-resource-btn"
+                                        onclick="releaseResource('${escapeHtml(
+                                            item.resource_id ||
+                                            ""
+                                        )}')"
+                                    >
+                                        Release
+                                    </button>
+                                  `
 
-    <td>
-        ${escapeHtml(
-            item.resource_id ||
-            "-"
-        )}
-    </td>
+                                : "—";
 
-    <td>
-        ${escapeHtml(
-            item.resource_type ||
-            "-"
-        )}
-    </td>
+                        return `
 
-    <td>
-        ${escapeHtml(
-            item.location ||
-            "-"
-        )}
-    </td>
+                            <tr>
 
-    <td>
-        ${escapeHtml(
-            item.priority ??
-            "-"
-        )}
-    </td>
+                                <td>
+                                    ${escapeHtml(
+                                        item.allocation_id ||
+                                        "-"
+                                    )}
+                                </td>
 
-    <td>
+                                <td>
+                                    ${escapeHtml(
+                                        item.request_id ||
+                                        "-"
+                                    )}
+                                </td>
 
-        <span
-            class="status-badge allocated"
-        >
+                                <td>
+                                    ${escapeHtml(
+                                        item.resource_id ||
+                                        "-"
+                                    )}
+                                </td>
 
-            âœ“ ${escapeHtml(
-                item.status ||
-                "ALLOCATED"
-            )}
+                                <td>
+                                    ${escapeHtml(
+                                        item.resource_type ||
+                                        "-"
+                                    )}
+                                </td>
 
-        </span>
+                                <td>
+                                    ${escapeHtml(
+                                        item.location ||
+                                        "-"
+                                    )}
+                                </td>
 
-    </td>
+                                <td>
+                                    ${escapeHtml(
+                                        item.priority ??
+                                        "-"
+                                    )}
+                                </td>
 
-</tr>
+                                <td>
 
-                    `
+                                    <span
+                                        class="status-badge ${
+                                            status === "RELEASED"
+                                                ? "released"
+                                                : "allocated"
+                                        }"
+                                    >
+
+                                        ? ${escapeHtml(status)}
+
+                                    </span>
+
+                                </td>
+
+                                <td>
+                                    ${action}
+                                </td>
+
+                            </tr>
+
+                        `;
+
+                    }
                 )
                 .join("");
 
 }
-
 
 /* =========================================================
    EXPORT REQUESTS
@@ -4859,3 +4891,4 @@ document.addEventListener(
     "DOMContentLoaded",
     initializeApp
 );
+
