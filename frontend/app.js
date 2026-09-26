@@ -4072,7 +4072,7 @@ function renderAllocations() {
                                     </button>
                                   `
 
-                                : "—";
+                                : "-";
 
                         return `
 
@@ -4130,7 +4130,7 @@ function renderAllocations() {
                                         }"
                                     >
 
-                                        ? ${escapeHtml(status)}
+                                        ${escapeHtml(status)}
 
                                     </span>
 
@@ -4891,4 +4891,5 @@ document.addEventListener(
     "DOMContentLoaded",
     initializeApp
 );
+
 
