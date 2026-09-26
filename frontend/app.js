@@ -1411,7 +1411,12 @@ async function loadResources() {
                 RESOURCES_API_URL,
                 {
                     method:
-                        "GET"
+                        "GET",
+
+                    headers: {
+                        "Authorization":
+                            "Bearer " + getIdToken()
+                    }
                 }
             );
 
@@ -2759,8 +2764,8 @@ async function releaseResource(resourceId) {
                 {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json"
-                    },
+                        "Content-Type": "application/json",},
+
                     body: JSON.stringify({
                         resource_id: resourceId
                     })
@@ -3412,7 +3417,10 @@ async function submitAllocation(
                     headers: {
 
                         "Content-Type":
-                            "application/json"
+                            "application/json",
+
+                        "Authorization":
+                            "Bearer " + getIdToken()
 
                     },
 
@@ -3743,9 +3751,14 @@ async function registerResource() {
             {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
+                    "Content-Type": "application/json",
+
+                        "Authorization":
+                            "Bearer " + getIdToken()
+
+                    },
+
+                    body: JSON.stringify({
                     resource_id: id,
                     Type: type,
                     Location: location,
