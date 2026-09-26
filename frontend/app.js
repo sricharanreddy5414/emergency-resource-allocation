@@ -2764,7 +2764,9 @@ async function releaseResource(resourceId) {
                 {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json",},
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + getIdToken(),
+                    },
 
                     body: JSON.stringify({
                         resource_id: resourceId
