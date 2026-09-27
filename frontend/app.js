@@ -92,6 +92,26 @@ function getIdToken() {
 }
 
 
+async function waitForIdToken(maxWait = 5000) {
+
+    const start = Date.now();
+
+    while (!getIdToken()) {
+
+        if (Date.now() - start >= maxWait) {
+            return null;
+        }
+
+        await new Promise(
+            resolve => setTimeout(resolve, 100)
+        );
+
+    }
+
+    return getIdToken();
+
+}
+
 function saveTokens(tokens) {
 
     if (tokens.access_token) {
@@ -1582,11 +1602,22 @@ async function loadRequests() {
 
     try {
 
+        const idToken = await waitForIdToken();
+
+        if (!idToken) {
+
+            throw new Error(
+                "Cognito ID token is not available"
+            );
+
+        }
+
+
         const response = await fetch(REQUESTS_API_URL, {
             method: "GET",
             headers: {
                 "Accept": "application/json",
-                "Authorization": "Bearer " + getIdToken()
+                "Authorization": "Bearer " + idToken
             }
         });
 
