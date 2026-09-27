@@ -13,7 +13,7 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
           "token.actions.githubusercontent.com:repository": "sricharanreddy5414/emergency-resource-allocation",
           "token.actions.githubusercontent.com:ref": "refs/heads/main",
-          "token.actions.githubusercontent.com:sub": "repo:sricharanreddy5414/emergency-resource-allocation:environment:development",
+          "token.actions.githubusercontent.com:sub": "repo:sricharanreddy5414@253192966/emergency-resource-allocation@1374188159:environment:development",
           "token.actions.githubusercontent.com:job_workflow_ref": "sricharanreddy5414/emergency-resource-allocation/.github/workflows/deploy-backend.yml@refs/heads/main"
         }
       }

@@ -28,7 +28,7 @@ Both trust policies require all of the following:
 - audience `sts.amazonaws.com`
 - repository `sricharanreddy5414/emergency-resource-allocation`
 - git ref `refs/heads/main`
-- the environment subject for that role
+- the environment subject for that role. This repository uses GitHub's immutable subject, so the value starts with `repo:sricharanreddy5414@253192966/emergency-resource-allocation@1374188159`
 - the workflow file on `main`
 
 Another repository, a pull request, or a different workflow file cannot assume the role. The policy files are `infra/github-deploy-trust.json` and `infra/github-production-trust.json`.

@@ -44,7 +44,7 @@ def main():
         if REPO not in trust or "repo:*" in trust or '"*"' in trust:
             raise SystemExit(f"{name} is not limited to this repository")
     deploy_trust = (ROOT / "infra" / "github-deploy-trust.json").read_text(encoding="utf-8")
-    if "environment:development" not in deploy_trust:
+    if "emergency-resource-allocation@1374188159:environment:development" not in deploy_trust:
         raise SystemExit("deploy trust is not limited to the development environment")
     print("workflow check passed")
     return 0
