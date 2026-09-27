@@ -9,7 +9,7 @@ ALLOWED_METHODS = "GET,POST,OPTIONS"
 
 def api_response(status_code, body):
     payload = error_body(status_code, body)
-    if status_code >= 400 and isinstance(payload, dict):
+    if isinstance(payload, dict):
         log_result(status_code, error_code=payload.get("error", {}).get("code", ""))
     return {
         "statusCode": status_code,

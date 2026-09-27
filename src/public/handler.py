@@ -20,7 +20,7 @@ MAX_LIMIT = 25
 
 def response(status_code, body):
     payload = error_body(status_code, body)
-    if status_code >= 400 and isinstance(payload, dict):
+    if isinstance(payload, dict):
         log_result(status_code, operation="public-discovery", error_code=payload.get("error", {}).get("code", ""))
     return {
         "statusCode": status_code,

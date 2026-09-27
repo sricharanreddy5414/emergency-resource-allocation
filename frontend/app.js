@@ -58,6 +58,7 @@ const COGNITO_SCOPES =
 ========================================================= */
 
 let resources = [];
+let editingResourceId = "";
 
 let allocations = [];
 
@@ -191,6 +192,20 @@ function clearTokens() {
     sessionStorage.removeItem(
         "erap_refresh_token"
     );
+
+    sessionStorage.removeItem(
+        "erap_selected_organization_id"
+    );
+
+    Object.keys(sessionStorage).forEach(key => {
+
+        if (key.startsWith("erap_location_")) {
+
+            sessionStorage.removeItem(key);
+
+        }
+
+    });
 
 }
 
@@ -2068,7 +2083,22 @@ function normalizeResources() {
                         resource.location_id || "",
 
                     attributes:
-                        resource.attributes || {}
+                        resource.attributes || {},
+
+                    name:
+                        resource.name || "",
+
+                    public_name:
+                        resource.public_name || "",
+
+                    public_description:
+                        resource.public_description || "",
+
+                    public_contact:
+                        resource.public_contact || "",
+
+                    show_availability:
+                        resource.show_availability === true
 
                 };
 
@@ -2436,6 +2466,62 @@ function getResourceStatus(
    RESOURCE TABLE
 ========================================================= */
 
+function canOperateResources() {
+
+    const role = currentUser.organization?.role;
+
+    return role === "OWNER" || role === "ADMIN" || role === "OPERATOR";
+
+}
+
+
+function resourceRowActions(resource) {
+
+    const status = getResourceStatus(resource);
+
+    const edit = canOperateResources()
+        ? `
+            <button
+                type="button"
+                class="resource-edit-btn"
+                data-resource-id="${escapeHtml(resource.id)}"
+            >
+                Edit
+            </button>
+          `
+        : "";
+
+    const release = status === "ALLOCATED"
+        ? `
+            <button
+                type="button"
+                class="release-resource-btn"
+                onclick="releaseResource('${escapeHtml(resource.id)}')"
+            >
+                Release
+            </button>
+          `
+        : "";
+
+    return `
+
+        <button
+            type="button"
+            class="resource-history-btn"
+            data-resource-id="${escapeHtml(resource.id)}"
+        >
+            History
+        </button>
+
+        ${edit}
+
+        ${release}
+
+    `;
+
+}
+
+
 function renderResourcesTable() {
 
     const table =
@@ -2580,31 +2666,7 @@ function renderResourcesPage() {
                         );
 
 
-                    const action = `
-
-                        <button
-                            type="button"
-                            class="resource-history-btn"
-                            data-resource-id="${escapeHtml(resource.id)}"
-                        >
-                            History
-                        </button>
-
-                        ${
-                            status === "ALLOCATED"
-                                ? `
-                                    <button
-                                        type="button"
-                                        class="release-resource-btn"
-                                        onclick="releaseResource('${escapeHtml(resource.id)}')"
-                                    >
-                                        Release
-                                    </button>
-                                  `
-                                : ""
-                        }
-
-                    `;
+                    const action = resourceRowActions(resource);
 
 
                     return `
@@ -3360,31 +3422,7 @@ function applyResourcePageFilters() {
                             );
 
 
-                        const action = `
-
-                            <button
-                                type="button"
-                                class="resource-history-btn"
-                                data-resource-id="${escapeHtml(resource.id)}"
-                            >
-                                History
-                            </button>
-
-                            ${
-                                status === "ALLOCATED"
-                                    ? `
-                                        <button
-                                            type="button"
-                                            class="release-resource-btn"
-                                            onclick="releaseResource('${escapeHtml(resource.id)}')"
-                                        >
-                                            Release
-                                        </button>
-                                      `
-                                    : ""
-                            }
-
-                        `;
+                        const action = resourceRowActions(resource);
 
 
                         return `
@@ -3845,6 +3883,39 @@ function openEditProfile() {
    REGISTER RESOURCE MODAL
 ========================================================= */
 
+function prepareNewResourceForm() {
+
+    editingResourceId = "";
+
+    if ($("registerModalTitle")) {
+        $("registerModalTitle").textContent = "Register Resource";
+    }
+
+    if ($("newResourceId")) {
+        $("newResourceId").value = "";
+        $("newResourceId").readOnly = false;
+    }
+
+    ["newResourceName", "newResourceType", "newResourceLocation", "newResourcePublicName", "newResourcePublicDescription", "newResourcePublicContact"].forEach(id => {
+        if ($(id)) {
+            $(id).value = "";
+        }
+    });
+
+    if ($("newResourceVisibility")) {
+        $("newResourceVisibility").value = "PRIVATE";
+    }
+
+    if ($("newResourceShowAvailability")) {
+        $("newResourceShowAvailability").checked = false;
+    }
+
+    showSelectedTypeAttributes();
+    openRegisterModal();
+
+}
+
+
 function openRegisterModal() {
 
     const modal =
@@ -3897,10 +3968,11 @@ async function registerResource() {
     }
 
     try {
+        const editing = Boolean(editingResourceId);
         const response = await fetch(
             RESOURCES_API_URL,
             {
-                method: "POST",
+                method: editing ? "PUT" : "POST",
                 headers: {
                     "Content-Type": "application/json",
 
@@ -3910,7 +3982,7 @@ async function registerResource() {
                     },
 
                     body: JSON.stringify({
-                    resource_id: id,
+                    resource_id: editing ? editingResourceId : id,
                     name: $("newResourceName")?.value.trim() || "",
                     resource_type_id: type,
                     location_id: location,
@@ -3921,7 +3993,7 @@ async function registerResource() {
                     public_contact: $("newResourcePublicContact")?.value.trim() || "",
                     show_availability: $("newResourceShowAvailability")?.checked === true,
                     attributes: readAttributeValues("resourceAttributeFields"),
-                    Available: true
+                    ...(editing ? {} : { Available: true })
                 })
             }
         );
@@ -3931,25 +4003,23 @@ async function registerResource() {
         if (!response.ok) {
             showToast(
                 data.message ||
-                "Failed to register resource."
+                (editing ? "Failed to update resource." : "Failed to register resource.")
             );
             return;
         }
 
-        showToast("Resource registered successfully.");
+        showToast(editing ? "Resource updated." : "Resource registered successfully.");
 
         addNotification(
-            "Resource registered",
-            `${id} was added to the resource inventory.`
+            editing ? "Resource updated" : "Resource registered",
+            `${id} was ${editing ? "updated" : "added to the resource inventory"}.`
         );
 
-        const modal = $("registerResourceModal");
-
-        if (modal) {
-            modal.classList.remove("open");
-        }
+        editingResourceId = "";
+        closeRegisterModal();
 
         $("newResourceId").value = "";
+        $("newResourceId").readOnly = false;
         $("newResourceType").value = "";
         $("newResourceLocation").value = "";
 
@@ -4586,6 +4656,79 @@ function resourceHistoryDelegatedClick(event) {
 }
 
 
+function resourceEditDelegatedClick(event) {
+
+    const button = event.target.closest(".resource-edit-btn");
+
+    if (!button) {
+        return;
+    }
+
+    const resourceId = button.dataset.resourceId;
+
+    if (!resourceId) {
+        return;
+    }
+
+    const resource = resources.find(item => item.id === resourceId);
+
+    if (!resource || !canOperateResources()) {
+        showToast("You cannot edit this resource.");
+        return;
+    }
+
+    editingResourceId = resource.id;
+
+    if ($("registerModalTitle")) {
+        $("registerModalTitle").textContent = "Edit Resource";
+    }
+
+    $("newResourceId").value = resource.id;
+    $("newResourceId").readOnly = true;
+
+    if ($("newResourceName")) {
+        $("newResourceName").value = resource.name || "";
+    }
+
+    if ($("newResourceType")) {
+        $("newResourceType").value = resource.resource_type_id || "";
+    }
+
+    if ($("newResourceLocation")) {
+        $("newResourceLocation").value = resource.location_id || "";
+    }
+
+    if ($("newResourceVisibility")) {
+        $("newResourceVisibility").value = resource.visibility || "PRIVATE";
+    }
+
+    if ($("newResourcePublicName")) {
+        $("newResourcePublicName").value = resource.public_name || "";
+    }
+
+    if ($("newResourcePublicDescription")) {
+        $("newResourcePublicDescription").value = resource.public_description || "";
+    }
+
+    if ($("newResourcePublicContact")) {
+        $("newResourcePublicContact").value = resource.public_contact || "";
+    }
+
+    if ($("newResourceShowAvailability")) {
+        $("newResourceShowAvailability").checked = resource.show_availability === true;
+    }
+
+    renderAttributeFields(
+        "resourceAttributeFields",
+        resourceTypes.find(item => item.resource_type_id === resource.resource_type_id)?.attributes_schema,
+        resource.attributes || {}
+    );
+
+    openRegisterModal();
+
+}
+
+
 function initializeEvents() {
 
 
@@ -4674,7 +4817,7 @@ function initializeEvents() {
     $("registerResourceBtn")
         ?.addEventListener(
             "click",
-            openRegisterModal
+            prepareNewResourceForm
         );
 
 
@@ -6291,6 +6434,11 @@ async function initializeApp() {
     document.addEventListener(
         "click",
         resourceHistoryDelegatedClick
+    );
+
+    document.addEventListener(
+        "click",
+        resourceEditDelegatedClick
     );
 
     document.addEventListener("click", event => {

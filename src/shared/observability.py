@@ -87,6 +87,9 @@ def error_body(status_code, body):
 
 def log_result(status_code, operation="", organization_id="", entity_type="", entity_id="", error_code=""):
     meta = _meta.get() or {}
+    route = str(meta.get("route") or "")
+    if route.startswith("OPTIONS"):
+        return
     started = meta.get("started")
     duration_ms = int((time.monotonic() - started) * 1000) if started else 0
     print(
@@ -94,8 +97,8 @@ def log_result(status_code, operation="", organization_id="", entity_type="", en
             {
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "request_id": meta.get("request_id", ""),
-                "route": meta.get("route", ""),
-                "operation": operation,
+                "route": route,
+                "operation": operation or route,
                 "result": status_code,
                 "duration_ms": duration_ms,
                 "organization_id": organization_id or "",
