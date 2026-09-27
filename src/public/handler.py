@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 
 from access import AccessError
 from common import ALLOWED_ORIGIN
+from observability import begin_request, error_body, log_result
 from pages import decode_token, encode_token
 from visibility import token
 
@@ -18,6 +19,9 @@ MAX_LIMIT = 25
 
 
 def response(status_code, body):
+    payload = error_body(status_code, body)
+    if status_code >= 400 and isinstance(payload, dict):
+        log_result(status_code, operation="public-discovery", error_code=payload.get("error", {}).get("code", ""))
     return {
         "statusCode": status_code,
         "headers": {
@@ -26,7 +30,7 @@ def response(status_code, body):
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "GET,OPTIONS",
         },
-        "body": json.dumps(body, default=str),
+        "body": json.dumps(payload, default=str),
     }
 
 
@@ -57,6 +61,7 @@ def public_view(item):
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     method = (event.get("httpMethod") or "GET").upper()
 
     if method == "OPTIONS":

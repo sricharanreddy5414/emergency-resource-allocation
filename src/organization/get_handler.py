@@ -1,8 +1,10 @@
 from common import api_response, get_user_sub
+from observability import begin_request
 from membership import list_memberships
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     if event.get("httpMethod") == "OPTIONS":
         return api_response(200, {"message": "OK"})
 

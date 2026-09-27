@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
@@ -16,11 +17,15 @@ from access import (
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
+from observability import begin_request, error_body, load_object, log_result
 from pages import decode_token, encode_token
 from visibility import PRIVATE_INDEX_ATTRIBUTES, publication_fields
 
 
 def response(status_code, body):
+    payload = error_body(status_code, body)
+    if status_code >= 400 and isinstance(payload, dict):
+        log_result(status_code, operation="resource", error_code=payload.get("error", {}).get("code", ""))
     return {
         "statusCode": status_code,
         "headers": {
@@ -29,25 +34,12 @@ def response(status_code, body):
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
         },
-        "body": json.dumps(body, default=str),
+        "body": json.dumps(payload, default=str),
     }
 
 
 def parse_body(event):
-    body = event.get("body") or "{}"
-
-    if event.get("isBase64Encoded") and isinstance(body, str):
-        import base64
-
-        body = base64.b64decode(body).decode("utf-8")
-
-    if isinstance(body, str):
-        body = json.loads(body)
-
-    if not isinstance(body, dict):
-        raise ValueError("JSON body must be an object")
-
-    return body
+    return load_object(event.get("body") or "{}", event.get("isBase64Encoded"))
 
 
 def resources_table():
@@ -112,6 +104,7 @@ def is_available(value):
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     method = (
         event.get("httpMethod")
         or event.get("requestContext", {}).get("http", {}).get("method")
@@ -266,6 +259,9 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
 
     if not resource_id or not location_id:
         return response(400, {"message": "resource_id and location_id are required"})
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", resource_id):
+        return response(400, {"message": "resource_id is invalid"})
 
     if len(resource_id) > 80 or len(name) > 80:
         return response(400, {"message": "A resource field is too long"})

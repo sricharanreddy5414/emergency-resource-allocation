@@ -14,6 +14,7 @@ from attributes import validate_matching_config, validate_schema
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, api_response, parse_json_body
 from pages import decode_token, encode_token
+from observability import begin_request
 
 import json
 
@@ -170,6 +171,7 @@ def load_type(kind, organization_id, type_id):
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     method = (event.get("httpMethod") or "GET").upper()
     path = event.get("path") or ""
     kind = collection_from_path(path)

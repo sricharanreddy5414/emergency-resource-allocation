@@ -1705,10 +1705,6 @@ async function loadRequests() {
 
         const data = await response.json();
 
-
-        console.log("Live requests received:", data);
-
-
         if (Array.isArray(data)) {
 
             requests = data;
@@ -4050,11 +4046,6 @@ async function loadAllocations() {
         }
 
         const data = await response.json();
-
-        console.log(
-            "Live allocations received:",
-            data
-        );
 
         let parsed = data;
 

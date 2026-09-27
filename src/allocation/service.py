@@ -16,9 +16,13 @@ from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 from matching import choose_resource, explain_match, sort_requests_by_priority
+from observability import begin_request, error_body, load_object, log_result
 
 
 def response(status_code, body):
+    payload = error_body(status_code, body)
+    if status_code >= 400 and isinstance(payload, dict):
+        log_result(status_code, operation="allocation", error_code=payload.get("error", {}).get("code", ""))
     return {
         "statusCode": status_code,
         "headers": {
@@ -27,7 +31,7 @@ def response(status_code, body):
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         },
-        "body": json.dumps(body, default=str),
+        "body": json.dumps(payload, default=str),
     }
 
 
@@ -86,18 +90,11 @@ def request_types_table():
 
 
 def parse_body(event):
-    body = event.get("body", {})
-
-    if isinstance(body, str):
-        body = json.loads(body)
-
-    if not isinstance(body, dict):
-        raise ValueError("Invalid request format")
-
-    return body
+    return load_object(event.get("body") or {}, event.get("isBase64Encoded"))
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     method = (
         event.get("httpMethod")
         or event.get("requestContext", {}).get("http", {}).get("method")

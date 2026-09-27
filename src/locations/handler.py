@@ -13,6 +13,7 @@ from access import (
 )
 from audit import build_audit_event, record_audit
 from common import api_response, parse_json_body
+from observability import begin_request
 
 
 def locations_table():
@@ -90,6 +91,7 @@ def path_location_id(event):
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     method = (event.get("httpMethod") or "").upper()
 
     if method == "OPTIONS":

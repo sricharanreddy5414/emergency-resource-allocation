@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
@@ -7,9 +8,13 @@ from access import REQUEST_ROLES, AccessError, authorize, require_location, requ
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
+from observability import begin_request, error_body, load_object, log_result
 
 
 def response(status_code, body):
+    payload = error_body(status_code, body)
+    if status_code >= 400 and isinstance(payload, dict):
+        log_result(status_code, operation="request", error_code=payload.get("error", {}).get("code", ""))
     return {
         "statusCode": status_code,
         "headers": {
@@ -18,7 +23,7 @@ def response(status_code, body):
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "OPTIONS,POST,PUT",
         },
-        "body": json.dumps(body, default=str),
+        "body": json.dumps(payload, default=str),
     }
 
 
@@ -106,6 +111,7 @@ def active_request_type(organization_id, request_type_id):
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     method = (
         event.get("httpMethod")
         or event.get("requestContext", {}).get("http", {}).get("method")
@@ -119,13 +125,7 @@ def lambda_handler(event, context):
         return response(405, {"message": "Method not allowed"})
 
     try:
-        body = event.get("body") or {}
-
-        if isinstance(body, str):
-            body = json.loads(body)
-
-        if not isinstance(body, dict):
-            return response(400, {"message": "Request body must be a JSON object"})
+        body = load_object(event.get("body") or {}, event.get("isBase64Encoded"))
 
         _user_sub, membership = authorize(event, body, allowed_roles=REQUEST_ROLES)
         organization_id = membership["organization_id"]
@@ -150,6 +150,9 @@ def lambda_handler(event, context):
 
         if not request_id:
             return response(400, {"message": "Request ID is required"})
+
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", request_id):
+            return response(400, {"message": "Request ID is invalid"})
 
         if not resource_type:
             return response(400, {"message": "Resource type is required"})
@@ -198,6 +201,8 @@ def lambda_handler(event, context):
         return response(error.status_code, {"message": error.message})
     except json.JSONDecodeError:
         return response(400, {"message": "Invalid JSON request body"})
+    except ValueError as error:
+        return response(400, {"message": str(error)})
     except ClientError as error:
         code = error.response.get("Error", {}).get("Code")
         print("Request error:", code)

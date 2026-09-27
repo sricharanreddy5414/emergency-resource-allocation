@@ -6,6 +6,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from audit import build_audit_event, record_audit
+from observability import begin_request, log_result
 
 
 RELEASE_AFTER_MINUTES = 30
@@ -200,6 +201,7 @@ def release_allocation(store, allocation, now):
 
 
 def lambda_handler(event, context, store=None, now=None):
+    begin_request(event or {})
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(minutes=RELEASE_AFTER_MINUTES)
     store = store or tables()
@@ -219,6 +221,7 @@ def lambda_handler(event, context, store=None, now=None):
                 }
             )
 
+    log_result(200, operation="allocation.auto_release", entity_type="allocation", entity_id=str(len(released)))
     return response(
         200,
         {

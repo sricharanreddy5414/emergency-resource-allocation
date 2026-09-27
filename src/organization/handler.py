@@ -11,6 +11,7 @@ from common import (
     get_user_sub,
     parse_json_body,
 )
+from observability import begin_request
 from membership import members_table, organizations_table
 from audit import build_audit_event, record_audit
 
@@ -68,6 +69,7 @@ def organization_payload(organization_id, name, created_at, status="ACTIVE"):
 
 
 def lambda_handler(event, context):
+    begin_request(event)
     if event.get("httpMethod") == "OPTIONS":
         return api_response(200, {"message": "OK"})
 
