@@ -67,6 +67,7 @@ let tenantContextLoading = false;
 let resourceTypes = [];
 
 let requestTypes = [];
+let requestTypesLoadFailed = false;
 
 let notifications = [];
 
@@ -4417,7 +4418,7 @@ function exportRequests() {
     }
 
     const header =
-        "Request ID,Resource Type,Location,Priority,Status";
+        "Request ID,Request Type,Location,Priority,Status";
 
     const rows =
         requests.map(
@@ -5310,6 +5311,8 @@ function renderLocationSwitcher() {
 
     fillLocationSelect($("newResourceLocation"));
 
+    fillLocationSelect($("modalLocation"));
+
 }
 
 
@@ -5420,6 +5423,7 @@ function fillCatalogSelects() {
 
     const resourceSelect = $("newResourceType");
     const requestSelect = $("resourceType");
+    const modalRequestSelect = $("modalRequestType");
 
     if (resourceSelect) {
 
@@ -5465,6 +5469,23 @@ function fillCatalogSelects() {
 
     }
 
+    if (modalRequestSelect) {
+
+        const current = modalRequestSelect.value;
+
+        modalRequestSelect.innerHTML = `<option value="">Select request type</option>` +
+            requestTypes.filter(item => item.status === "ACTIVE").map(item =>
+                `<option value="${escapeHtml(item.request_type_id)}">${escapeHtml(item.name)}</option>`
+            ).join("");
+
+        if (current) {
+
+            modalRequestSelect.value = current;
+
+        }
+
+    }
+
     showSelectedTypeAttributes();
 
 }
@@ -5474,6 +5495,7 @@ function showSelectedTypeAttributes() {
 
     const resourceSelect = $("newResourceType");
     const requestSelect = $("resourceType");
+    const modalRequestSelect = $("modalRequestType");
 
     renderAttributeFields(
         "resourceAttributeFields",
@@ -5484,6 +5506,12 @@ function showSelectedTypeAttributes() {
     renderAttributeFields(
         "requestAttributeFields",
         requestTypes.find(item => item.request_type_id === requestSelect?.value)?.attributes_schema,
+        {}
+    );
+
+    renderAttributeFields(
+        "modalRequestAttributes",
+        requestTypes.find(item => item.request_type_id === modalRequestSelect?.value)?.attributes_schema,
         {}
     );
 
@@ -5567,11 +5595,197 @@ async function loadResourceTypes() {
 
 async function loadRequestTypes() {
 
-    requestTypes = selectedOrganizationId() ? await loadCatalog(REQUEST_TYPES_API_URL) : [];
+    if (!selectedOrganizationId()) {
+
+        requestTypes = [];
+        requestTypesLoadFailed = false;
+
+    } else {
+
+        const response = await fetch(REQUEST_TYPES_API_URL + tenantQuery(), {
+            headers: { "Authorization": "Bearer " + getIdToken() }
+        });
+
+        if (!response.ok) {
+
+            requestTypes = [];
+            requestTypesLoadFailed = true;
+
+        } else {
+
+            const data = await response.json();
+
+            requestTypes = data.types || [];
+            requestTypesLoadFailed = false;
+
+        }
+
+    }
 
     fillCatalogSelects();
 
     renderCatalogAdmin();
+
+}
+
+
+function prepareRequestModal() {
+
+    fillCatalogSelects();
+
+    fillLocationSelect($("modalLocation"));
+
+    const result = $("requestModalResult");
+
+    if (!result) {
+
+        return;
+
+    }
+
+    result.textContent = "";
+    result.className = "request-modal-result";
+
+    if (requestTypesLoadFailed) {
+
+        result.textContent = "Request types could not be loaded. Refresh and try again.";
+        result.className = "request-modal-result error";
+
+    } else if (!requestTypes.some(item => item.status === "ACTIVE")) {
+
+        result.textContent = "No active request types are available.";
+        result.className = "request-modal-result error";
+
+    }
+
+}
+
+
+async function submitRequestModal(event) {
+
+    event.preventDefault();
+
+    const requestId = $("modalRequestId")?.value.trim() || "";
+    const requestTypeId = $("modalRequestType")?.value || "";
+    const locationId = $("modalLocation")?.value || "";
+    const priority = Number($("modalPriority")?.value);
+    const result = $("requestModalResult");
+    const button = $("submitRequestModal");
+
+    const show = (message, kind) => {
+
+        if (!result) {
+
+            return;
+
+        }
+
+        result.textContent = message;
+        result.className = "request-modal-result" + (kind ? " " + kind : "");
+
+    };
+
+    if (!selectedOrganizationId()) {
+
+        show("Organization context is still loading.", "error");
+
+        return;
+
+    }
+
+    if (!requestId || !requestTypeId || !locationId || !priority) {
+
+        show("Please complete all request fields.", "error");
+
+        return;
+
+    }
+
+    if (button) {
+
+        button.disabled = true;
+        button.textContent = "Submitting...";
+
+    }
+
+    show("");
+
+    try {
+
+        const response = await fetch(REQUESTS_API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + getIdToken()
+            },
+            body: JSON.stringify({
+                request_id: requestId,
+                request_type_id: requestTypeId,
+                location_id: locationId,
+                organization_id: selectedOrganizationId(),
+                priority: priority,
+                attributes: readAttributeValues("modalRequestAttributes")
+            })
+        });
+
+        const raw = await response.text();
+        let data = raw;
+
+        try {
+
+            data = JSON.parse(raw);
+
+        } catch (error) {
+
+            data = raw;
+
+        }
+
+        if (!response.ok) {
+
+            show(getApiMessage(data) || "Request could not be created.", "error");
+
+            return;
+
+        }
+
+        show(getApiMessage(data) || "Request created successfully.", "success");
+
+        if (typeof loadRequests === "function") {
+
+            loadRequests();
+
+        }
+
+        setTimeout(() => {
+
+            const modal = $("requestModal");
+
+            if (modal) {
+
+                modal.style.display = "none";
+
+            }
+
+            $("requestModalForm")?.reset();
+            show("");
+
+        }, 1200);
+
+    } catch (error) {
+
+        show("Request could not be created.", "error");
+
+    } finally {
+
+        if (button) {
+
+            button.disabled = false;
+            button.textContent = "Submit Request →";
+
+        }
+
+    }
 
 }
 
@@ -6462,6 +6676,7 @@ async function initializeApp() {
 
     $("newResourceType")?.addEventListener("change", showSelectedTypeAttributes);
     $("resourceType")?.addEventListener("change", showSelectedTypeAttributes);
+    $("modalRequestType")?.addEventListener("change", showSelectedTypeAttributes);
     $("saveResourceTypeBtn")?.addEventListener("click", saveResourceType);
     $("saveRequestTypeBtn")?.addEventListener("click", saveRequestType);
     $("resourcesPageVisibilityFilter")?.addEventListener("change", applyResourcePageFilters);

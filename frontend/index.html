@@ -1619,7 +1619,7 @@
 
                     <tr>
                         <th>Request ID</th>
-                        <th>Resource Type</th>
+                        <th>Request Type</th>
                         <th>Location</th>
                         <th>Priority</th>
                         <th>Status</th><th>Actions</th>
@@ -2704,28 +2704,22 @@
 
             <div class="form-group">
 
-                <label for="modalResourceType">
-                    Resource Type
+                <label for="modalRequestType">
+                    Request Type
                 </label>
 
                 <select
-                    id="modalResourceType"
+                    id="modalRequestType"
                     required
                 >
 
                     <option value="">
-                        Select resource
-                    </option>
-
-                    <option value="ICU_BED">
-                        ICU Bed
-                    </option>
-
-                    <option value="GENERAL_BED">
-                        General Bed
+                        Select request type
                     </option>
 
                 </select>
+
+                <div id="modalRequestAttributes"></div>
 
             </div>
 
@@ -2736,13 +2730,16 @@
                     Location
                 </label>
 
-                <input
-                    type="text"
+                <select
                     id="modalLocation"
-                    placeholder="Example: Bangalore"
-                    autocomplete="off"
                     required
                 >
+
+                    <option value="">
+                        Select location
+                    </option>
+
+                </select>
 
             </div>
 
@@ -2851,6 +2848,10 @@
         requestModalResult.className =
             "request-modal-result";
 
+        if (typeof prepareRequestModal === "function") {
+            prepareRequestModal();
+        }
+
         const requestIdInput =
             document.getElementById("modalRequestId");
 
@@ -2950,221 +2951,8 @@
             "submit",
             async function (event) {
 
-                event.preventDefault();
-
-
-                const requestId =
-                    document
-                        .getElementById("modalRequestId")
-                        .value
-                        .trim();
-
-
-                const resourceType =
-                    document
-                        .getElementById("modalResourceType")
-                        .value;
-
-
-                const location =
-                    document
-                        .getElementById("modalLocation")
-                        .value
-                        .trim();
-
-
-                const priority =
-                    Number(
-                        document
-                            .getElementById("modalPriority")
-                            .value
-                    );
-
-
-                /* VALIDATION */
-
-                if (
-                    !requestId ||
-                    !resourceType ||
-                    !location ||
-                    !priority
-                ) {
-
-                    requestModalResult.textContent =
-                        "Please fill in all fields.";
-
-                    requestModalResult.className =
-                        "request-modal-result error";
-
-                    return;
-
-                }
-
-
-                /* LOADING */
-
-                submitButton.disabled = true;
-
-                submitButton.textContent =
-                    "Submitting...";
-
-                requestModalResult.textContent = "";
-
-
-                try {
-
-                    const response =
-                        await fetch(
-                            "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/requests",
-                            {
-                                method: "POST",
-
-                                headers: {
-                                    "Content-Type":
-                                        "application/json"
-                                },
-
-                                body: JSON.stringify({
-
-                                    request_id:
-                                        requestId,
-
-                                    resource_type:
-                                        resourceType,
-
-                                    location:
-                                        location,
-
-                                    priority:
-                                        priority
-
-                                })
-
-                            }
-                        );
-
-
-                    const data =
-                        await response.json();
-
-
-                    /* SUCCESS */
-
-                    if (response.ok) {
-
-                        requestModalResult.textContent =
-                            data.message ||
-                            "Request submitted successfully.";
-
-                        requestModalResult.className =
-                            "request-modal-result success";
-
-                        if (typeof loadRequests === "function") {
-                            loadRequests();
-                        }
-
-
-                        /* SAVE SESSION HISTORY */
-
-                        const requests =
-                            JSON.parse(
-                                sessionStorage.getItem(
-                                    "erapRequests"
-                                ) || "[]"
-                            );
-
-
-                        requests.unshift({
-
-                            request_id:
-                                requestId,
-
-                            resource_type:
-                                resourceType,
-
-                            location:
-                                location,
-
-                            priority:
-                                priority,
-
-                            status:
-                                data.status ||
-                                "ALLOCATED",
-
-                            created_at:
-                                new Date().toISOString()
-
-                        });
-
-
-                        sessionStorage.setItem(
-                            "erapRequests",
-                            JSON.stringify(requests)
-                        );
-
-
-                        /* CLOSE AFTER SUCCESS */
-
-                        setTimeout(function () {
-
-                            requestModal.style.display =
-                                "none";
-
-                            requestModalForm.reset();
-
-                            requestModalResult.textContent =
-                                "";
-
-                            requestModalResult.className =
-                                "request-modal-result";
-
-                        }, 1200);
-
-                    }
-
-
-                    /* ERROR FROM AWS */
-
-                    else {
-
-                        requestModalResult.textContent =
-                            data.message ||
-                            data.error ||
-                            "No suitable resource available.";
-
-                        requestModalResult.className =
-                            "request-modal-result error";
-
-                    }
-
-
-                }
-
-                catch (error) {
-
-                    console.error(
-                        "Request submission error:",
-                        error
-                    );
-
-
-                    requestModalResult.textContent =
-                        "Unable to connect to the AWS allocation service.";
-
-                    requestModalResult.className =
-                        "request-modal-result error";
-
-                }
-
-
-                finally {
-
-                    submitButton.disabled = false;
-
-                    submitButton.textContent =
-                        "Submit Request →";
-
+                if (typeof submitRequestModal === "function") {
+                    await submitRequestModal(event);
                 }
 
             }

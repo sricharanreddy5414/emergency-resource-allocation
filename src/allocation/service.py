@@ -14,7 +14,7 @@ from access import (
 )
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
-from common import ALLOWED_ORIGIN
+from common import ALLOWED_ORIGIN, dumps_json
 from matching import choose_resource, explain_match, sort_requests_by_priority
 from observability import begin_request, error_body, load_object, log_result
 
@@ -31,7 +31,7 @@ def response(status_code, body):
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         },
-        "body": json.dumps(payload, default=str),
+        "body": dumps_json(payload),
     }
 
 

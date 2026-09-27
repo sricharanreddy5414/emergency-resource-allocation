@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError
 from access import REQUEST_ROLES, AccessError, authorize, require_location, require_owned
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
-from common import ALLOWED_ORIGIN
+from common import ALLOWED_ORIGIN, dumps_json
 from observability import begin_request, error_body, load_object, log_result
 
 
@@ -23,7 +23,7 @@ def response(status_code, body):
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "OPTIONS,POST,PUT",
         },
-        "body": json.dumps(payload, default=str),
+        "body": dumps_json(payload),
     }
 
 
