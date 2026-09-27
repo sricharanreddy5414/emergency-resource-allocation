@@ -3893,13 +3893,23 @@ async function loadAllocations() {
 
     try {
 
+        const idToken = await waitForIdToken();
+
+        if (!idToken) {
+
+            throw new Error(
+                "Cognito ID token is not available"
+            );
+
+        }
+
         const response = await fetch(
             ALLOCATIONS_API_URL,
             {
                 method: "GET",
                 headers: {
                     "Accept": "application/json",
-                "Authorization": "Bearer " + getIdToken()
+                "Authorization": "Bearer " + idToken
                 }
             }
         );
