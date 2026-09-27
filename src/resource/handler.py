@@ -1,4 +1,4 @@
-﻿import json
+import json
 import base64
 import boto3
 from datetime import datetime, timezone
@@ -17,7 +17,7 @@ def response(status_code, body):
         "headers": {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
         },
         "body": json.dumps(body, default=str)
@@ -511,3 +511,4 @@ def lambda_handler(event, context):
         405,
         {"message": "Method not allowed"}
     )
+

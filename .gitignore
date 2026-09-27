@@ -7,3 +7,18 @@ venv/
 .aws/
 *.pem
 .vscode/
+
+# Generated and sensitive project files
+organization-key.json
+organization-member-key.json
+organization-permissions-policy.json
+organization-test-event.json
+organization-test-response.json
+organization-trust-policy.json
+organization-lambda.zip
+resource-lambda.zip
+lambda_function.py
+src/organization/
+frontend/app.js.backup
+cognito-error.html
+cognito-test.html
