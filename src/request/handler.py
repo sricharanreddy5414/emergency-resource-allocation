@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
 
-from access import REQUEST_ROLES, AccessError, authorize, require_location
+from access import REQUEST_ROLES, AccessError, authorize, require_location, require_owned
+from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 
@@ -15,7 +16,7 @@ def response(status_code, body):
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
-            "Access-Control-Allow-Methods": "OPTIONS,POST",
+            "Access-Control-Allow-Methods": "OPTIONS,POST,PUT",
         },
         "body": json.dumps(body, default=str),
     }
@@ -43,6 +44,67 @@ def locations_table():
     return boto3.resource("dynamodb").Table(os.environ.get("LOCATIONS_TABLE", "Locations"))
 
 
+def request_types_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("REQUEST_TYPES_TABLE", "RequestTypes"))
+
+
+def update_request(proposed, organization_id, actor_sub, actor_role, request_id):
+    current = requests_table().get_item(Key={"request_id": request_id}).get("Item")
+    require_owned(current, organization_id)
+
+    if str(current.get("Status", "")).upper() != "PENDING":
+        return response(409, {"message": "Request is not eligible for update"})
+
+    current.update(
+        {
+            "ResourceType": proposed["ResourceType"],
+            "Location": proposed["Location"],
+            "location_id": proposed["location_id"],
+            "Priority": proposed["Priority"],
+            "organization_id": organization_id,
+        }
+    )
+
+    if proposed.get("request_type_id"):
+        current["request_type_id"] = proposed["request_type_id"]
+        current["attributes"] = proposed.get("attributes") or {}
+        current["matching_config"] = proposed.get("matching_config") or {}
+
+    requests_table().put_item(
+        Item=current,
+        ConditionExpression="organization_id = :organization_id",
+        ExpressionAttributeValues={":organization_id": organization_id},
+    )
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "request.update",
+            "request",
+            request_id,
+            location_id=current["location_id"],
+        ),
+    )
+    return response(200, {"message": "Request updated", "request": current})
+
+
+def active_request_type(organization_id, request_type_id):
+    item = request_types_table().get_item(
+        Key={"organization_id": organization_id, "request_type_id": request_type_id}
+    ).get("Item")
+
+    if not item or item.get("organization_id") != organization_id or item.get("status") != "ACTIVE":
+        raise AccessError(404, "Request type not found")
+
+    return item
+
+
 def lambda_handler(event, context):
     method = (
         event.get("httpMethod")
@@ -53,7 +115,7 @@ def lambda_handler(event, context):
     if method == "OPTIONS":
         return response(200, {"message": "CORS preflight successful"})
 
-    if method != "POST":
+    if method not in {"POST", "PUT"}:
         return response(405, {"message": "Method not allowed"})
 
     try:
@@ -68,11 +130,21 @@ def lambda_handler(event, context):
         _user_sub, membership = authorize(event, body, allowed_roles=REQUEST_ROLES)
         organization_id = membership["organization_id"]
         request_id = str(body.get("request_id", "")).strip()
+        request_type_id = str(body.get("request_type_id") or "").strip()
         resource_type = str(body.get("resource_type", "")).strip().upper()
         location_id = str(body.get("location_id", "")).strip()
+        request_type = None
+        attributes = {}
+        matching_config = {}
+
+        if request_type_id:
+            request_type = active_request_type(organization_id, request_type_id)
+            attributes = validate_attributes(body.get("attributes") or {}, request_type.get("attributes_schema"))
+            resource_type = request_type.get("name", "")
+            matching_config = request_type.get("matching_config") or {}
 
         try:
-            priority = int(body.get("priority"))
+            priority = int(body.get("priority", request_type.get("default_priority") if request_type else None))
         except (TypeError, ValueError):
             priority = 0
 
@@ -96,6 +168,15 @@ def lambda_handler(event, context):
             "Status": "PENDING",
             "CreatedAt": datetime.now(timezone.utc).isoformat(),
         }
+
+        if request_type:
+            item["request_type_id"] = request_type["request_type_id"]
+            item["attributes"] = attributes
+            item["matching_config"] = matching_config
+
+        if method == "PUT":
+            return update_request(item, organization_id, _user_sub, membership.get("role"), request_id)
+
         requests_table().put_item(
             Item=item,
             ConditionExpression="attribute_not_exists(request_id)",

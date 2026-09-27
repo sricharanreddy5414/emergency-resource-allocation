@@ -12,9 +12,10 @@ from access import (
     require_location,
     require_owned,
 )
+from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
-from matching import choose_resource, sort_requests_by_priority
+from matching import choose_resource, explain_match, sort_requests_by_priority
 
 
 def response(status_code, body):
@@ -74,6 +75,14 @@ def audit_table():
     import boto3
 
     return boto3.resource("dynamodb").Table(os.environ.get("AUDIT_TABLE", "AuditEvents"))
+
+
+def request_types_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("REQUEST_TYPES_TABLE", "RequestTypes"))
 
 
 def parse_body(event):
@@ -158,10 +167,34 @@ def lambda_handler(event, context):
 def allocate(body, organization_id, actor_sub="", actor_role=""):
     request_id = str(body.get("request_id", "")).strip()
     resource_type = str(body.get("resource_type", "")).strip()
+    request_type_id = str(body.get("request_type_id") or "").strip()
     location_id = str(body.get("location_id", "")).strip()
+    request_type = None
+    attributes = {}
+    matching_config = {}
+
+    if request_type_id:
+        request_type = request_types_table().get_item(
+            Key={"organization_id": organization_id, "request_type_id": request_type_id}
+        ).get("Item")
+
+        if (
+            not request_type
+            or request_type.get("organization_id") != organization_id
+            or request_type.get("status") != "ACTIVE"
+        ):
+            return response(404, {"message": "Request type not found"})
+
+        try:
+            attributes = validate_attributes(body.get("attributes") or {}, request_type.get("attributes_schema"))
+        except AccessError as error:
+            return response(error.status_code, {"message": error.message})
+
+        resource_type = resource_type or request_type.get("name", "")
+        matching_config = request_type.get("matching_config") or {}
 
     try:
-        priority = int(body.get("priority", 999))
+        priority = int(body.get("priority", request_type.get("default_priority") if request_type else 999))
     except (TypeError, ValueError):
         priority = 999
 
@@ -189,6 +222,11 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
             "Priority": priority,
             "Status": "PENDING",
         }
+
+        if request_type:
+            existing["request_type_id"] = request_type["request_type_id"]
+            existing["attributes"] = attributes
+            existing["matching_config"] = matching_config
 
         try:
             requests_table().put_item(
@@ -365,6 +403,7 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
                     "allocation_id": allocation_id,
                     "status": "ALLOCATED",
                     "allocated_at": allocated_at,
+                    "match": explain_match(resource, request),
                 },
             )
 

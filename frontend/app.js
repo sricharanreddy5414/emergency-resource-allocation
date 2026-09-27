@@ -31,6 +31,12 @@ const ORGANIZATION_API_URL =
 const LOCATIONS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/locations";
 
+const RESOURCE_TYPES_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/resource-types";
+
+const REQUEST_TYPES_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/request-types";
+
 
 /* =========================================================
    AMAZON COGNITO CONFIGURATION
@@ -56,6 +62,10 @@ let resources = [];
 let allocations = [];
 
 let tenantContextLoading = false;
+
+let resourceTypes = [];
+
+let requestTypes = [];
 
 let notifications = [];
 
@@ -718,7 +728,7 @@ function updateUserInterface() {
     if ($("adminNavItem")) {
 
         $("adminNavItem").style.display =
-            currentUser.isAdmin ? "" : "none";
+            currentUser.isAdmin || canManageCatalog() ? "" : "none";
 
     }
 
@@ -2050,7 +2060,19 @@ function normalizeResources() {
                     available:
                         resource.available ??
                         resource.Available ??
-                        false
+                        false,
+
+                    visibility:
+                        resource.visibility || "PRIVATE",
+
+                    resource_type_id:
+                        resource.resource_type_id || "",
+
+                    location_id:
+                        resource.location_id || "",
+
+                    attributes:
+                        resource.attributes || {}
 
                 };
 
@@ -3295,12 +3317,20 @@ function applyResourcePageFilters() {
                     selectedLocation === "ALL" ||
                     resourceLocation === selectedLocation;
 
+                const selectedVisibility =
+                    $("resourcesPageVisibilityFilter")?.value || "ALL";
+
+                const matchesVisibility =
+                    selectedVisibility === "ALL" ||
+                    (resource.visibility || "PRIVATE") === selectedVisibility;
+
 
                 return (
                     matchesSearch &&
                     matchesStatus &&
                     matchesType &&
-                    matchesLocation
+                    matchesLocation &&
+                    matchesVisibility
                 );
 
             }
@@ -3506,7 +3536,13 @@ async function submitAllocation(
                 requestId,
 
             resource_type:
+                $("resourceType")?.selectedOptions?.[0]?.textContent?.trim() || resourceType,
+
+            request_type_id:
                 resourceType,
+
+            attributes:
+                readAttributeValues("requestAttributeFields"),
 
             location_id:
                 location,
@@ -3879,9 +3915,16 @@ async function registerResource() {
 
                     body: JSON.stringify({
                     resource_id: id,
-                    Type: type,
+                    name: $("newResourceName")?.value.trim() || "",
+                    resource_type_id: type,
                     location_id: location,
                     organization_id: selectedOrganizationId(),
+                    visibility: $("newResourceVisibility")?.value || "PRIVATE",
+                    public_name: $("newResourcePublicName")?.value.trim() || "",
+                    public_description: $("newResourcePublicDescription")?.value.trim() || "",
+                    public_contact: $("newResourcePublicContact")?.value.trim() || "",
+                    show_availability: $("newResourceShowAvailability")?.checked === true,
+                    attributes: readAttributeValues("resourceAttributeFields"),
                     Available: true
                 })
             }
@@ -5136,6 +5179,390 @@ function renderLocationSwitcher() {
 }
 
 
+function canManageCatalog() {
+
+    const role = currentUser.organization?.role;
+
+    return role === "OWNER" || role === "ADMIN";
+
+}
+
+
+function parseAttributeSchema(text) {
+
+    const fields = [];
+
+    String(text || "").split(/\n/).forEach(line => {
+
+        const parts = line.split(":").map(item => item.trim());
+
+        if (!parts[0]) {
+
+            return;
+
+        }
+
+        fields.push({
+            key: parts[0],
+            type: parts[1] || "string",
+            required: parts[2] === "required",
+            label: parts[0]
+        });
+
+    });
+
+    return { fields };
+
+}
+
+
+function renderAttributeFields(containerId, schema, values) {
+
+    const container = $(containerId);
+
+    if (!container) {
+
+        return;
+
+    }
+
+    const fields = schema?.fields || [];
+
+    container.innerHTML = fields.map(field => `
+
+        <label>
+            ${escapeHtml(field.label || field.key)}
+            ${field.required ? "*" : ""}
+        </label>
+        <input
+            data-attribute-key="${escapeHtml(field.key)}"
+            data-attribute-type="${escapeHtml(field.type)}"
+            value="${escapeHtml(values?.[field.key] ?? "")}"
+        >
+
+    `).join("");
+
+}
+
+
+function readAttributeValues(containerId) {
+
+    const attributes = {};
+
+    $(containerId)?.querySelectorAll("[data-attribute-key]").forEach(input => {
+
+        const key = input.dataset.attributeKey;
+        const type = input.dataset.attributeType;
+        const raw = input.value.trim();
+
+        if (!raw) {
+
+            return;
+
+        }
+
+        if (type === "number") {
+
+            attributes[key] = Number(raw);
+
+        } else if (type === "boolean") {
+
+            attributes[key] = raw.toLowerCase() === "true";
+
+        } else {
+
+            attributes[key] = raw;
+
+        }
+
+    });
+
+    return attributes;
+
+}
+
+
+function fillCatalogSelects() {
+
+    const resourceSelect = $("newResourceType");
+    const requestSelect = $("resourceType");
+
+    if (resourceSelect) {
+
+        const current = resourceSelect.value;
+
+        resourceSelect.innerHTML = `<option value="">Select resource type</option>` +
+            resourceTypes.filter(item => item.status === "ACTIVE").map(item =>
+                `<option value="${escapeHtml(item.resource_type_id)}">${escapeHtml(item.name)}</option>`
+            ).join("");
+
+        if (current) {
+
+            resourceSelect.value = current;
+
+        }
+
+    }
+
+    const compatible = $("requestTypeResources");
+
+    if (compatible) {
+
+        compatible.innerHTML = resourceTypes.filter(item => item.status === "ACTIVE").map(item =>
+            `<option value="${escapeHtml(item.resource_type_id)}">${escapeHtml(item.name)}</option>`
+        ).join("");
+
+    }
+
+    if (requestSelect) {
+
+        const current = requestSelect.value;
+
+        requestSelect.innerHTML = `<option value="">Select request type</option>` +
+            requestTypes.filter(item => item.status === "ACTIVE").map(item =>
+                `<option value="${escapeHtml(item.request_type_id)}">${escapeHtml(item.name)}</option>`
+            ).join("");
+
+        if (current) {
+
+            requestSelect.value = current;
+
+        }
+
+    }
+
+    showSelectedTypeAttributes();
+
+}
+
+
+function showSelectedTypeAttributes() {
+
+    const resourceSelect = $("newResourceType");
+    const requestSelect = $("resourceType");
+
+    renderAttributeFields(
+        "resourceAttributeFields",
+        resourceTypes.find(item => item.resource_type_id === resourceSelect?.value)?.attributes_schema,
+        {}
+    );
+
+    renderAttributeFields(
+        "requestAttributeFields",
+        requestTypes.find(item => item.request_type_id === requestSelect?.value)?.attributes_schema,
+        {}
+    );
+
+}
+
+
+function renderCatalogAdmin() {
+
+    const resourceNode = $("adminResourceTypes");
+    const requestNode = $("adminRequestTypes");
+    const manageable = canManageCatalog();
+
+    ["saveResourceTypeBtn", "saveRequestTypeBtn"].forEach(id => {
+
+        const button = $(id);
+
+        if (button) {
+
+            button.hidden = !manageable;
+
+        }
+
+    });
+
+    if (resourceNode) {
+
+        resourceNode.innerHTML = resourceTypes.map(item => `
+            <div>
+                <strong>${escapeHtml(item.name)}</strong>
+                <span>${escapeHtml(item.status)}</span>
+                ${manageable ? `<button type="button" data-deactivate-resource-type="${escapeHtml(item.resource_type_id)}">Deactivate</button>` : ""}
+            </div>
+        `).join("") || "<p>No resource types yet.</p>";
+
+    }
+
+    if (requestNode) {
+
+        requestNode.innerHTML = requestTypes.map(item => `
+            <div>
+                <strong>${escapeHtml(item.name)}</strong>
+                <span>${escapeHtml(item.status)}</span>
+                ${manageable ? `<button type="button" data-deactivate-request-type="${escapeHtml(item.request_type_id)}">Deactivate</button>` : ""}
+            </div>
+        `).join("") || "<p>No request types yet.</p>";
+
+    }
+
+}
+
+
+async function loadCatalog(url) {
+
+    const response = await fetch(url + tenantQuery(), {
+        headers: { "Authorization": "Bearer " + getIdToken() }
+    });
+
+    if (!response.ok) {
+
+        return [];
+
+    }
+
+    const data = await response.json();
+
+    return data.types || [];
+
+}
+
+
+async function loadResourceTypes() {
+
+    resourceTypes = selectedOrganizationId() ? await loadCatalog(RESOURCE_TYPES_API_URL) : [];
+
+    fillCatalogSelects();
+
+    renderCatalogAdmin();
+
+}
+
+
+async function loadRequestTypes() {
+
+    requestTypes = selectedOrganizationId() ? await loadCatalog(REQUEST_TYPES_API_URL) : [];
+
+    fillCatalogSelects();
+
+    renderCatalogAdmin();
+
+}
+
+
+async function saveResourceType() {
+
+    if (!canManageCatalog()) {
+
+        showToast("You cannot manage resource types.");
+
+        return;
+
+    }
+
+    const response = await fetch(RESOURCE_TYPES_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + getIdToken()
+        },
+        body: JSON.stringify({
+            organization_id: selectedOrganizationId(),
+            name: $("resourceTypeName")?.value.trim() || "",
+            description: $("resourceTypeDescription")?.value.trim() || "",
+            category: $("resourceTypeCategory")?.value.trim() || "",
+            attributes_schema: parseAttributeSchema($("resourceTypeSchema")?.value || ""),
+            visibility_default: "PRIVATE"
+        })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+
+        showToast(data.message || "Unable to save resource type.");
+
+        return;
+
+    }
+
+    showToast("Resource type saved.");
+
+    await loadResourceTypes();
+
+}
+
+
+async function saveRequestType() {
+
+    if (!canManageCatalog()) {
+
+        showToast("You cannot manage request types.");
+
+        return;
+
+    }
+
+    const compatible = Array.from($("requestTypeResources")?.selectedOptions || []).map(option => option.value);
+
+    const response = await fetch(REQUEST_TYPES_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + getIdToken()
+        },
+        body: JSON.stringify({
+            organization_id: selectedOrganizationId(),
+            name: $("requestTypeName")?.value.trim() || "",
+            description: $("requestTypeDescription")?.value.trim() || "",
+            category: $("requestTypeCategory")?.value.trim() || "",
+            attributes_schema: parseAttributeSchema($("requestTypeSchema")?.value || ""),
+            matching_config: {
+                compatible_resource_type_ids: compatible,
+                same_location_preferred: true
+            }
+        })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+
+        showToast(data.message || "Unable to save request type.");
+
+        return;
+
+    }
+
+    showToast("Request type saved.");
+
+    await loadRequestTypes();
+
+}
+
+
+async function deactivateCatalogType(url, typeId, idName) {
+
+    const response = await fetch(url + "/" + encodeURIComponent(typeId) + tenantQuery(), {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + getIdToken() }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+
+        showToast(data.message || "Unable to deactivate type.");
+
+        return;
+
+    }
+
+    if (idName === "resource") {
+
+        await loadResourceTypes();
+
+    } else {
+
+        await loadRequestTypes();
+
+    }
+
+}
+
+
 function clearTenantData() {
 
     resources = [];
@@ -5143,6 +5570,14 @@ function clearTenantData() {
     requests = [];
 
     allocations = [];
+
+    resourceTypes = [];
+
+    requestTypes = [];
+
+    fillCatalogSelects();
+
+    renderCatalogAdmin();
 
     const history = $("resourceHistoryContent");
 
@@ -5291,6 +5726,10 @@ async function refreshTenantData() {
     try {
 
         await loadLocations();
+
+        await loadResourceTypes();
+
+        await loadRequestTypes();
 
         await loadResources();
 
@@ -5862,6 +6301,31 @@ async function initializeApp() {
         "click",
         resourceHistoryDelegatedClick
     );
+
+    document.addEventListener("click", event => {
+
+        const resourceTypeId = event.target?.dataset?.deactivateResourceType;
+        const requestTypeId = event.target?.dataset?.deactivateRequestType;
+
+        if (resourceTypeId) {
+
+            deactivateCatalogType(RESOURCE_TYPES_API_URL, resourceTypeId, "resource");
+
+        }
+
+        if (requestTypeId) {
+
+            deactivateCatalogType(REQUEST_TYPES_API_URL, requestTypeId, "request");
+
+        }
+
+    });
+
+    $("newResourceType")?.addEventListener("change", showSelectedTypeAttributes);
+    $("resourceType")?.addEventListener("change", showSelectedTypeAttributes);
+    $("saveResourceTypeBtn")?.addEventListener("click", saveResourceType);
+    $("saveRequestTypeBtn")?.addEventListener("click", saveRequestType);
+    $("resourcesPageVisibilityFilter")?.addEventListener("change", applyResourcePageFilters);
 
 
 

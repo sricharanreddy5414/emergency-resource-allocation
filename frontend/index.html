@@ -517,7 +517,7 @@
                     <div class="form-group">
 
                         <label for="resourceType">
-                            Resource Type
+                            Request Type
                         </label>
 
                         <select
@@ -526,18 +526,12 @@
                         >
 
                             <option value="">
-                                Select resource
-                            </option>
-
-                            <option value="ICU_BED">
-                                ICU Bed
-                            </option>
-
-                            <option value="GENERAL_BED">
-                                General Bed
+                                Select request type
                             </option>
 
                         </select>
+
+                        <div id="requestAttributeFields"></div>
 
                     </div>
 
@@ -1289,6 +1283,73 @@
         </div>
 
 
+        <div class="panel">
+
+            <div class="panel-header">
+
+                <div>
+
+                    <span class="panel-label">
+                        CONFIGURATION
+                    </span>
+
+                    <h3>
+                        Resource Types
+                    </h3>
+
+                </div>
+
+            </div>
+
+            <div id="adminResourceTypes"></div>
+
+            <label for="resourceTypeName">Name</label>
+            <input id="resourceTypeName" type="text">
+            <label for="resourceTypeDescription">Description</label>
+            <input id="resourceTypeDescription" type="text">
+            <label for="resourceTypeCategory">Category</label>
+            <input id="resourceTypeCategory" type="text">
+            <label for="resourceTypeSchema">Attributes (key:type:required)</label>
+            <textarea id="resourceTypeSchema" rows="4"></textarea>
+            <button class="primary-btn" id="saveResourceTypeBtn" type="button">Save resource type</button>
+
+        </div>
+
+
+        <div class="panel">
+
+            <div class="panel-header">
+
+                <div>
+
+                    <span class="panel-label">
+                        CONFIGURATION
+                    </span>
+
+                    <h3>
+                        Request Types
+                    </h3>
+
+                </div>
+
+            </div>
+
+            <div id="adminRequestTypes"></div>
+
+            <label for="requestTypeName">Name</label>
+            <input id="requestTypeName" type="text">
+            <label for="requestTypeDescription">Description</label>
+            <input id="requestTypeDescription" type="text">
+            <label for="requestTypeCategory">Category</label>
+            <input id="requestTypeCategory" type="text">
+            <label for="requestTypeSchema">Attributes (key:type:required)</label>
+            <textarea id="requestTypeSchema" rows="4"></textarea>
+            <label for="requestTypeResources">Compatible resource types</label>
+            <select id="requestTypeResources" multiple></select>
+            <button class="primary-btn" id="saveRequestTypeBtn" type="button">Save request type</button>
+
+        </div>
+
     </div>
 
 
@@ -1374,6 +1435,22 @@
 
         <option value="ALL">
             All Locations
+        </option>
+
+    </select>
+
+    <select id="resourcesPageVisibilityFilter">
+
+        <option value="ALL">
+            All Visibility
+        </option>
+
+        <option value="PRIVATE">
+            Private
+        </option>
+
+        <option value="PUBLIC">
+            Public
         </option>
 
     </select>
@@ -2247,6 +2324,11 @@
         <div class="form-group">
 
 
+            <label for="newResourceName">
+                Name
+            </label>
+            <input id="newResourceName" type="text">
+
             <label for="newResourceType">
                 Resource Type
             </label>
@@ -2255,17 +2337,30 @@
             <select id="newResourceType">
 
 
-                <option value="ICU_BED">
-                    ICU Bed
-                </option>
-
-
-                <option value="GENERAL_BED">
-                    General Bed
+                <option value="">
+                    Select resource type
                 </option>
 
 
             </select>
+
+            <div id="resourceAttributeFields"></div>
+
+            <label for="newResourceVisibility">Visibility</label>
+            <select id="newResourceVisibility">
+                <option value="PRIVATE">Private</option>
+                <option value="PUBLIC">Public</option>
+            </select>
+            <label for="newResourcePublicName">Public name</label>
+            <input id="newResourcePublicName" type="text">
+            <label for="newResourcePublicDescription">Public description</label>
+            <input id="newResourcePublicDescription" type="text">
+            <label for="newResourcePublicContact">Public contact</label>
+            <input id="newResourcePublicContact" type="text">
+            <label>
+                <input id="newResourceShowAvailability" type="checkbox">
+                Show availability publicly
+            </label>
 
 
         </div>
