@@ -262,9 +262,17 @@ After deployment, unauthenticated `GET /public/resources` still returns only Pub
 
 The authenticated reload, `PILOT-REQ-002`, and the repeat of match, allocate, duplicate rejection, and release were not executed.
 
+## Request form contract
+
+The Create Resource Request modal was an older form. It showed hardcoded resource choices, sent `resource_type` and a free-text location, and did not send a Cognito token or `request_type_id`. The dashboard allocation form already loaded request types and submitted `request_type_id`. Requests are stored with `request_type_id`. Matching uses that request type's compatible resource types. It does not require the request type id to equal the resource type id.
+
+The modal now loads request types, shows their names, submits `request_type_id`, uses an organization location, sends the signed-in token, and reloads the request list. `POST /requests` and `GET /requests` use the same Decimal-safe JSON serializer. Commit `31fa1cb447efd7ff644568ddcf7c6afef0feec27`. `python -m pytest -q` passed with 90 tests. CI and Deploy backend for that commit succeeded, including smoke and hardening.
+
+The live site HTML contains `modalRequestType` and `submitRequestModal`, and it no longer contains the hardcoded resource choices. Chrome was on the Cognito sign-in page, so the signed-in dropdown, `PILOT-REQ-002`, matching, allocation, duplicate rejection, and release were not clicked after this deploy.
+
 ## Remaining Manual Actions
 
-- Sign in again with the pilot user. Confirm ERAP Pilot Operations and Bengaluru Operations Center restore, and confirm Emergency Medical Supply Request appears in the request-type dropdown after a fresh reload with `default_priority` as the number 3.
+- Sign in with the pilot user. Confirm ERAP Pilot Operations and Bengaluru Operations Center, open Create Resource Request, and confirm Emergency Medical Supply Request is in the Request Type dropdown.
 - Create `PILOT-REQ-002` from that dropdown, then match, allocate, reject a duplicate allocation, and release it through the normal screens.
 - Add a subscription to `ERAP-Production-Alarms`. Alarm subscription is pending.
 - Create the GitHub `production` environment with required reviewers and a main-only deployment policy. Production environment governance is pending. The `production` environment still returns 404.
@@ -274,4 +282,4 @@ The authenticated reload, `PILOT-REQ-002`, and the repeat of match, allocate, du
 
 PENDING HUMAN ACTION
 
-The Decimal defect is fixed, tested, and deployed. The normal authenticated request flow after that deploy was not executed, because the pilot session is on the Cognito sign-in page and the password was not entered. Tenant isolation, non-owner roles, alarm subscription, and GitHub production protection remain pending.
+The Decimal defect and the old request modal are fixed, tested, and deployed. The signed-in request, match, allocate, and release flow was not repeated after that deploy, because the browser is on the Cognito sign-in page and the password was not entered. Tenant isolation, non-owner roles, alarm subscription, and GitHub production protection remain pending.
