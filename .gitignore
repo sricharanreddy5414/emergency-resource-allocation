@@ -24,6 +24,9 @@ frontend/app.js.backup
 cognito-error.html
 cognito-test.html
 
+dist/
+*.zip
+
 # Local AWS/API Gateway troubleshooting files
 allocations-cors-response.json
 cors-requests-patch.json

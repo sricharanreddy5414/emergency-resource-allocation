@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DeployThisRepositoryDevelopment",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::481838970142:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:repository": "sricharanreddy5414/emergency-resource-allocation",
+          "token.actions.githubusercontent.com:ref": "refs/heads/main",
+          "token.actions.githubusercontent.com:sub": "repo:sricharanreddy5414/emergency-resource-allocation:environment:development",
+          "token.actions.githubusercontent.com:job_workflow_ref": "sricharanreddy5414/emergency-resource-allocation/.github/workflows/deploy-backend.yml@refs/heads/main"
+        }
+      }
+    }
+  ]
+}

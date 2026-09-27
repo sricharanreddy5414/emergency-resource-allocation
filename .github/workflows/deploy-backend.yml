@@ -1,0 +1,67 @@
+name: Deploy backend
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: erap-backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: development
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-ci.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Scan for secrets
+        run: python scripts/security_scan.py
+
+      - name: Check Lambda packages
+        run: python scripts/package_lambdas.py --check
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::481838970142:role/ERAP-GitHub-Deploy
+          aws-region: eu-north-1
+          role-session-name: erap-development
+
+      - name: Deploy Lambda code
+        env:
+          ERAP_ENVIRONMENT: development
+        run: python scripts/deploy_backend.py
+
+      - name: Smoke test
+        env:
+          SMOKE_WAIT_AMPLIFY: "1"
+          SMOKE_AMPLIFY_SECONDS: "360"
+        run: python scripts/smoke_test.py
+
+      - name: Verify hardening
+        run: python scripts/verify_hardening.py
+
+      - name: Write summary
+        if: always()
+        run: python scripts/render_summary.py >> "$GITHUB_STEP_SUMMARY"

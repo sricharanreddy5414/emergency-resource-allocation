@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-ci.txt
+
+      - name: Run Python tests
+        run: python -m pytest -q
+
+      - name: Compile Python
+        run: python -m compileall -q src scripts
+
+      - name: Check frontend
+        run: python scripts/check_frontend.py
+
+      - name: Check Lambda packages
+        run: python scripts/package_lambdas.py --check
+
+      - name: Check workflows
+        run: python scripts/check_workflows.py
+
+      - name: Scan for secrets
+        run: python scripts/security_scan.py
