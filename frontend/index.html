@@ -2740,6 +2740,17 @@
 
                 try {
 
+                    const idToken =
+                        await waitForIdToken();
+
+                    if (!idToken) {
+
+                        throw new Error(
+                            "Cognito ID token is not available"
+                        );
+
+                    }
+
                     const response =
                         await fetch(
                             "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/requests",
@@ -2748,7 +2759,10 @@
 
                                 headers: {
                                     "Content-Type":
-                                        "application/json"
+                                        "application/json",
+
+                                    "Authorization":
+                                        "Bearer " + idToken
                                 },
 
                                 body: JSON.stringify({

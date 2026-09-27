@@ -2736,11 +2736,25 @@ async function viewResourceHistory(resourceId) {
 
     try {
 
+        const idToken = await waitForIdToken();
+
+        if (!idToken) {
+
+            throw new Error(
+                "Cognito ID token is not available"
+            );
+
+        }
+
         const response =
             await fetch(
                 `${RESOURCE_HISTORY_API_URL}?resource_id=${encodeURIComponent(resourceId)}`,
                 {
-                    method: "GET"
+                    method: "GET",
+                    headers: {
+                        "Authorization":
+                            "Bearer " + idToken
+                    }
                 }
             );
 
