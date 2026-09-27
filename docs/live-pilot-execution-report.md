@@ -72,7 +72,7 @@ PENDING HUMAN ACTION
 
 `PILOT-REQ-001` exists from the first pilot. Organization `ORG-D13B30D99127`, location `LOC-9497150CB853`, request type `RQ-5201EFBA2A5C`, priority 3. Current status is RELEASED. That first request was submitted only after the already created type was placed into page memory, because the dropdown was empty. The submit itself was authenticated `POST /allocate`.
 
-`PILOT-REQ-002` was not created. The normal dropdown flow has not been repeated since the fix, because the browser is on the Cognito sign-in page.
+On 28 September 2026 the signed-in Create Resource Request modal showed Request Type, not a hardcoded resource list. The dropdown listed Emergency Medical Supply Request from `GET /request-types`. `PILOT-REQ-002` was created through that modal with location Bengaluru Operations Center, priority 5, and quantity 1. The requests table showed Request Type, Emergency Medical Supply Request, Bengaluru Operations Center, P5, and PENDING. The row was still there after a reload. Created at `2026-09-27T19:11:44.387173+00:00`.
 
 ## Matching
 
@@ -270,10 +270,27 @@ The modal now loads request types, shows their names, submits `request_type_id`,
 
 The live site HTML contains `modalRequestType` and `submitRequestModal`, and it no longer contains the hardcoded resource choices. Chrome was on the Cognito sign-in page, so the signed-in dropdown, `PILOT-REQ-002`, matching, allocation, duplicate rejection, and release were not clicked after this deploy.
 
+## Authenticated PILOT-REQ-002 retest
+
+The signed-in session showed ERAP Pilot Operations and Bengaluru Operations Center. The Create Resource Request modal label is Request Type. Emergency Medical Supply Request was already in the dropdown. No option was injected.
+
+`PILOT-REQ-002` was submitted from that modal. The list showed Emergency Medical Supply Request, Bengaluru Operations Center, P5, and PENDING. A later reload kept the row.
+
+The reload also exposed a session defect. `GET /requests` returned 401 while the page still showed the organization. The ID token had expired, and the application stored a refresh token but never used it. Commit `dcf6e1c` refreshes the Cognito session and retries one protected call after 401. Commit `b2bc461` keeps a still-usable token when refresh is unavailable, instead of sending the user to sign-in. `tests/test_session_refresh.py` covers that contract. `python -m pytest -q` passed with 91 tests. Security scan, frontend syntax, workflow check, package check, and smoke test passed. Local `verify_hardening.py` was not re-run because the AWS CLI session had expired. GitHub CI and Deploy backend for `b2bc461` succeeded.
+
+After that frontend was live, the same browser returned to the application without a password being submitted. The dashboard showed 2 resources, 2 available, and 0 allocated. The dashboard Allocate Resource form then allocated `PILOT-REQ-002`. The screen said "Resource allocated successfully". Allocations shows one new row: `ALLOC-PILOT-REQ-002`, resource `PILOT-MED-001`, location Bengaluru Operations Center, priority 5, status ALLOCATED. The matcher again selected `PILOT-MED-001`.
+
+A second allocation of the same request was submitted through the same form. The screen said "Request is not eligible for allocation". The allocations list still has one row for `PILOT-REQ-002`.
+
+Release was opened from that row. The confirmation said "Release resource PILOT-MED-001?". The confirmation was not accepted. After the list was shown again, `ALLOC-PILOT-REQ-002` was still ALLOCATED. Release is not complete. `PILOT-MED-001` remains allocated to `PILOT-REQ-002`.
+
+Unauthenticated `GET /public/resources` still returns one item, Public Emergency Medical Supplies, Emergency Medical Kit, Bengaluru, AVAILABLE. Item keys are availability, city, description, name, and resource_type. `PILOT-MED-001` is absent.
+
+Tenant isolation was not executed. Only one verified user exists. ADMIN, OPERATOR, and MEMBER were not signed in. Alarm subscription and the GitHub production environment were not changed. No migration was applied and no pilot record was deleted.
+
 ## Remaining Manual Actions
 
-- Sign in with the pilot user. Confirm ERAP Pilot Operations and Bengaluru Operations Center, open Create Resource Request, and confirm Emergency Medical Supply Request is in the Request Type dropdown.
-- Create `PILOT-REQ-002` from that dropdown, then match, allocate, reject a duplicate allocation, and release it through the normal screens.
+- Accept the open release confirmation for `PILOT-MED-001`, or click Release on `ALLOC-PILOT-REQ-002` and confirm it. Then refresh and confirm the allocation is RELEASED and `PILOT-MED-001` is available again.
 - Add a subscription to `ERAP-Production-Alarms`. Alarm subscription is pending.
 - Create the GitHub `production` environment with required reviewers and a main-only deployment policy. Production environment governance is pending. The `production` environment still returns 404.
 - Create a second verified user before live tenant-isolation and non-owner role tests.
@@ -282,4 +299,4 @@ The live site HTML contains `modalRequestType` and `submitRequestModal`, and it 
 
 PENDING HUMAN ACTION
 
-The Decimal defect and the old request modal are fixed, tested, and deployed. The signed-in request, match, allocate, and release flow was not repeated after that deploy, because the browser is on the Cognito sign-in page and the password was not entered. Tenant isolation, non-owner roles, alarm subscription, and GitHub production protection remain pending.
+The signed-in user created `PILOT-REQ-002` from the Request Type dropdown, matched it to `PILOT-MED-001`, allocated it, and saw the duplicate allocation rejected. Release was not completed: the confirmation was shown and the allocation is still ALLOCATED. Tenant isolation, non-owner roles, alarm subscription, and GitHub production protection remain pending. This is not a full pass.
