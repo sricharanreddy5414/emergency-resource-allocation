@@ -3129,3 +3129,14 @@ tbody tr:hover {
         margin-bottom: 16px;
     }
 }
+
+.context-select {
+    height: 36px;
+    max-width: 190px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    color: var(--text);
+    padding: 0 8px;
+    font-size: 13px;
+}

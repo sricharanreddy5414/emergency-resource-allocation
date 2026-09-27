@@ -28,6 +28,9 @@ const ALLOCATIONS_API_URL =
 const ORGANIZATION_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/organization";
 
+const LOCATIONS_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/locations";
+
 
 /* =========================================================
    AMAZON COGNITO CONFIGURATION
@@ -64,7 +67,11 @@ let currentUser = {
 
     organizations: [],
 
-    organization: null
+    organization: null,
+
+    locations: [],
+
+    location: null
 
 };
 
@@ -561,7 +568,11 @@ function loadAuthenticatedUser() {
 
             organizations: [],
 
-            organization: null
+            organization: null,
+
+            locations: [],
+
+            location: null
 
         };
 
@@ -606,7 +617,13 @@ function loadAuthenticatedUser() {
             currentUser.organizations || [],
 
         organization:
-            currentUser.organization || null
+            currentUser.organization || null,
+
+        locations:
+            currentUser.locations || [],
+
+        location:
+            currentUser.location || null
 
     };
 
@@ -1471,7 +1488,7 @@ async function loadResources() {
 
         const response =
             await fetch(
-                RESOURCES_API_URL,
+                RESOURCES_API_URL + tenantQuery(),
                 {
                     method:
                         "GET",
@@ -1656,7 +1673,7 @@ async function loadRequests() {
         }
 
 
-        const response = await fetch(REQUESTS_API_URL, {
+        const response = await fetch(REQUESTS_API_URL + tenantQuery(), {
             method: "GET",
             headers: {
                 "Accept": "application/json",
@@ -2781,9 +2798,12 @@ async function viewResourceHistory(resourceId) {
 
         const response =
             await fetch(
-                `${RESOURCE_HISTORY_API_URL}?resource_id=${encodeURIComponent(resourceId)}`,
+                `${RESOURCE_HISTORY_API_URL}?resource_id=${encodeURIComponent(resourceId)}&organization_id=${encodeURIComponent(selectedOrganizationId())}`,
                 {
-                    method: "GET"
+                    method: "GET",
+                    headers: {
+                        "Authorization": "Bearer " + getIdToken()
+                    }
                 }
             );
 
@@ -2844,7 +2864,8 @@ async function releaseResource(resourceId) {
                     },
 
                     body: JSON.stringify({
-                        resource_id: resourceId
+                        resource_id: resourceId,
+                        organization_id: selectedOrganizationId()
                     })
                 }
             );
@@ -3474,8 +3495,11 @@ async function submitAllocation(
             resource_type:
                 resourceType,
 
-            location:
+            location_id:
                 location,
+
+            organization_id:
+                selectedOrganizationId(),
 
             priority:
                 priority
@@ -3838,7 +3862,8 @@ async function registerResource() {
                     body: JSON.stringify({
                     resource_id: id,
                     Type: type,
-                    Location: location,
+                    location_id: location,
+                    organization_id: selectedOrganizationId(),
                     Available: true
                 })
             }
@@ -3947,7 +3972,7 @@ async function loadAllocations() {
         }
 
         const response = await fetch(
-            ALLOCATIONS_API_URL,
+            ALLOCATIONS_API_URL + tenantQuery(),
             {
                 method: "GET",
                 headers: {
@@ -4799,6 +4824,35 @@ initializeRequestControls();
         );
 
 
+    $("organizationSwitcher")
+        ?.addEventListener(
+            "change",
+            event => {
+
+                switchOrganization(event.target.value);
+
+            }
+        );
+
+
+    $("locationSwitcher")
+        ?.addEventListener(
+            "change",
+            event => {
+
+                switchLocation(event.target.value);
+
+            }
+        );
+
+
+    $("createLocationBtn")
+        ?.addEventListener(
+            "click",
+            createLocation
+        );
+
+
     /* Clear notifications */
 
     $("clearNotificationsBtn")
@@ -4912,6 +4966,413 @@ function initializeNotifications() {
    ORGANIZATION CONTEXT
 ========================================================= */
 
+function selectedOrganizationId() {
+
+    return currentUser.organization?.organization_id || "";
+
+}
+
+
+function selectedLocationId() {
+
+    const locationId = currentUser.location?.location_id || "";
+
+    return locationId && locationId !== "ALL" ? locationId : "";
+
+}
+
+
+function tenantQuery() {
+
+    const organizationId = selectedOrganizationId();
+
+    if (!organizationId) {
+
+        return "";
+
+    }
+
+    const params = new URLSearchParams({
+        organization_id: organizationId
+    });
+
+    const locationId = selectedLocationId();
+
+    if (locationId) {
+
+        params.set("location_id", locationId);
+
+    }
+
+    return "?" + params.toString();
+
+}
+
+
+function fillLocationSelect(select) {
+
+    if (!select) {
+
+        return;
+
+    }
+
+    const current = select.value;
+
+    select.innerHTML = `<option value="">Select location</option>`;
+
+    (currentUser.locations || []).forEach(location => {
+
+        const option = document.createElement("option");
+
+        option.value = location.location_id;
+
+        option.textContent = location.name || location.location_id;
+
+        select.appendChild(option);
+
+    });
+
+    if (current && [...select.options].some(option => option.value === current)) {
+
+        select.value = current;
+
+    } else if (selectedLocationId()) {
+
+        select.value = selectedLocationId();
+
+    }
+
+}
+
+
+function renderOrganizationSwitcher() {
+
+    const select = $("organizationSwitcher");
+
+    if (!select) {
+
+        return;
+
+    }
+
+    const organizations = currentUser.organizations || [];
+
+    select.innerHTML = "";
+
+    organizations.forEach(organization => {
+
+        const option = document.createElement("option");
+
+        option.value = organization.organization_id;
+
+        option.textContent = organization.name || organization.organization_id;
+
+        select.appendChild(option);
+
+    });
+
+    if (currentUser.organization) {
+
+        select.value = currentUser.organization.organization_id;
+
+    }
+
+    select.disabled = organizations.length < 2;
+
+}
+
+
+function renderLocationSwitcher() {
+
+    const select = $("locationSwitcher");
+
+    if (!select) {
+
+        return;
+
+    }
+
+    const locations = currentUser.locations || [];
+
+    select.innerHTML = `<option value="ALL">All locations</option>`;
+
+    locations.forEach(location => {
+
+        const option = document.createElement("option");
+
+        option.value = location.location_id;
+
+        option.textContent = location.name || location.location_id;
+
+        select.appendChild(option);
+
+    });
+
+    select.value = currentUser.location?.location_id || (locations.length === 1 ? locations[0].location_id : "ALL");
+
+    fillLocationSelect($("location"));
+
+    fillLocationSelect($("newResourceLocation"));
+
+}
+
+
+function clearTenantData() {
+
+    resources = [];
+
+    requests = [];
+
+    allocations = [];
+
+    renderResourcesTable();
+
+    renderRequests();
+
+    renderAllocations();
+
+    updateDashboardStats();
+
+    updateAnalytics();
+
+}
+
+
+async function loadLocations() {
+
+    const organizationId = selectedOrganizationId();
+
+    if (!organizationId) {
+
+        currentUser.locations = [];
+
+        currentUser.location = null;
+
+        renderLocationSwitcher();
+
+        return;
+
+    }
+
+    const idToken = await waitForIdToken();
+
+    if (!idToken) {
+
+        return;
+
+    }
+
+    const response = await fetch(
+        `${LOCATIONS_API_URL}?organization_id=${encodeURIComponent(organizationId)}`,
+        {
+            method: "GET",
+            headers: {
+                "Authorization": "Bearer " + idToken
+            }
+        }
+    );
+
+    const data = await readJsonResponse(response);
+
+    if (!response.ok) {
+
+        showToast(organizationErrorMessage(response.status, data));
+
+        currentUser.locations = [];
+
+        currentUser.location = null;
+
+        renderLocationSwitcher();
+
+        return;
+
+    }
+
+    currentUser.locations = Array.isArray(data.locations) ? data.locations : [];
+
+    const saved = sessionStorage.getItem("erap_location_" + organizationId);
+
+    const savedLocation = currentUser.locations.find(
+        location => location.location_id === saved
+    );
+
+    if (savedLocation) {
+
+        currentUser.location = savedLocation;
+
+    } else if (currentUser.locations.length === 1) {
+
+        currentUser.location = currentUser.locations[0];
+
+    } else {
+
+        currentUser.location = { location_id: "ALL", name: "All locations" };
+
+    }
+
+    if (currentUser.location?.location_id && currentUser.location.location_id !== "ALL") {
+
+        sessionStorage.setItem(
+            "erap_location_" + organizationId,
+            currentUser.location.location_id
+        );
+
+    }
+
+    renderLocationSwitcher();
+
+    if (currentUser.locations.length === 0) {
+
+        $("locationModal")?.classList.remove("hidden");
+
+    } else {
+
+        $("locationModal")?.classList.add("hidden");
+
+    }
+
+}
+
+
+async function refreshTenantData() {
+
+    clearTenantData();
+
+    await loadLocations();
+
+    await loadResources();
+
+    await loadRequests();
+
+    await loadAllocations();
+
+}
+
+
+async function switchOrganization(organizationId) {
+
+    const selected = (currentUser.organizations || []).find(
+        organization => organization.organization_id === organizationId
+    );
+
+    if (!selected) {
+
+        return;
+
+    }
+
+    currentUser.organization = selected;
+
+    sessionStorage.setItem("erap_selected_organization_id", organizationId);
+
+    currentUser.locations = [];
+
+    currentUser.location = null;
+
+    updateUserInterface();
+
+    renderOrganizationSwitcher();
+
+    await refreshTenantData();
+
+}
+
+
+async function switchLocation(locationId) {
+
+    if (locationId === "ALL") {
+
+        currentUser.location = { location_id: "ALL", name: "All locations" };
+
+        sessionStorage.removeItem("erap_location_" + selectedOrganizationId());
+
+    } else {
+
+        currentUser.location = (currentUser.locations || []).find(
+            location => location.location_id === locationId
+        ) || null;
+
+        if (currentUser.location) {
+
+            sessionStorage.setItem(
+                "erap_location_" + selectedOrganizationId(),
+                currentUser.location.location_id
+            );
+
+        }
+
+    }
+
+    clearTenantData();
+
+    await loadResources();
+
+    await loadRequests();
+
+    await loadAllocations();
+
+}
+
+
+async function createLocation() {
+
+    const name = $("locationName")?.value.trim() || "";
+
+    if (!name) {
+
+        showToast("Location name is required.");
+
+        return;
+
+    }
+
+    const idToken = await waitForIdToken();
+
+    if (!idToken) {
+
+        showToast("Cognito ID token is not available.");
+
+        return;
+
+    }
+
+    const response = await fetch(LOCATIONS_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + idToken
+        },
+        body: JSON.stringify({
+            name: name,
+            city: $("locationCity")?.value.trim() || "",
+            organization_id: selectedOrganizationId()
+        })
+    });
+
+    const data = await readJsonResponse(response);
+
+    if (!response.ok) {
+
+        showToast(organizationErrorMessage(response.status, data));
+
+        return;
+
+    }
+
+    $("locationModal")?.classList.add("hidden");
+
+    $("locationName").value = "";
+
+    $("locationCity").value = "";
+
+    showToast("Location added.");
+
+    await refreshTenantData();
+
+}
+
+
 function selectCurrentOrganization(organizations) {
 
     if (!organizations || organizations.length === 0) {
@@ -4944,9 +5405,24 @@ function applyOrganizationContext(organizations) {
 
     currentUser.organizations = list;
 
-    currentUser.organization = selectCurrentOrganization(list);
+    const savedId = sessionStorage.getItem("erap_selected_organization_id");
+
+    currentUser.organization = list.find(
+        organization => organization.organization_id === savedId
+    ) || selectCurrentOrganization(list);
+
+    if (currentUser.organization) {
+
+        sessionStorage.setItem(
+            "erap_selected_organization_id",
+            currentUser.organization.organization_id
+        );
+
+    }
 
     updateUserInterface();
+
+    renderOrganizationSwitcher();
 
 }
 
@@ -5257,15 +5733,7 @@ async function startDashboardData() {
 
     dashboardDataStarted = true;
 
-    renderAllocations();
-
-    updateDashboardStats();
-
-    updateAnalytics();
-
-    await loadResources();
-
-    await loadRequests();
+    await refreshTenantData();
 
     console.log(
         "ERAP initialized successfully."

@@ -254,6 +254,20 @@
         </span>
 
 
+        <select
+            id="organizationSwitcher"
+            class="context-select"
+            aria-label="Organization"
+        ></select>
+
+
+        <select
+            id="locationSwitcher"
+            class="context-select"
+            aria-label="Location"
+        ></select>
+
+
         <button
             class="notification-btn"
             id="notificationBtn"
@@ -541,13 +555,14 @@
                             Location
                         </label>
 
-                        <input
-                            type="text"
+                        <select
                             id="location"
-                            placeholder="Example: Bangalore"
-                            autocomplete="off"
                             required
                         >
+                            <option value="">
+                                Select location
+                            </option>
+                        </select>
 
                     </div>
 
@@ -2265,11 +2280,11 @@
             </label>
 
 
-            <input
-                type="text"
-                id="newResourceLocation"
-                placeholder="Example: Bangalore"
-            >
+            <select id="newResourceLocation">
+                <option value="">
+                    Select location
+                </option>
+            </select>
 
 
         </div>
@@ -2282,6 +2297,82 @@
             type="button"
         >
             Save Resource
+        </button>
+
+
+    </div>
+
+
+</div>
+
+
+
+</div>
+
+
+
+<!-- =====================================================
+     LOCATION SETUP
+====================================================== -->
+
+<div
+    class="modal hidden"
+    id="locationModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="locationModalTitle"
+>
+
+
+    <div class="modal-card">
+
+
+        <h2 id="locationModalTitle">
+            Add a location
+        </h2>
+
+
+        <p class="modal-description">
+            Locations belong to the selected organization. Resources and requests use a location inside that organization.
+        </p>
+
+
+        <div class="form-group">
+
+            <label for="locationName">
+                Location name
+            </label>
+
+            <input
+                type="text"
+                id="locationName"
+                maxlength="100"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label for="locationCity">
+                City
+            </label>
+
+            <input
+                type="text"
+                id="locationCity"
+                maxlength="100"
+            >
+
+        </div>
+
+
+        <button
+            class="primary-btn full-width"
+            id="createLocationBtn"
+            type="button"
+        >
+            Add location
         </button>
 
 
