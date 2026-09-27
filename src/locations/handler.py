@@ -11,6 +11,7 @@ from access import (
     query_by_organization,
     require_location,
 )
+from audit import build_audit_event, record_audit
 from common import api_response, parse_json_body
 
 
@@ -21,6 +22,34 @@ def locations_table():
 
     return boto3.resource("dynamodb").Table(
         os.environ.get("LOCATIONS_TABLE", "Locations")
+    )
+
+
+def resources_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table("Resources")
+
+
+def requests_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table("EmergencyRequests")
+
+
+def allocations_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table("Allocations")
+
+
+def audit_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(
+        os.environ.get("AUDIT_TABLE", "AuditEvents")
     )
 
 
@@ -118,6 +147,18 @@ def lambda_handler(event, context):
                 Item=item,
                 ConditionExpression="attribute_not_exists(location_id)",
             )
+            record_audit(
+                audit_table(),
+                build_audit_event(
+                    organization_id,
+                    user_sub,
+                    membership.get("role"),
+                    "location.create",
+                    "location",
+                    item["location_id"],
+                    location_id=item["location_id"],
+                ),
+            )
             return api_response(201, {"message": "Location created", "location": location_view(item)})
 
         if method in {"PUT", "PATCH"}:
@@ -147,10 +188,35 @@ def lambda_handler(event, context):
 
         if method == "DELETE":
             current = require_location(table, organization_id, path_location_id(event))
-            current["status"] = "DELETED"
+            location_id = current["location_id"]
+
+            for dependent in (
+                resources_table(),
+                requests_table(),
+                allocations_table(),
+            ):
+                if query_by_organization(dependent, organization_id, location_id):
+                    return api_response(
+                        409,
+                        {"message": "Location has operational records"},
+                    )
+
+            current["status"] = "INACTIVE"
             current["updated_at"] = now()
             table.put_item(Item=current)
-            return api_response(200, {"message": "Location deleted"})
+            record_audit(
+                audit_table(),
+                build_audit_event(
+                    organization_id,
+                    user_sub,
+                    membership.get("role"),
+                    "location.deactivate",
+                    "location",
+                    location_id,
+                    location_id=location_id,
+                ),
+            )
+            return api_response(200, {"message": "Location deactivated"})
 
         return api_response(405, {"message": "Method not allowed"})
 

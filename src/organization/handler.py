@@ -12,6 +12,15 @@ from common import (
     parse_json_body,
 )
 from membership import members_table, organizations_table
+from audit import build_audit_event, record_audit
+
+
+def audit_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("AUDIT_TABLE", "AuditEvents"))
 
 CLIENT_REQUEST_ID_ALPHABET = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
@@ -164,5 +173,17 @@ def lambda_handler(event, context):
 
     if not created:
         payload["message"] = "Organization already created"
+    else:
+        record_audit(
+            audit_table(),
+            build_audit_event(
+                organization_id,
+                user_sub,
+                "OWNER",
+                "organization.create",
+                "organization",
+                organization_id,
+            ),
+        )
 
     return api_response(201 if created else 200, payload)

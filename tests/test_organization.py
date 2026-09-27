@@ -4,12 +4,20 @@ from pathlib import Path
 
 from botocore.exceptions import ClientError
 
-ORGANIZATION_DIR = Path(__file__).resolve().parents[1] / "src" / "organization"
-sys.path.insert(0, str(ORGANIZATION_DIR))
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src" / "shared"))
+sys.path.insert(0, str(ROOT / "src" / "organization"))
 
 import get_handler
 import handler
 import membership
+
+
+@pytest.fixture(autouse=True)
+def disable_live_audit(monkeypatch):
+    monkeypatch.setattr(handler, "audit_table", lambda: None)
 
 
 CLAIMS_SUB = "cognito-user-1"

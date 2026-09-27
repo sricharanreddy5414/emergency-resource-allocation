@@ -12,6 +12,7 @@ from access import (
     require_location,
     require_owned,
 )
+from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 from matching import choose_resource, sort_requests_by_priority
 
@@ -65,6 +66,14 @@ def events_client():
     import boto3
 
     return boto3.client("events")
+
+
+def audit_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("AUDIT_TABLE", "AuditEvents"))
 
 
 def parse_body(event):
@@ -132,7 +141,7 @@ def lambda_handler(event, context):
             )
 
         if method == "POST":
-            return allocate(body, organization_id)
+            return allocate(body, organization_id, _user_sub, membership.get("role"))
 
         return response(405, {"message": "Method not allowed"})
     except AccessError as error:
@@ -146,7 +155,7 @@ def lambda_handler(event, context):
         return response(500, {"message": "Unable to process allocation"})
 
 
-def allocate(body, organization_id):
+def allocate(body, organization_id, actor_sub="", actor_role=""):
     request_id = str(body.get("request_id", "")).strip()
     resource_type = str(body.get("resource_type", "")).strip()
     location_id = str(body.get("location_id", "")).strip()
@@ -165,8 +174,8 @@ def allocate(body, organization_id):
     if existing:
         require_owned(existing, organization_id)
 
-        if str(existing.get("Status", "")).upper() == "ALLOCATED":
-            return response(409, {"message": "Request is already allocated", "request_id": request_id})
+        if str(existing.get("Status", "")).upper() != "PENDING":
+            return response(409, {"message": "Request is not eligible for allocation"})
 
         if existing.get("location_id") != location["location_id"]:
             return response(409, {"message": "Request location does not match"})
@@ -263,7 +272,37 @@ def allocate(body, organization_id):
             "status": "ALLOCATED",
             "allocated_at": allocated_at,
         }
-        allocations_table().put_item(Item=allocation)
+        try:
+            allocations_table().put_item(
+                Item=allocation,
+                ConditionExpression="attribute_not_exists(allocation_id)",
+            )
+            requests_table().update_item(
+                Key={"request_id": current_request_id},
+                UpdateExpression="SET #s = :status",
+                ConditionExpression="#s = :pending AND organization_id = :organization_id",
+                ExpressionAttributeNames={"#s": "Status"},
+                ExpressionAttributeValues={
+                    ":status": "ALLOCATED",
+                    ":pending": "PENDING",
+                    ":organization_id": organization_id,
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+            resources_table().update_item(
+                Key={"resource_id": resource_id},
+                UpdateExpression="SET Available = :available",
+                ConditionExpression="organization_id = :organization_id AND Available = :held",
+                ExpressionAttributeValues={
+                    ":available": True,
+                    ":held": False,
+                    ":organization_id": organization_id,
+                },
+            )
+            return response(409, {"message": "Request is not eligible for allocation"})
+
         history_table().put_item(
             Item={
                 "history_id": "HIST-" + current_request_id + "-" + resource_id,
@@ -279,16 +318,6 @@ def allocate(body, organization_id):
                 "request_id": current_request_id,
                 "allocation_id": allocation_id,
             }
-        )
-        requests_table().update_item(
-            Key={"request_id": current_request_id},
-            UpdateExpression="SET #s = :status",
-            ConditionExpression="organization_id = :organization_id",
-            ExpressionAttributeNames={"#s": "Status"},
-            ExpressionAttributeValues={
-                ":status": "ALLOCATED",
-                ":organization_id": organization_id,
-            },
         )
 
         try:
@@ -312,6 +341,19 @@ def allocate(body, organization_id):
             )
         except Exception as error:
             print("Allocation event error:", error.__class__.__name__)
+
+        record_audit(
+            audit_table(),
+            build_audit_event(
+                organization_id,
+                actor_sub,
+                actor_role,
+                "allocation.create",
+                "allocation",
+                allocation_id,
+                location_id=resource.get("location_id", ""),
+            ),
+        )
 
         if current_request_id == request_id:
             return response(

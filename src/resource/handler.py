@@ -13,6 +13,7 @@ from access import (
     require_location,
     require_owned,
 )
+from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 
 
@@ -84,6 +85,14 @@ def events_client():
     return boto3.client("events")
 
 
+def audit_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("AUDIT_TABLE", "AuditEvents"))
+
+
 def is_available(value):
     if isinstance(value, str):
         return value.lower() == "true"
@@ -109,7 +118,7 @@ def lambda_handler(event, context):
         organization_id = membership["organization_id"]
 
         if method == "POST" and path.endswith("/release"):
-            return release_resource(body, organization_id)
+            return release_resource(body, organization_id, _user_sub, membership.get("role"))
 
         if method == "GET" and path.endswith("/history"):
             return resource_history(event, organization_id)
@@ -118,7 +127,7 @@ def lambda_handler(event, context):
             return list_resources(event, organization_id)
 
         if method == "POST":
-            return register_resource(body, organization_id)
+            return register_resource(body, organization_id, _user_sub, membership.get("role"))
 
         return response(405, {"message": "Method not allowed"})
     except AccessError as error:
@@ -161,7 +170,7 @@ def resource_history(event, organization_id):
     return response(200, histories)
 
 
-def register_resource(body, organization_id):
+def register_resource(body, organization_id, actor_sub="", actor_role=""):
     resource_id = str(body.get("resource_id") or "").strip()
     resource_type = str(body.get("Type") or "").strip()
     location_id = str(body.get("location_id") or "").strip()
@@ -196,10 +205,22 @@ def register_resource(body, organization_id):
         print("Resource registration error:", error.response["Error"]["Code"])
         return response(500, {"message": "Failed to register resource"})
 
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "resource.create",
+            "resource",
+            item["resource_id"],
+            location_id=item["location_id"],
+        ),
+    )
     return response(201, {"message": "Resource registered successfully", "resource": item})
 
 
-def release_resource(body, organization_id):
+def release_resource(body, organization_id, actor_sub="", actor_role=""):
     resource_id = str(body.get("resource_id") or "").strip()
 
     if not resource_id:
@@ -318,6 +339,18 @@ def release_resource(body, organization_id):
     except Exception as error:
         print("Release event error:", error.__class__.__name__)
 
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "resource.release",
+            "resource",
+            resource_id,
+            location_id=resource.get("location_id", ""),
+        ),
+    )
     return response(
         200,
         {

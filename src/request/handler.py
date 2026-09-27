@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 from access import REQUEST_ROLES, AccessError, authorize, require_location
+from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 
 
@@ -24,6 +25,14 @@ def requests_table():
     import boto3
 
     return boto3.resource("dynamodb").Table("EmergencyRequests")
+
+
+def audit_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("AUDIT_TABLE", "AuditEvents"))
 
 
 def locations_table():
@@ -90,6 +99,18 @@ def lambda_handler(event, context):
         requests_table().put_item(
             Item=item,
             ConditionExpression="attribute_not_exists(request_id)",
+        )
+        record_audit(
+            audit_table(),
+            build_audit_event(
+                organization_id,
+                _user_sub,
+                membership.get("role"),
+                "request.create",
+                "request",
+                request_id,
+                location_id=location["location_id"],
+            ),
         )
         return response(201, {"message": "Request created successfully", "request": item})
     except AccessError as error:

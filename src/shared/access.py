@@ -75,6 +75,10 @@ def authorize(event, body=None, allowed_roles=READ_ROLES, members=None, organiza
         raise AccessError(400, "Organization selection is required")
 
     role = membership.get("role")
+    status = membership.get("status") or "ACTIVE"
+
+    if status != "ACTIVE":
+        raise AccessError(403, "Organization access denied")
 
     if role not in allowed_roles:
         raise AccessError(403, "You are not allowed to perform this action")

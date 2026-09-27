@@ -55,6 +55,8 @@ let resources = [];
 
 let allocations = [];
 
+let tenantContextLoading = false;
+
 let notifications = [];
 
 let currentUser = {
@@ -3424,6 +3426,17 @@ async function submitAllocation(
 
     event.preventDefault();
 
+    if (tenantContextLoading || !selectedOrganizationId()) {
+
+        showResult(
+            "Organization context is still loading.",
+            "error"
+        );
+
+        return;
+
+    }
+
 
     const form =
         $("allocationForm");
@@ -3837,6 +3850,11 @@ function closeRegisterModal() {
 ========================================================= */
 
 async function registerResource() {
+    if (tenantContextLoading || !selectedOrganizationId()) {
+        showToast("Organization context is still loading.");
+        return;
+    }
+
     const id = $("newResourceId").value.trim();
     const type = $("newResourceType").value;
     const location = $("newResourceLocation").value.trim();
@@ -5126,6 +5144,16 @@ function clearTenantData() {
 
     allocations = [];
 
+    const history = $("resourceHistoryContent");
+
+    if (history) {
+
+        history.innerHTML = "";
+
+    }
+
+    $("resourceHistoryModal")?.classList.add("hidden");
+
     renderResourcesTable();
 
     renderRequests();
@@ -5135,6 +5163,23 @@ function clearTenantData() {
     updateDashboardStats();
 
     updateAnalytics();
+
+}
+
+
+function setOperationalActionsEnabled(enabled) {
+
+    ["allocateBtn", "saveResourceBtn"].forEach(id => {
+
+        const button = $(id);
+
+        if (button) {
+
+            button.disabled = !enabled;
+
+        }
+
+    });
 
 }
 
@@ -5237,15 +5282,29 @@ async function loadLocations() {
 
 async function refreshTenantData() {
 
+    tenantContextLoading = true;
+
+    setOperationalActionsEnabled(false);
+
     clearTenantData();
 
-    await loadLocations();
+    try {
 
-    await loadResources();
+        await loadLocations();
 
-    await loadRequests();
+        await loadResources();
 
-    await loadAllocations();
+        await loadRequests();
+
+        await loadAllocations();
+
+    } finally {
+
+        tenantContextLoading = false;
+
+        setOperationalActionsEnabled(Boolean(selectedOrganizationId()));
+
+    }
 
 }
 
@@ -5270,9 +5329,19 @@ async function switchOrganization(organizationId) {
 
     currentUser.location = null;
 
+    sessionStorage.removeItem("erap_location_" + organizationId);
+
+    tenantContextLoading = true;
+
+    setOperationalActionsEnabled(false);
+
+    clearTenantData();
+
     updateUserInterface();
 
     renderOrganizationSwitcher();
+
+    renderLocationSwitcher();
 
     await refreshTenantData();
 

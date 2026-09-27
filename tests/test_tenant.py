@@ -30,6 +30,13 @@ request_handler = load_module("request_handler", "src/request/handler.py")
 allocation_service = load_module("allocation_service", "src/allocation/service.py")
 
 
+@pytest.fixture(autouse=True)
+def disable_live_audit(monkeypatch):
+    monkeypatch.setattr(resource_handler, "audit_table", lambda: None)
+    monkeypatch.setattr(request_handler, "audit_table", lambda: None)
+    monkeypatch.setattr(allocation_service, "audit_table", lambda: None)
+
+
 ORG_A = "ORG-A"
 ORG_B = "ORG-B"
 USER = "user-1"
