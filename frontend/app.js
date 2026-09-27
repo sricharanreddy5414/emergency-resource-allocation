@@ -573,6 +573,200 @@ function decodeJwt(token) {
 
 
 /* =========================================================
+   SESSION REFRESH
+========================================================= */
+
+const originalFetch = window.fetch.bind(window);
+
+let sessionRefresh = null;
+
+
+function idTokenNeedsRefresh() {
+
+    const token = getIdToken();
+
+    if (!token) {
+
+        return Boolean(sessionStorage.getItem("erap_refresh_token"));
+
+    }
+
+    const claims = decodeJwt(token);
+    const expiresAt = Number(claims && claims.exp);
+
+    if (!expiresAt) {
+
+        return true;
+
+    }
+
+    return expiresAt * 1000 <= Date.now() + 60000;
+
+}
+
+
+async function requestRefreshToken() {
+
+    const refreshToken = sessionStorage.getItem("erap_refresh_token");
+
+    if (!refreshToken) {
+
+        await loginWithCognito();
+
+        return false;
+
+    }
+
+    try {
+
+        const body = new URLSearchParams({
+
+            grant_type: "refresh_token",
+
+            client_id: COGNITO_CLIENT_ID,
+
+            refresh_token: refreshToken
+
+        });
+
+        const response = await originalFetch(
+            `${COGNITO_DOMAIN}/oauth2/token`,
+            {
+
+                method: "POST",
+
+                headers: {
+
+                    "Content-Type": "application/x-www-form-urlencoded"
+
+                },
+
+                body: body.toString()
+
+            }
+        );
+
+        if (!response.ok) {
+
+            clearTokens();
+
+            await loginWithCognito();
+
+            return false;
+
+        }
+
+        saveTokens(await response.json());
+
+        return Boolean(getIdToken());
+
+    } catch (error) {
+
+        console.error("Cognito session refresh failed");
+
+        clearTokens();
+
+        await loginWithCognito();
+
+        return false;
+
+    }
+
+}
+
+
+async function refreshSession() {
+
+    if (!sessionRefresh) {
+
+        sessionRefresh = requestRefreshToken().finally(() => {
+
+            sessionRefresh = null;
+
+        });
+
+    }
+
+    return sessionRefresh;
+
+}
+
+
+function authorizationHeader(headers) {
+
+    if (!headers) {
+
+        return "";
+
+    }
+
+    if (typeof Headers !== "undefined" && headers instanceof Headers) {
+
+        return headers.get("Authorization") || headers.get("authorization") || "";
+
+    }
+
+    return headers.Authorization || headers.authorization || "";
+
+}
+
+
+window.fetch = async function (input, options) {
+
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const authed = url.includes("execute-api") && authorizationHeader(options && options.headers);
+
+    if (!authed) {
+
+        return originalFetch(input, options);
+
+    }
+
+    const next = {
+        ...options,
+        headers: {
+            ...(options.headers || {})
+        }
+    };
+
+    if (idTokenNeedsRefresh()) {
+
+        const refreshed = await refreshSession();
+
+        if (!refreshed) {
+
+            return originalFetch(input, next);
+
+        }
+
+    }
+
+    next.headers.Authorization = "Bearer " + getIdToken();
+
+    let response = await originalFetch(input, next);
+
+    if (response.status !== 401) {
+
+        return response;
+
+    }
+
+    const refreshed = await refreshSession();
+
+    if (!refreshed) {
+
+        return response;
+
+    }
+
+    next.headers.Authorization = "Bearer " + getIdToken();
+
+    return originalFetch(input, next);
+
+};
+
+
+/* =========================================================
    LOAD AUTHENTICATED USER
 ========================================================= */
 
@@ -819,7 +1013,7 @@ async function initializeAuthentication() {
        send the user to Cognito Managed Login.
     */
 
-    if (!getAccessToken()) {
+    if (!getAccessToken() && !sessionStorage.getItem("erap_refresh_token")) {
 
         await loginWithCognito();
 
@@ -829,8 +1023,31 @@ async function initializeAuthentication() {
 
 
     /*
-       Existing authenticated session.
+       An expired ID token still leaves the user on screen.
+       Refresh it before any protected API call.
     */
+
+    if (idTokenNeedsRefresh()) {
+
+        const refreshed = await refreshSession();
+
+        if (!refreshed) {
+
+            return false;
+
+        }
+
+    }
+
+
+    if (!getIdToken()) {
+
+        await loginWithCognito();
+
+        return false;
+
+    }
+
 
     loadAuthenticatedUser();
 
