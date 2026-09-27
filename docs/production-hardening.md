@@ -64,7 +64,7 @@ Audit writes are best-effort. A failed audit record does not fail the user opera
 
 ## Monitoring
 
-CloudWatch alarms cover API 5XX responses, allocation throttles, auto-release errors, public-discovery errors, and DynamoDB system errors on `Resources`. An existing allocation error alarm was left in place. Alarms do not yet notify an email or paging topic.
+CloudWatch alarms cover API 5XX responses, allocation throttles, auto-release errors, public-discovery errors, and DynamoDB system errors on `Resources`. Those five alarms publish to the SNS topic `ERAP-Production-Alarms`. No email or other endpoint is subscribed yet. An existing allocation error alarm still publishes to `EmergencyResourceNotifications`. Lambda log groups are retained for 30 days.
 
 ## States
 
@@ -84,8 +84,8 @@ On 27 September 2026, five calls to `GET /public/resources` from this workstatio
 
 ## Incidents
 
-The new alarms record failures in CloudWatch and do not page anyone. `AlarmActions` is empty. A table restore would be a point-in-time restore to a new table name, then a cutover. Do not restore over the live tables. Legacy unscoped rows are still present and are excluded from tenant queries.
+The five `ERAP-*` alarms publish to `ERAP-Production-Alarms`. Subscribe an operator to that topic to receive them. A table restore would be a point-in-time restore to a new table name, then a cutover. Do not restore over the live tables. Legacy unscoped rows are still present and are excluded from tenant queries.
 
 ## Known limits
 
-There is no per-tenant throttle, no alarm notification target, and no tested signed-in browser session in this phase. Legacy operational rows remain unscoped and excluded from tenant queries. Attribute values are scalars only. The resource screen creates resources and does not edit an existing one.
+There is no per-tenant throttle. The alarm topic has no subscriber until an operator adds one. Legacy operational rows remain unscoped and excluded from tenant queries. Attribute values are scalars only. The resource screen creates resources and does not edit an existing one. Signed-in browser flows were not repeated in this phase because the web client does not allow admin password authentication.

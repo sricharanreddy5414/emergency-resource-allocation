@@ -8,11 +8,11 @@ The deployed identity is the git commit SHA.
 
 For each of the nine functions it:
 
-1. uploads the zip built from that commit
+1. uploads the zip built from that commit to `$LATEST`
 2. publishes a Lambda version whose description is `commit=<sha>`
-3. points alias `live` at that version, with the same description
+3. points alias `live` at that version
 
-`$LATEST` receives the same zip. API Gateway still invokes `$LATEST`, so the alias is the recorded version and the running code.
+API Gateway and the auto-release rule invoke `live`, so the running code changes at step 3. `$LATEST` is updated first and is not what the API calls.
 
 ## How to see what is deployed
 
@@ -36,4 +36,4 @@ There is no separate release number. The SHA is the version.
 
 ## What this pipeline does not version
 
-API Gateway deployment `p29gcw` stays in place while this pipeline only changes Lambda code. DynamoDB items are not versioned by the deploy. A data change needs a separate migration, and `scripts/migrate_tenant_scope.py apply` is not part of any workflow.
+API Gateway deployment `xuwrkf` routes traffic to alias `live`. The previous snapshot, `p29gcw`, remains and can be selected again. DynamoDB items are not versioned by the deploy. A data change needs a separate migration, and `scripts/migrate_tenant_scope.py apply` is not part of any workflow.

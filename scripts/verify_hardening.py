@@ -52,13 +52,51 @@ def main():
     missing = ALARMS - names
     if missing:
         raise SystemExit(f"missing alarms {sorted(missing)}")
+    silent = [
+        item["AlarmName"]
+        for item in [*alarms.get("MetricAlarms", []), *legacy.get("MetricAlarms", [])]
+        if item["AlarmName"] in ALARMS and not item.get("AlarmActions")
+    ]
+    if silent:
+        raise SystemExit(f"alarms without a notification target: {silent}")
     print("ok alarms")
     authorizers = aws(["apigateway", "get-authorizers", "--rest-api-id", API_ID], region=REGION)
     ids = {item["id"] for item in authorizers.get("items", [])}
     if "y0hzhr" not in ids:
         raise SystemExit("Cognito authorizer missing")
     print("ok authorizer")
+    public = next(item for item in _resources() if item.get("path") == "/public/resources")
+    integration = aws(
+        [
+            "apigateway",
+            "get-integration",
+            "--rest-api-id",
+            API_ID,
+            "--resource-id",
+            public["id"],
+            "--http-method",
+            "GET",
+        ],
+        region=REGION,
+    )
+    if ":live/invocations" not in (integration.get("uri") or ""):
+        raise SystemExit("public API does not invoke alias live")
+    print("ok live alias")
     return 0
+
+
+def _resources():
+    found = []
+    position = None
+    while True:
+        args = ["apigateway", "get-resources", "--rest-api-id", API_ID, "--limit", "500"]
+        if position:
+            args.extend(["--position", position])
+        page = aws(args, region=REGION)
+        found.extend(page.get("items", []))
+        position = page.get("position")
+        if not position:
+            return found
 
 
 if __name__ == "__main__":

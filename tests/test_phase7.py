@@ -56,3 +56,20 @@ def test_deploy_policy_cannot_mutate_data_or_api():
     assert "migrate_tenant_scope" not in deploy
     assert "delete-table" not in deploy
     assert "update-stage" not in deploy
+
+
+def test_alias_uri_adds_live_once():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from alias_uri import live_invocation_uri
+
+    original = "arn:aws:apigateway:eu-north-1:lambda:path/2015-03-31/functions/arn:aws:lambda:eu-north-1:1:function:get-resources/invocations"
+    updated = live_invocation_uri(original, ["get-resources"])
+    assert updated.endswith("function:get-resources:live/invocations")
+    assert live_invocation_uri(updated, ["get-resources"]) == ""
+    assert live_invocation_uri("MOCK", ["get-resources"]) == ""
+
+
+def test_workflows_do_not_apply_tenant_migration():
+    folder = ROOT / ".github" / "workflows"
+    for path in folder.glob("*.yml"):
+        assert "migrate_tenant_scope" not in path.read_text(encoding="utf-8")

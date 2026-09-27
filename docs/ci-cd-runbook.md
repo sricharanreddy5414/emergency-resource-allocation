@@ -28,11 +28,17 @@ Nothing deploys to staging. The `staging` GitHub environment is reserved and has
 
 ## 4. Production promotion
 
-The public Amplify app builds `main` on every push. That is the frontend promotion.
+The public Amplify app builds `main` on every push. The backend deploy on `main` updates alias `live`, which is what API Gateway calls. That automatic path is the live backend. It does not wait for the `production` environment.
 
-For a controlled backend redeploy, open Actions, select **Release**, choose branch `main`, and run it. Leave the commit empty to release that ref, or paste a full 40-character SHA. The job uses the `production` environment and `ERAP-GitHub-Production`.
+**Release** and **Rollback backend** are the manual workflows. They use the `production` environment. Add a required reviewer before relying on them:
 
-Add yourself as a required reviewer on the `production` environment in GitHub: Settings, Environments, `production`, Required reviewers. The repository cannot store that reviewer in git. Until a reviewer is set, the production workflow can be started by anyone with permission to run Actions on `main`.
+1. Open the repository on GitHub.
+2. Go to Settings, then Environments.
+3. Create an environment named `production` if it is not there.
+4. Add yourself under Required reviewers.
+5. Under Deployment branches, allow only `main`.
+
+`gh` is not installed on the maintenance machine, so this cannot be set from the repository. Until a reviewer is saved, anyone who can run Actions on `main` can start those two workflows. The automatic deploy on `main` remains ungated because it is the only backend.
 
 ## 5. Verify a deployment
 
@@ -59,7 +65,7 @@ The alias description is `commit=<sha>`. The GitHub job summary lists the same S
 
 ## 7. Roll back
 
-Use **Rollback backend** with the full SHA, or follow `docs/rollback.md`. Do not delete the function to undo a deploy.
+Use **Rollback backend** with a published version number. That moves alias `live` and does not upload code. Use a full SHA only when the version does not exist. Details are in `docs/rollback.md` and `docs/disaster-recovery.md`.
 
 ## 8. Do not change these by hand
 

@@ -12,9 +12,9 @@ This is the environment used for day-to-day testing. It is also what the public 
 
 ## Staging
 
-GitHub environment: `staging`. No workflow deploys to it, and no staging AWS resources were created.
+GitHub environment `staging` is not a deploy target, and no staging AWS resources exist.
 
-A real staging stack would need its own Lambda functions, API stage, and data stores so a test could not write the tables behind the public site. Copying the ten DynamoDB tables was not done. The legacy rows are unscoped, there are no organization records, and a copied database would not be an isolated tenant test. Staging stays reserved until that stack is an explicit decision.
+Staging infrastructure is intentionally deferred because the current platform has no production tenant data and creating a second full AWS stack would add unnecessary complexity at this stage.
 
 ## Production
 

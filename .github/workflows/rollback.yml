@@ -3,9 +3,13 @@ name: Rollback backend
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: Published Lambda version to point alias live at, for example 2
+        required: false
+        type: string
       commit:
-        description: Full 40-character commit SHA to restore
-        required: true
+        description: Full 40-character commit SHA to redeploy when a version number is not enough
+        required: false
         type: string
 
 permissions:
@@ -22,15 +26,28 @@ jobs:
     timeout-minutes: 30
     environment: production
     steps:
+      - name: Require a version or a commit
+        env:
+          VERSION: ${{ inputs.version }}
+          COMMIT: ${{ inputs.commit }}
+        run: python -c "import os,sys; sys.exit(0 if os.environ.get('VERSION') or os.environ.get('COMMIT') else 1)"
+
       - name: Reject a commit that is not a full SHA
+        if: inputs.commit != ''
         env:
           COMMIT: ${{ inputs.commit }}
         run: python -c "import os,re,sys; sys.exit(0 if re.fullmatch(r'[0-9a-f]{40}', os.environ['COMMIT']) else 1)"
 
+      - name: Reject a version that is not a number
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python -c "import os,re,sys; sys.exit(0 if re.fullmatch(r'[1-9][0-9]{0,4}', os.environ['VERSION']) else 1)"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.commit }}
+          ref: ${{ inputs.commit || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -55,7 +72,14 @@ jobs:
           aws-region: eu-north-1
           role-session-name: erap-rollback
 
+      - name: Move alias live to the selected version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python scripts/set_live_version.py --version "$VERSION"
+
       - name: Redeploy the selected commit
+        if: inputs.version == ''
         env:
           ERAP_ENVIRONMENT: production
           GITHUB_SHA: ${{ inputs.commit }}

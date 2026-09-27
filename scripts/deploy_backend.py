@@ -1,8 +1,8 @@
 """Publish the existing Lambda functions from the current git commit.
 
-Traffic stays on $LATEST. This script updates code, publishes a version,
-and points the live alias at that version. It does not change API Gateway,
-DynamoDB, Cognito, or Amplify.
+API Gateway invokes alias live, so traffic changes when that alias moves.
+This script updates code, publishes a version, and points live at it.
+It does not change API routes, DynamoDB, Cognito, or Amplify.
 """
 
 import json
@@ -133,18 +133,24 @@ def main():
     folder = ROOT / "dist"
     folder.mkdir(exist_ok=True)
     results = []
+    summary_path = folder / "deploy-summary.json"
     for name in PACKAGES:
         print(f"deploying {name}")
         results.append(deploy_one(folder, name, commit))
         print(f"published {name} version {results[-1]['version']}")
-    summary = {
-        "environment": environment,
-        "commit": commit,
-        "alias": ALIAS,
-        "functions": results,
-        "api_changed": False,
-    }
-    (folder / "deploy-summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "environment": environment,
+                    "commit": commit,
+                    "alias": ALIAS,
+                    "functions": results,
+                    "traffic": "alias live",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
     print(json.dumps({"commit": commit, "functions": len(results)}))
     return 0
 

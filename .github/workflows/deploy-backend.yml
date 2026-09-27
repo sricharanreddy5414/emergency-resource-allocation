@@ -62,6 +62,10 @@ jobs:
       - name: Verify hardening
         run: python scripts/verify_hardening.py
 
+      - name: Restore the previous alias when verification fails
+        if: failure()
+        run: python scripts/set_live_version.py --from-summary
+
       - name: Write summary
         if: always()
         run: python scripts/render_summary.py >> "$GITHUB_STEP_SUMMARY"

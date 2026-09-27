@@ -4,24 +4,22 @@ Rollback restores a previous git commit onto the existing functions. It does not
 
 ## Backend
 
-Live API Gateway integrations invoke the unqualified function (`$LATEST`). Existing Lambda permissions are also on `$LATEST`, not on an alias. Moving alias `live` without uploading that commit's zip would not change the API.
-
-The rollback path is to deploy the known commit again:
+Live API Gateway integrations invoke alias `live`. Moving that alias restores the previous published version without uploading a zip:
 
 ```text
-git checkout <40-character-sha>
-python scripts/deploy_backend.py
+python scripts/set_live_version.py --version <previous-version>
 python scripts/smoke_test.py
-python scripts/verify_hardening.py
 ```
 
-From GitHub, open Actions, choose **Rollback backend**, run it from `main`, and paste the full SHA. The workflow checks out that SHA, runs tests, assumes `ERAP-GitHub-Production`, and publishes a new version. Alias `live` then points at the restored code. The previous version numbers remain on the function.
+This was exercised from version 2 to version 1 and back to version 2. Both versions served the same application behavior on the public and unauthenticated checks.
 
-The deploy summary lists `previous_version` for each function. That number is the alias target from before the deploy. It is the audit marker. Restoring traffic still requires the git commit that produced it.
+From GitHub, open **Rollback backend**, run it from `main`, and enter the version number. Leave the commit empty. Use a full SHA only when the good code has no published version. The workflow then uploads that commit and points `live` at the new version.
+
+A failed **Deploy backend** job runs `python scripts/set_live_version.py --from-summary`, which moves `live` back to the recorded previous version when that summary exists.
 
 ## API Gateway
 
-This pipeline does not create an API deployment. The stage deployment at the end of Phase 6 is `p29gcw`.
+Routine deploys do not create an API deployment. Phase 8 published deployment `xuwrkf`, which points integrations at alias `live`. The previous snapshot is `p29gcw`.
 
 If a later change publishes a bad API snapshot, point the stage back at the previous deployment id:
 
@@ -29,7 +27,7 @@ If a later change publishes a bad API snapshot, point the stage back at the prev
 aws apigateway update-stage --rest-api-id 4c6dni17l3 --stage-name dev --region eu-north-1 --patch-operations op=replace,path=/deploymentId,value=p29gcw
 ```
 
-Use the real previous id if it is no longer `p29gcw`. Do not delete deployments. Stage throttling is a stage setting and is not stored inside the deployment snapshot; after any API change, run `python scripts/verify_hardening.py`.
+Use the real previous id if it is no longer `p29gcw`. Do not delete deployments. Stage throttling is a stage setting and is not stored inside the deployment snapshot. After any API change, run `python scripts/verify_hardening.py`.
 
 ## Frontend
 
