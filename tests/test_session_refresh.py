@@ -15,6 +15,7 @@ def test_expired_session_refreshes_before_protected_api_calls():
     assert "refresh_token: refreshToken" in refresh
     assert "originalFetch(" in refresh
     assert "console.error(error)" not in refresh
+    assert refresh.index("tokenStillUsable()") < refresh.index("loginWithCognito()")
     assert "idTokenNeedsRefresh()" in startup
     assert startup.index("refreshSession()") < startup.rindex("loadAuthenticatedUser()")
     assert "response.status !== 401" in wrapper

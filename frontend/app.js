@@ -581,26 +581,32 @@ const originalFetch = window.fetch.bind(window);
 let sessionRefresh = null;
 
 
+function tokenExpiry() {
+
+    const claims = decodeJwt(getIdToken() || "");
+    const expiresAt = Number(claims && claims.exp);
+
+    return expiresAt ? expiresAt * 1000 : 0;
+
+}
+
+
+function tokenStillUsable() {
+
+    return tokenExpiry() > Date.now() + 5000;
+
+}
+
+
 function idTokenNeedsRefresh() {
 
-    const token = getIdToken();
-
-    if (!token) {
+    if (!getIdToken()) {
 
         return Boolean(sessionStorage.getItem("erap_refresh_token"));
 
     }
 
-    const claims = decodeJwt(token);
-    const expiresAt = Number(claims && claims.exp);
-
-    if (!expiresAt) {
-
-        return true;
-
-    }
-
-    return expiresAt * 1000 <= Date.now() + 60000;
+    return tokenExpiry() <= Date.now() + 60000;
 
 }
 
@@ -611,7 +617,11 @@ async function requestRefreshToken() {
 
     if (!refreshToken) {
 
-        await loginWithCognito();
+        if (!tokenStillUsable()) {
+
+            await loginWithCognito();
+
+        }
 
         return false;
 
@@ -648,9 +658,13 @@ async function requestRefreshToken() {
 
         if (!response.ok) {
 
-            clearTokens();
+            if (!tokenStillUsable()) {
 
-            await loginWithCognito();
+                clearTokens();
+
+                await loginWithCognito();
+
+            }
 
             return false;
 
@@ -664,9 +678,13 @@ async function requestRefreshToken() {
 
         console.error("Cognito session refresh failed");
 
-        clearTokens();
+        if (!tokenStillUsable()) {
 
-        await loginWithCognito();
+            clearTokens();
+
+            await loginWithCognito();
+
+        }
 
         return false;
 
