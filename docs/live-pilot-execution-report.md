@@ -6,7 +6,7 @@
 
 ## Git commit
 
-Application commit under validation: `4b31065155278e29ef466930a22b676298d13a62` on `main`, matching `origin/main` before this report. No application source was changed. This document is the validation record for that commit.
+The first authenticated pilot ran against `4b31065155278e29ef466930a22b676298d13a62`. The Decimal serialization fix is commit `de57d69fe4a0fac3df628754104a44db017d1ec4`. GitHub Actions CI and Deploy backend for that commit succeeded. The deploy job ran tests, the secret scan, package check, smoke test, and `python scripts/verify_hardening.py`. The hardening step passed and the alias rollback step was skipped. API Gateway traffic follows alias `live`. The local AWS CLI session had expired, so this machine could not print the new Lambda version number. The deploy script publishes a version and sets the alias description to that commit.
 
 ## Authenticated pilot identity
 
@@ -38,11 +38,13 @@ PASS
 
 ## Request Types
 
-BLOCKED
+PENDING HUMAN ACTION
 
 `Emergency Medical Supply Request` was created through the authenticated admin flow. Id `RQ-5201EFBA2A5C`, status ACTIVE, organization `ORG-D13B30D99127`. Audit action `request-type.create` was recorded. A duplicate create returned 409.
 
-The type does not stay available in the authenticated UI. `GET /request-types` returns 500. Catalog logs for the same request first record result 200 and then `Catalog error: TypeError`, followed by result 500 and error code `REQUEST_FAILED`. `type_view` returns `default_priority` from DynamoDB. That value is a Decimal. `api_response` in `src/organization/common.py` calls `json.dumps` without a Decimal handler. Resource-type listing succeeds because those records do not store `default_priority`, so the view falls back to the integer 3. The dashboard request-type dropdown therefore stays on "Select request type" after reload. This defect was not fixed.
+During the first pilot, `GET /request-types` returned 500. Catalog logs showed result 200, then `Catalog error: TypeError`, then result 500 `REQUEST_FAILED`. `type_view` returns `default_priority` from DynamoDB as a Decimal, and `api_response` called `json.dumps` with no Decimal handler. Resource-type listing succeeded because those records do not store `default_priority`.
+
+That serializer is fixed in `de57d69` and deployed. A regression test stores `default_priority` as `Decimal("3")` and requires HTTP 200 with JSON number 3. The signed-in page was on the Cognito sign-in screen after the earlier logout, so the live authenticated list and the dashboard dropdown were not opened again. No password was entered. Unauthenticated `GET /request-types` still returns 401.
 
 ## Private Resource
 
@@ -66,11 +68,11 @@ Unauthenticated `GET /public/resources` returned 200 with one resource. Response
 
 ## Request Creation
 
-BLOCKED
+PENDING HUMAN ACTION
 
-`PILOT-REQ-001` exists. Organization `ORG-D13B30D99127`, location `LOC-9497150CB853`, request type `RQ-5201EFBA2A5C`, priority 3. Current status is RELEASED.
+`PILOT-REQ-001` exists from the first pilot. Organization `ORG-D13B30D99127`, location `LOC-9497150CB853`, request type `RQ-5201EFBA2A5C`, priority 3. Current status is RELEASED. That first request was submitted only after the already created type was placed into page memory, because the dropdown was empty. The submit itself was authenticated `POST /allocate`.
 
-A normal operator cannot select the request type, because the list call returns 500. The signed-in page was given the already created type in memory, and the real allocation form was then submitted. That submit called authenticated `POST /allocate`. It did not insert a DynamoDB row and it did not bypass Cognito. There is no separate `request.create` audit event. Request creation is part of allocation.
+`PILOT-REQ-002` was not created. The normal dropdown flow has not been repeated since the fix, because the browser is on the Cognito sign-in page.
 
 ## Matching
 
@@ -185,7 +187,7 @@ PRODUCTION ENVIRONMENT GOVERNANCE PENDING
 
 PASS
 
-For commit `4b31065`, GitHub Actions CI succeeded and Deploy backend succeeded. Both workflows use OIDC. Deploy backend uses environment `development` and role `ERAP-GitHub-Deploy`. `python scripts/verify_hardening.py` confirmed the public `GET /public/resources` integration invokes the Lambda alias `live`. A read of every non-OPTIONS method on API `4c6dni17l3` found 30 integrations using `:live/invocations` and zero using `$LATEST`. No new deployment was started by this validation. Publishing this report will run the existing push workflows and republish the same application code.
+For commit `4b31065`, GitHub Actions CI succeeded and Deploy backend succeeded. Both workflows use OIDC. Deploy backend uses environment `development` and role `ERAP-GitHub-Deploy`. A read before the serializer fix found 30 non-OPTIONS integrations using `:live/invocations` and zero using `$LATEST`. Commit `de57d69` was then deployed by that same pipeline. Its deploy job passed smoke test and hardening, which checks that public `GET /public/resources` invokes alias `live`. The alias rollback step did not run.
 
 ## Security Regression
 
@@ -193,7 +195,7 @@ PASS
 
 Commands run from this repository on 27 September 2026, exit code 0:
 
-- `python -m pytest -q` — 78 passed
+- `python -m pytest -q` — 86 passed after the Decimal tests were added. The earlier pilot run was 78 passed.
 - `python scripts/verify_hardening.py` — passed, including PITR, deletion protection, throttle, CORS, alarms, authorizer `y0hzhr`, and the public live alias
 - `python scripts/security_scan.py` — passed
 - `python scripts/check_frontend.py` — passed (`NO_FRONTEND_BUILD`)
@@ -248,16 +250,28 @@ No patient data, passwords, tokens, or secrets were stored in these records. The
 
 No infrastructure, IAM, Cognito, CORS, alarm, PITR, or deletion-protection change was made. Pilot records were created only through the application. No table was reset and no organization was deleted.
 
+## Decimal serialization fix
+
+The production failure was `TypeError: Object of type Decimal is not JSON serializable` in `api_response`. `dumps_json` in `src/organization/common.py` now turns an integer Decimal into a JSON integer and a fractional Decimal into a JSON number, using the exact decimal text rather than a string. Authentication, authorization, matching, allocation, and public visibility were not changed.
+
+`tests/test_decimal_response.py` covers an integer Decimal 3, a fractional Decimal, the request-type list that previously returned 500, an unchanged resource-type list, the 401 and 400 catalog errors, and the public field allowlist.
+
+Local commands after the fix: `python -m pytest -q` passed with 86 tests. `security_scan.py`, `check_frontend.py`, `check_workflows.py`, `package_lambdas.py --check`, and `smoke_test.py` passed. Local `verify_hardening.py` exited 1 because the AWS CLI session had expired. The GitHub deploy job then ran that same check with OIDC and it passed.
+
+After deployment, unauthenticated `GET /public/resources` still returns only Public Emergency Medical Supplies. `PILOT-MED-001` is absent. The body has no organization id, resource id, or actor id. Protected routes still return 401.
+
+The authenticated reload, `PILOT-REQ-002`, and the repeat of match, allocate, duplicate rejection, and release were not executed.
+
 ## Remaining Manual Actions
 
-- Fix `GET /request-types` so DynamoDB `default_priority` serializes. Until that is fixed, an operator cannot complete request, match, and allocate from the dashboard without a console workaround.
-- Sign in again with the pilot user and confirm ERAP Pilot Operations and Bengaluru Operations Center are restored.
+- Sign in again with the pilot user. Confirm ERAP Pilot Operations and Bengaluru Operations Center restore, and confirm Emergency Medical Supply Request appears in the request-type dropdown after a fresh reload with `default_priority` as the number 3.
+- Create `PILOT-REQ-002` from that dropdown, then match, allocate, reject a duplicate allocation, and release it through the normal screens.
 - Add a subscription to `ERAP-Production-Alarms`. Alarm subscription is pending.
-- Create the GitHub `production` environment with required reviewers and a main-only deployment policy. Production environment governance is pending.
-- Create a second verified user before live tenant-isolation and non-owner role tests. Those tests stay pending until that user exists.
+- Create the GitHub `production` environment with required reviewers and a main-only deployment policy. Production environment governance is pending. The `production` environment still returns 404.
+- Create a second verified user before live tenant-isolation and non-owner role tests.
 
 ## Final Launch Gate
 
-BLOCKED BY DEFECT
+PENDING HUMAN ACTION
 
-The required request flow cannot be completed from the authenticated dashboard. `GET /request-types` returns 500, so the request type does not appear in the form. Matching, allocation, duplicate rejection, and release were executed only after the already created type was placed into the page in memory and the real form was submitted. Tenant isolation, non-owner roles, return sign-in, alarm subscription, and GitHub production protection remain pending and are separate from this defect.
+The Decimal defect is fixed, tested, and deployed. The normal authenticated request flow after that deploy was not executed, because the pilot session is on the Cognito sign-in page and the password was not entered. Tenant isolation, non-owner roles, alarm subscription, and GitHub production protection remain pending.
