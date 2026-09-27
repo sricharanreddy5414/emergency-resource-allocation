@@ -1585,7 +1585,8 @@ async function loadRequests() {
         const response = await fetch(REQUESTS_API_URL, {
             method: "GET",
             headers: {
-                "Accept": "application/json"
+                "Accept": "application/json",
+                "Authorization": "Bearer " + getIdToken()
             }
         });
 
@@ -3866,7 +3867,8 @@ async function loadAllocations() {
             {
                 method: "GET",
                 headers: {
-                    "Accept": "application/json"
+                    "Accept": "application/json",
+                "Authorization": "Bearer " + getIdToken()
                 }
             }
         );
@@ -4906,5 +4908,4 @@ document.addEventListener(
     "DOMContentLoaded",
     initializeApp
 );
-
 
