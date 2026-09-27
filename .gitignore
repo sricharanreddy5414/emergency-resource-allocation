@@ -19,7 +19,7 @@ organization-lambda.zip
 resource-lambda.zip
 lambda_function.py
 src/organization/*
-!src/organization/handler.py
+!src/organization/*.py
 frontend/app.js.backup
 cognito-error.html
 cognito-test.html

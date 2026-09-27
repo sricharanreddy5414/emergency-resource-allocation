@@ -1,100 +1,168 @@
-﻿import json
-import os
+﻿import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 
-import boto3
+from botocore.exceptions import ClientError
 
-dynamodb = boto3.resource("dynamodb")
-organizations_table = dynamodb.Table(
-    os.environ.get("ORGANIZATIONS_TABLE", "Organizations")
+from common import (
+    MAX_ORGANIZATION_NAME_LENGTH,
+    api_response,
+    get_user_sub,
+    parse_json_body,
 )
-members_table = dynamodb.Table(
-    os.environ.get("ORGANIZATION_MEMBERS_TABLE", "OrganizationMembers")
+from membership import members_table, organizations_table
+
+CLIENT_REQUEST_ID_ALPHABET = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 )
 
 
-def response(status_code, body):
+def normalize_client_request_id(value):
+    if value is None:
+        return None
+
+    text = str(value).strip()
+
+    if not text:
+        return None
+
+    if (
+        len(text) < 8
+        or len(text) > 80
+        or any(character not in CLIENT_REQUEST_ID_ALPHABET for character in text)
+    ):
+        raise ValueError("Invalid organization request")
+
+    return text
+
+
+def organization_id_for_request(user_sub, client_request_id):
+    digest = hashlib.sha256(
+        f"{user_sub}:{client_request_id}".encode("utf-8")
+    ).hexdigest()
+
+    return "ORG-" + digest[:12].upper()
+
+
+def organization_payload(organization_id, name, created_at, status="ACTIVE"):
     return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type,Authorization",
-            "Access-Control-Allow-Methods": "OPTIONS,POST"
+        "message": "Organization created successfully",
+        "organization": {
+            "organization_id": organization_id,
+            "name": name,
+            "role": "OWNER",
+            "status": status,
+            "created_at": created_at,
         },
-        "body": json.dumps(body)
     }
-
-
-def get_user_sub(event):
-    claims = (
-        event.get("requestContext", {})
-        .get("authorizer", {})
-        .get("claims", {})
-    )
-
-    return claims.get("sub")
 
 
 def lambda_handler(event, context):
     if event.get("httpMethod") == "OPTIONS":
-        return response(200, {"message": "OK"})
+        return api_response(200, {"message": "OK"})
 
     if event.get("httpMethod") != "POST":
-        return response(405, {"message": "Method not allowed"})
+        return api_response(405, {"message": "Method not allowed"})
 
     user_sub = get_user_sub(event)
 
     if not user_sub:
-        return response(401, {"message": "Authentication required"})
+        return api_response(401, {"message": "Authentication required"})
 
     try:
-        body = json.loads(event.get("body") or "{}")
-    except json.JSONDecodeError:
-        return response(400, {"message": "Invalid JSON body"})
+        body = parse_json_body(event)
+    except (json.JSONDecodeError, ValueError):
+        return api_response(400, {"message": "Invalid JSON body"})
 
-    organization_name = str(body.get("name", "")).strip()
+    raw_name = body.get("name", "")
+
+    if raw_name is None:
+        raw_name = ""
+
+    organization_name = str(raw_name).strip()
 
     if not organization_name:
-        return response(400, {"message": "Organization name is required"})
+        return api_response(400, {"message": "Organization name is required"})
 
-    if len(organization_name) > 100:
-        return response(400, {"message": "Organization name is too long"})
+    if len(organization_name) > MAX_ORGANIZATION_NAME_LENGTH:
+        return api_response(400, {"message": "Organization name is too long"})
 
-    organization_id = "ORG-" + uuid.uuid4().hex[:12].upper()
+    try:
+        client_request_id = normalize_client_request_id(
+            body.get("client_request_id")
+        )
+    except ValueError:
+        return api_response(400, {"message": "Invalid organization request"})
+
+    if client_request_id:
+        organization_id = organization_id_for_request(
+            user_sub,
+            client_request_id,
+        )
+    else:
+        organization_id = "ORG-" + uuid.uuid4().hex[:12].upper()
+
     created_at = datetime.now(timezone.utc).isoformat()
+    org_table = organizations_table()
+    mem_table = members_table()
+    created = True
+    status = "ACTIVE"
 
-    organizations_table.put_item(
-        Item={
-            "organization_id": organization_id,
-            "name": organization_name,
-            "owner_sub": user_sub,
-            "created_at": created_at,
-            "status": "ACTIVE"
-        },
-        ConditionExpression="attribute_not_exists(organization_id)"
-    )
-
-    members_table.put_item(
-        Item={
-            "organization_id": organization_id,
-            "user_sub": user_sub,
-            "role": "OWNER",
-            "created_at": created_at
-        }
-    )
-
-    return response(
-        201,
-        {
-            "message": "Organization created successfully",
-            "organization": {
+    try:
+        org_table.put_item(
+            Item={
                 "organization_id": organization_id,
                 "name": organization_name,
+                "owner_sub": user_sub,
+                "created_at": created_at,
+                "status": status,
+            },
+            ConditionExpression="attribute_not_exists(organization_id)",
+        )
+    except ClientError as error:
+        if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            print("Organization create failed:", error.response["Error"]["Code"])
+            return api_response(500, {"message": "Unable to create organization"})
+
+        existing = org_table.get_item(
+            Key={"organization_id": organization_id}
+        ).get("Item")
+
+        if not existing or existing.get("owner_sub") != user_sub:
+            return api_response(
+                409,
+                {"message": "Organization request conflicts with an existing organization"},
+            )
+
+        created = False
+        organization_name = existing.get("name", organization_name)
+        created_at = existing.get("created_at", created_at)
+        status = existing.get("status", "ACTIVE")
+
+    try:
+        mem_table.put_item(
+            Item={
+                "organization_id": organization_id,
+                "user_sub": user_sub,
                 "role": "OWNER",
-                "status": "ACTIVE",
-                "created_at": created_at
-            }
-        }
+                "created_at": created_at,
+            },
+            ConditionExpression="attribute_not_exists(organization_id)",
+        )
+    except ClientError as error:
+        if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            print("Membership create failed:", error.response["Error"]["Code"])
+            return api_response(500, {"message": "Unable to create organization"})
+
+    payload = organization_payload(
+        organization_id,
+        organization_name,
+        created_at,
+        status,
     )
+
+    if not created:
+        payload["message"] = "Organization already created"
+
+    return api_response(201 if created else 200, payload)

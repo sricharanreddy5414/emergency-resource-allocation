@@ -2122,6 +2122,32 @@
             </div>
 
 
+            <div>
+
+                <span>
+                    Organization
+                </span>
+
+                <strong id="profileOrganization">
+                    —
+                </strong>
+
+            </div>
+
+
+            <div>
+
+                <span>
+                    Role
+                </span>
+
+                <strong id="profileRole">
+                    —
+                </strong>
+
+            </div>
+
+
         </div>
 
         <button
@@ -2256,6 +2282,67 @@
             type="button"
         >
             Save Resource
+        </button>
+
+
+    </div>
+
+
+</div>
+
+
+
+<!-- =====================================================
+     ORGANIZATION ONBOARDING
+====================================================== -->
+
+<div
+    class="modal hidden"
+    id="organizationModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="organizationModalTitle"
+>
+
+
+    <div class="modal-card">
+
+
+        <h2 id="organizationModalTitle">
+            Create your organization
+        </h2>
+
+
+        <p class="modal-description">
+            Set up your organization to start managing resources, requests, locations, and team members in ERAP.
+        </p>
+
+
+        <div class="form-group">
+
+
+            <label for="organizationName">
+                Organization name
+            </label>
+
+
+            <input
+                type="text"
+                id="organizationName"
+                maxlength="100"
+                autocomplete="organization"
+            >
+
+
+        </div>
+
+
+        <button
+            class="primary-btn full-width"
+            id="createOrganizationBtn"
+            type="button"
+        >
+            Create organization
         </button>
 
 

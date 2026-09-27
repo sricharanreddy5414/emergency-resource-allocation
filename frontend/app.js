@@ -25,6 +25,9 @@ const REQUESTS_API_URL =
 const ALLOCATIONS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/allocations";
 
+const ORGANIZATION_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/organization";
+
 
 /* =========================================================
    AMAZON COGNITO CONFIGURATION
@@ -57,9 +60,19 @@ let currentUser = {
 
     email: "Not signed in",
 
-    phone: "Not available"
+    phone: "Not available",
+
+    organizations: [],
+
+    organization: null
 
 };
+
+let organizationOnboardingRequired = false;
+
+let organizationRequestId = null;
+
+let dashboardDataStarted = false;
 
 
 /* =========================================================
@@ -544,7 +557,11 @@ function loadAuthenticatedUser() {
                 "Not signed in",
 
             phone:
-                "Not available"
+                "Not available",
+
+            organizations: [],
+
+            organization: null
 
         };
 
@@ -564,7 +581,7 @@ function loadAuthenticatedUser() {
     }
 
 
-    currentUser = {
+        currentUser = {
 
         name:
             claims.name ||
@@ -583,7 +600,13 @@ function loadAuthenticatedUser() {
 
         isAdmin:
             Array.isArray(claims["cognito:groups"]) &&
-            claims["cognito:groups"].includes("Admin")
+            claims["cognito:groups"].includes("Admin"),
+
+        organizations:
+            currentUser.organizations || [],
+
+        organization:
+            currentUser.organization || null
 
     };
 
@@ -649,6 +672,26 @@ function updateUserInterface() {
         $("profilePhone")
             .textContent =
             currentUser.phone;
+
+    }
+
+
+    if ($("profileOrganization")) {
+
+        $("profileOrganization")
+            .textContent =
+            currentUser.organization?.name ||
+            "—";
+
+    }
+
+
+    if ($("profileRole")) {
+
+        $("profileRole")
+            .textContent =
+            currentUser.organization?.role ||
+            "—";
 
     }
 
@@ -4749,6 +4792,13 @@ initializeRequestControls();
         );
 
 
+    $("createOrganizationBtn")
+        ?.addEventListener(
+            "click",
+            createOrganization
+        );
+
+
     /* Clear notifications */
 
     $("clearNotificationsBtn")
@@ -4826,6 +4876,13 @@ initializeRequestControls();
             }
 
 
+            if (organizationOnboardingRequired) {
+
+                return;
+
+            }
+
+
             closeProfile();
 
             closeRegisterModal();
@@ -4847,6 +4904,372 @@ function initializeNotifications() {
     renderNotifications();
 
     updateNotificationCount();
+
+}
+
+
+/* =========================================================
+   ORGANIZATION CONTEXT
+========================================================= */
+
+function selectCurrentOrganization(organizations) {
+
+    if (!organizations || organizations.length === 0) {
+
+        return null;
+
+    }
+
+
+    const active = organizations.filter(
+        organization => organization.status === "ACTIVE"
+    );
+
+    const pool = active.length ? active : organizations;
+
+    return pool
+        .slice()
+        .sort((left, right) =>
+            String(left.organization_id).localeCompare(
+                String(right.organization_id)
+            )
+        )[0];
+
+}
+
+
+function applyOrganizationContext(organizations) {
+
+    const list = Array.isArray(organizations) ? organizations : [];
+
+    currentUser.organizations = list;
+
+    currentUser.organization = selectCurrentOrganization(list);
+
+    updateUserInterface();
+
+}
+
+
+function createOrganizationRequestId() {
+
+    if (window.crypto && crypto.randomUUID) {
+
+        return crypto.randomUUID();
+
+    }
+
+    return "req-" + Date.now().toString(36) + "-" +
+        Math.random().toString(36).slice(2, 12);
+
+}
+
+
+function openOrganizationOnboarding() {
+
+    organizationOnboardingRequired = true;
+
+    if (!organizationRequestId) {
+
+        organizationRequestId = createOrganizationRequestId();
+
+    }
+
+    $("organizationModal")?.classList.remove("hidden");
+
+}
+
+
+function closeOrganizationOnboarding() {
+
+    organizationOnboardingRequired = false;
+
+    $("organizationModal")?.classList.add("hidden");
+
+}
+
+
+function organizationErrorMessage(status, data) {
+
+    const message = String(getApiMessage(data) || "");
+    const safe = message &&
+        message.length <= 160 &&
+        !message.includes("Traceback") &&
+        !message.includes("\n");
+
+    if (status === 400 && safe) {
+
+        return message;
+
+    }
+
+    if (status === 401) {
+
+        return "Sign in is required.";
+
+    }
+
+    if (status === 403) {
+
+        return "You are not allowed to perform this organization action.";
+
+    }
+
+    if (status === 409 && safe) {
+
+        return message;
+
+    }
+
+    if (status === 409) {
+
+        return "This organization request conflicts with an existing organization.";
+
+    }
+
+    return "Unable to complete the organization request. Please try again.";
+
+}
+
+
+async function readJsonResponse(response) {
+
+    try {
+
+        return await response.json();
+
+    }
+
+    catch (error) {
+
+        return {};
+
+    }
+
+}
+
+
+async function loadOrganizationMembership() {
+
+    const idToken = await waitForIdToken();
+
+    if (!idToken) {
+
+        showToast("Cognito ID token is not available.");
+
+        return null;
+
+    }
+
+
+    try {
+
+        const response = await fetch(ORGANIZATION_API_URL, {
+            method: "GET",
+            headers: {
+                "Accept": "application/json",
+                "Authorization": "Bearer " + idToken
+            }
+        });
+
+        const data = await readJsonResponse(response);
+
+        if (!response.ok) {
+
+            showToast(
+                organizationErrorMessage(response.status, data)
+            );
+
+            return null;
+
+        }
+
+        return Array.isArray(data.organizations) ? data.organizations : [];
+
+    }
+
+    catch (error) {
+
+        console.error("Organization lookup failed:", error);
+
+        showToast(
+            "Unable to load your organization. Please refresh."
+        );
+
+        return null;
+
+    }
+
+}
+
+
+async function createOrganization() {
+
+    if (!organizationOnboardingRequired) {
+
+        return;
+
+    }
+
+    const name = $("organizationName")?.value.trim() || "";
+
+    if (!name) {
+
+        showToast("Organization name is required.");
+
+        return;
+
+    }
+
+    if (name.length > 100) {
+
+        showToast("Organization name is too long.");
+
+        return;
+
+    }
+
+    const button = $("createOrganizationBtn");
+
+    if (button) {
+
+        button.disabled = true;
+
+    }
+
+    try {
+
+        const idToken = await waitForIdToken();
+
+        if (!idToken) {
+
+            showToast("Cognito ID token is not available.");
+
+            return;
+
+        }
+
+        const response = await fetch(ORGANIZATION_API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + idToken
+            },
+            body: JSON.stringify({
+                name: name,
+                client_request_id: organizationRequestId
+            })
+        });
+
+        const data = await readJsonResponse(response);
+
+        if (response.status !== 201 && response.status !== 200) {
+
+            showToast(
+                organizationErrorMessage(response.status, data)
+            );
+
+            return;
+
+        }
+
+        const created = data.organization || {};
+
+        applyOrganizationContext([
+            {
+                organization_id: created.organization_id,
+                name: created.name || name,
+                role: created.role || "OWNER",
+                status: created.status || "ACTIVE"
+            }
+        ]);
+
+        closeOrganizationOnboarding();
+
+        showToast(
+            data.message || "Organization created successfully."
+        );
+
+        addNotification(
+            "Organization ready",
+            (created.name || name) + " is ready in ERAP."
+        );
+
+        await startDashboardData();
+
+    }
+
+    catch (error) {
+
+        console.error("Organization creation failed:", error);
+
+        showToast(
+            "Unable to create organization. Please try again."
+        );
+
+    }
+
+    finally {
+
+        if (organizationOnboardingRequired && button) {
+
+            button.disabled = false;
+
+        }
+
+    }
+
+}
+
+
+async function resolveOrganization() {
+
+    const organizations = await loadOrganizationMembership();
+
+    if (organizations === null) {
+
+        return;
+
+    }
+
+    if (organizations.length === 0) {
+
+        openOrganizationOnboarding();
+
+        return;
+
+    }
+
+    applyOrganizationContext(organizations);
+
+    await startDashboardData();
+
+}
+
+
+async function startDashboardData() {
+
+    if (dashboardDataStarted) {
+
+        return;
+
+    }
+
+    dashboardDataStarted = true;
+
+    renderAllocations();
+
+    updateDashboardStats();
+
+    updateAnalytics();
+
+    await loadResources();
+
+    await loadRequests();
+
+    console.log(
+        "ERAP initialized successfully."
+    );
 
 }
 
@@ -4885,7 +5308,8 @@ async function initializeApp() {
 
     /*
        User is authenticated.
-       Now initialize the dashboard.
+       Keep the existing dashboard shell, then
+       resolve organization membership before live data.
     */
 
     initializeNavigation();
@@ -4919,24 +5343,7 @@ async function initializeApp() {
     }
 
 
-    renderAllocations();
-
-    updateDashboardStats();
-        updateAnalytics();
-
-
-    /*
-       Load live AWS data.
-    */
-
-    await loadResources();
-
-    await loadRequests();
-
-
-    console.log(
-        "ERAP initialized successfully."
-    );
+    await resolveOrganization();
 
 }
 
