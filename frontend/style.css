@@ -1061,6 +1061,10 @@ tr:hover td {
     border-color: #e7c7b4;
 }
 
+tr.request-high {
+    background: #fbf6f2;
+}
+
 .ops-item h3 {
     margin: 2px 0;
     font-size: 18px;

@@ -1328,17 +1328,18 @@ function refreshShellContext() {
 
     }
 
+    const organization = currentUser.organization && currentUser.organization.name
+        ? currentUser.organization.name
+        : "No organization selected";
+    const location = currentUser.location && currentUser.location.name
+        ? currentUser.location.name
+        : "All locations";
+    const line = organization + " · " + location;
     const context = $("operationalContext");
 
     if (context) {
 
-        const organization = currentUser.organization && currentUser.organization.name
-            ? currentUser.organization.name
-            : "No organization selected";
-        const location = currentUser.location && currentUser.location.name
-            ? currentUser.location.name
-            : "All locations";
-        context.textContent = organization + " · " + location;
+        context.textContent = line;
 
     }
 
@@ -1346,7 +1347,16 @@ function refreshShellContext() {
 
     if (command) {
 
-        command.textContent = organization + " · " + location;
+        command.textContent = line;
+
+    }
+
+    const opsState = $("opsState");
+
+    if (opsState) {
+
+        const ready = Boolean(currentUser.organization && currentUser.organization.name);
+        opsState.textContent = ready ? "Operational" : "Awaiting organization";
 
     }
 
@@ -2343,8 +2353,10 @@ const createdAt =
 
         }
 
+        const high = Number(priority) <= 2 ? " request-high" : "";
+
         return `
-            <tr>
+            <tr class="${high.trim()}">
 
                 <td>
                     <strong>
