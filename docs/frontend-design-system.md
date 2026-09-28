@@ -47,9 +47,9 @@ Transitions are about 180ms. `prefers-reduced-motion` removes animation and tran
 
 From 1100px, metric grids become two columns. From 780px, navigation collapses behind the menu button, the top bar stacks, and the profile name hides so the switchers remain usable.
 
-## Dispatch desk
+## Product shell
 
-The shell is a narrow operations rail and a context strip, not an admin sidebar with metric cards. Overview leads with the ready count, the current queue, readiness tallies, and movement already loaded from requests and allocations. Resources are an inventory with a selection panel. Requests are a queue. Allocations distinguish live and released rows. Organization management is split into Organization, resource types, request types, and team.
+Navigation is a dark product bar across the top, with organization and location in that same band. The page background is a flat neutral. There is no coordinate grid. Overview is a situation line, an attention queue, readiness tallies, and movement from data already loaded. Resources are an inventory. Requests are a queue. Allocations are a flow. Organization is a sectioned workspace.
 
 ## What the interface does not do
 
