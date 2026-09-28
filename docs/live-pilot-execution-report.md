@@ -286,19 +286,34 @@ The operator completed that release through the normal confirmation. The verifie
 
 On 28 September 2026, unauthenticated `GET /public/resources` still returns one item, Public Emergency Medical Supplies, Emergency Medical Kit, Bengaluru, AVAILABLE. Item keys are availability, city, description, name, and resource_type. `PILOT-MED-001` is absent. Invalid page size, page token, and availability return 400. `GET /organization` and `GET /locations` return 401. `GET /allocate` returns 403 Missing Authentication Token because that path has no GET method.
 
-Tenant isolation was not executed. Only one verified user exists. ADMIN, OPERATOR, and MEMBER were not signed in. No operator mailbox is named in the repository, so no SNS subscription was created. The GitHub `production` environment still returns 404, and this pass did not have permission to create it. No migration was applied and no pilot record was deleted.
+Tenant isolation was not executed. Only one verified user exists. ADMIN, OPERATOR, and MEMBER were not signed in. No operator mailbox is named in the repository, so no SNS subscription was created. No migration was applied and no pilot record was deleted.
 
-Deploy backend run 36347114518 for commit `b5d72cf` succeeded, including Verify hardening. That step checks all ten tables for ACTIVE, point-in-time recovery, and deletion protection, the stage and public throttles, gateway CORS, the five ERAP alarms plus the legacy allocation alarm, authorizer `y0hzhr`, and that public GET invokes alias `live`.
+Deploy backend run 36367668112 for commit `2b9c5cf` succeeded, including Verify hardening. That step checks all ten tables for ACTIVE, point-in-time recovery, and deletion protection, the stage and public throttles, gateway CORS, the five ERAP alarms plus the legacy allocation alarm, authorizer `y0hzhr`, and that public GET invokes alias `live`. The local AWS CLI session was expired during the later governance pass, so log retention, SNS subscriptions, Cognito users, and a full integration census were not re-read.
+
+## Governance completion
+
+The GitHub `production` environment was created and then read back. Required reviewer: `sricharanreddy5414`. Deployment branch policy: custom, allowed branch `main` only. `development` still has no protection rules and was not changed. No second reviewer was added because the repository has no other configured reviewer.
+
+SNS subscription, a second verified Cognito user, live tenant isolation, live ADMIN, OPERATOR, and MEMBER tests, and a restore rehearsal were not completed. `docs/disaster-recovery.md` and `docs/rollback.md` describe restore to a new table and alias rollback. No production table was restored or overwritten.
 
 ## Remaining Manual Actions
 
-- Confirm an email subscription on `ERAP-Production-Alarms`. The topic had no subscription at the last read, and no intended operator address is recorded here.
-- Create the GitHub `production` environment with a required reviewer and a main-only deployment policy.
-- Verify a second Cognito user, then run the live tenant-isolation test and the ADMIN, OPERATOR, and MEMBER permission tests.
-- Rehearse a DynamoDB restore into a new table name. That rehearsal has not been run.
+- Subscribe an approved operator address to `ERAP-Production-Alarms` and confirm the email. No address is approved in this repository.
+- Verify a second Cognito user without bypassing email verification.
+- Run the live tenant-isolation test with that user.
+- Sign in ADMIN, OPERATOR, and MEMBER and test their existing permissions.
+- Rehearse point-in-time restore into a new table name. Do not restore over a production table.
+
+## Final closure
+
+The closure pass did not change application code, Cognito, roles, matching, or the GitHub `production` environment. Frontend returned 200. `GET /public/resources` returned 200 with one public item and did not include `PILOT-MED-001`. `GET /organization`, `GET /locations`, `GET /resource-types`, and `GET /requests` returned 401. Local pytest is 91 passed. Security scan, frontend check, workflow check, package check, and smoke test passed. No approved operator address exists, so no SNS subscription was created. No second verified user could be confirmed, because the AWS CLI session is expired. Tenant isolation and ADMIN, OPERATOR, and MEMBER live tests were not run. Restore rehearsal was not executed. No production table was overwritten and no migration was applied.
 
 ## Final Launch Gate
 
-PENDING HUMAN ACTION
+CORE APPLICATION PILOT: PASSED
 
-The authenticated pilot is complete through request type, request creation, matching, allocation, duplicate rejection, and release. The application checks re-run here passed. Governance items that still need a person are the alarm subscription, the GitHub production reviewer, a second verified user, live tenant isolation, non-owner role tests, and a restore rehearsal. This is not a full pass.
+OPERATIONAL / GOVERNANCE READINESS: PENDING HUMAN ACTION
+
+Overall gate: PENDING HUMAN ACTION
+
+The remaining items are governance and operations: SNS confirmation, a second verified user, tenant isolation, non-owner role tests, and a restore rehearsal. This is not a full platform pass.

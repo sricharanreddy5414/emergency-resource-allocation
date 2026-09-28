@@ -2,13 +2,17 @@
 
 ## Current decision — 28 September 2026
 
-Commit `b5d72cf1ad7f300800810971bb8c165302f56998`. Decision: PENDING HUMAN ACTION.
+Application commit `2b9c5cffac58cb993cc69403f021c45217ea6ba3`. Decision: PENDING HUMAN ACTION.
 
-The authenticated pilot for ERAP Pilot Operations is complete: request type, request creation, matching, allocation, duplicate rejection, and release. `PILOT-REQ-001`, `PILOT-REQ-002`, `ALLOC-PILOT-REQ-001`, and `ALLOC-PILOT-REQ-002` are RELEASED. `PILOT-MED-001` and `PILOT-MED-002` are AVAILABLE. This pass did not re-read DynamoDB because the local AWS CLI session is expired.
+CORE APPLICATION PILOT: PASSED. Request type, request creation, matching, allocation, duplicate rejection, release, and public/private isolation were completed by the authenticated OWNER. This governance pass did not change application code.
 
-Re-checked here: 91 pytest tests, security scan, frontend check, workflow check, package check, and the public smoke test. Deploy backend run 36347114518 succeeded, including Verify hardening. Public discovery returns only Public Emergency Medical Supplies with safe fields. Protected routes return 401 without a token.
+GitHub `production` now exists. It requires approval from repository owner `sricharanreddy5414`, and its deployment branch policy allows only `main`. The `development` environment was left unchanged. Self-review is still allowed because that owner is the only reviewer; the approval step is still required.
 
-Still pending a person: SNS email confirmation, a second verified Cognito user, the live tenant-isolation test, ADMIN, OPERATOR, and MEMBER live tests, the GitHub `production` environment and reviewer, and a restore rehearsal. No application defect was found in this pass.
+Deploy backend run 36367668112 for `2b9c5cf` succeeded, including Verify hardening. Local pytest is 91 passed. Security scan, frontend check, workflow check, package check, and smoke test passed. The local AWS CLI session is expired, so Cognito users, SNS subscriptions, CloudWatch retention, and a DynamoDB restore were not touched.
+
+The final closure pass on 28 September 2026 repeated the public checks. The Amplify site returned 200. Public discovery returned one item, Public Emergency Medical Supplies, with only safe fields, and `PILOT-MED-001` was absent. Protected routes returned 401. The `production` environment was read again and was not changed. The local AWS CLI session is still expired, so the user pool, the alarm topic subscriptions, CloudWatch retention, and a restore rehearsal were not executed.
+
+Still pending a person: an approved operator email for `ERAP-Production-Alarms`, a second verified Cognito user, the live tenant-isolation test, ADMIN, OPERATOR, and MEMBER live tests, and a restore rehearsal. No application defect was found.
 
 The table below is the earlier pre-pilot check. It is not the current decision.
 
