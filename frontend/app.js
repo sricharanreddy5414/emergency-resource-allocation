@@ -92,6 +92,7 @@ let currentUser = {
 let organizationOnboardingRequired = false;
 let organizationCreateRevealed = false;
 let pendingInvitations = [];
+let pendingMemberRemoval = null;
 
 let organizationRequestId = null;
 
@@ -4983,7 +4984,8 @@ function initializeEvents() {
 
         const accept = event.target?.closest?.(".accept-invitation-btn");
         const save = event.target?.closest?.(".save-member-role");
-        const deactivate = event.target?.closest?.(".deactivate-member");
+        const remove = event.target?.closest?.(".remove-member");
+        const cancelInvitation = event.target?.closest?.(".cancel-invitation");
         const reactivate = event.target?.closest?.(".reactivate-member");
 
         if (accept) {
@@ -4998,9 +5000,15 @@ function initializeEvents() {
 
         }
 
-        if (deactivate) {
+        if (remove) {
 
-            setMemberActive(deactivate.dataset.userSub, "deactivate_member");
+            openRemoveMemberDialog(remove.dataset.userSub, remove.dataset.email || "");
+
+        }
+
+        if (cancelInvitation) {
+
+            cancelPendingInvitation(cancelInvitation.dataset.email || "");
 
         }
 
@@ -5370,6 +5378,42 @@ initializeRequestControls();
         );
 
 
+    $("removeMemberClose")
+        ?.addEventListener(
+            "click",
+            closeRemoveMemberDialog
+        );
+
+
+    $("removeMemberCancel")
+        ?.addEventListener(
+            "click",
+            closeRemoveMemberDialog
+        );
+
+
+    $("removeMemberConfirm")
+        ?.addEventListener(
+            "click",
+            confirmRemoveMember
+        );
+
+
+    $("removeMemberModal")
+        ?.addEventListener(
+            "click",
+            event => {
+
+                if (event.target === $("removeMemberModal")) {
+
+                    closeRemoveMemberDialog();
+
+                }
+
+            }
+        );
+
+
     $("organizationModalClose")
         ?.addEventListener(
             "click",
@@ -5449,6 +5493,18 @@ initializeRequestControls();
                 event.key !==
                 "Escape"
             ) {
+
+                return;
+
+            }
+
+
+            if (
+                $("removeMemberModal") &&
+                !$("removeMemberModal").classList.contains("hidden")
+            ) {
+
+                closeRemoveMemberDialog();
 
                 return;
 
@@ -6765,6 +6821,75 @@ function syncOrganizationOnboardingView() {
 }
 
 
+function isInvitationRecord(member) {
+
+    return String(member && member.user_sub || "").startsWith("invite-");
+
+}
+
+
+function signedInSubject() {
+
+    const claims = decodeJwt(getIdToken() || "");
+    const subject = claims && claims.sub;
+
+    return typeof subject === "string" ? subject : "";
+
+}
+
+
+function renderPendingOrganizationInvitations(invitations) {
+
+    const container = $("organizationPendingInvitations");
+
+    if (!container) {
+
+        return;
+
+    }
+
+    const pending = (Array.isArray(invitations) ? invitations : [])
+        .filter(invitation => invitation && invitation.status === "PENDING");
+
+    if (!pending.length) {
+
+        container.innerHTML = "";
+
+        return;
+
+    }
+
+    container.innerHTML = `
+        <h4>Pending Invitations</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${pending.map(invitation => `
+                    <tr>
+                        <td>${escapeHtml(invitation.email || "")}</td>
+                        <td>${escapeHtml(invitation.role || "")}</td>
+                        <td>PENDING</td>
+                        <td>
+                            <button type="button" class="primary-btn cancel-invitation" data-email="${escapeHtml(invitation.email || "")}">
+                                Cancel invitation
+                            </button>
+                        </td>
+                    </tr>
+                `).join("")}
+            </tbody>
+        </table>
+    `;
+
+}
+
+
 function renderMemberRows(members) {
 
     const container = $("organizationMembers");
@@ -6775,7 +6900,15 @@ function renderMemberRows(members) {
 
     }
 
-    if (!members.length) {
+    const actualMembers = (Array.isArray(members) ? members : [])
+        .filter(member => member && !isInvitationRecord(member) && member.status !== "PENDING");
+    const actorSub = signedInSubject();
+    const actorIsOwner = Boolean(currentUser.organization && currentUser.organization.role === "OWNER");
+    const activeOwnerCount = actualMembers.filter(member =>
+        member.role === "OWNER" && (member.status || "ACTIVE") === "ACTIVE"
+    ).length;
+
+    if (!actualMembers.length) {
 
         container.innerHTML = "<p>No members are recorded for this organization.</p>";
 
@@ -6794,25 +6927,29 @@ function renderMemberRows(members) {
                 </tr>
             </thead>
             <tbody>
-                ${members.map(member => {
-                    const protectedOwner = member.role === "OWNER";
-                    const pending = member.status === "PENDING";
+                ${actualMembers.map(member => {
                     const inactive = member.status === "INACTIVE";
-                    const roleControl = protectedOwner
-                        ? "OWNER"
+                    const email = escapeHtml(member.email || "");
+                    const userSub = escapeHtml(member.user_sub || "");
+                    const isSelf = Boolean(actorSub) && member.user_sub === actorSub;
+                    const ownerRow = member.role === "OWNER";
+                    const canManageOwner = ownerRow && actorIsOwner && !isSelf && (inactive || activeOwnerCount >= 2);
+                    const manageable = ownerRow ? canManageOwner : !isSelf;
+                    const roleControl = !manageable || inactive
+                        ? escapeHtml(member.role || "")
                         : `
-                            <select data-member-role="${escapeHtml(member.user_sub)}">
+                            <select data-member-role="${userSub}">
                                 ${["ADMIN", "OPERATOR", "MEMBER"].map(role => `
                                     <option value="${role}" ${member.role === role ? "selected" : ""}>${role}</option>
                                 `).join("")}
                             </select>
-                            <button type="button" class="primary-btn save-member-role" data-user-sub="${escapeHtml(member.user_sub)}">Save role</button>
+                            <button type="button" class="primary-btn save-member-role" data-user-sub="${userSub}">Save role</button>
                         `;
-                    const activation = protectedOwner
+                    const activation = !manageable
                         ? ""
                         : inactive
-                            ? `<button type="button" class="primary-btn reactivate-member" data-user-sub="${escapeHtml(member.user_sub)}">Reactivate</button>`
-                            : `<button type="button" class="primary-btn deactivate-member" data-user-sub="${escapeHtml(member.user_sub)}">${pending ? "Cancel invitation" : "Deactivate"}</button>`;
+                            ? `<button type="button" class="primary-btn reactivate-member" data-user-sub="${userSub}">Reactivate</button>`
+                            : `<button type="button" class="primary-btn remove-member" data-user-sub="${userSub}" data-email="${email}">Remove</button>`;
 
                     return `
                         <tr>
@@ -6921,6 +7058,7 @@ async function loadOrganizationMembers() {
     }
 
     renderMemberRows(Array.isArray(data.members) ? data.members : []);
+    renderPendingOrganizationInvitations(data.pending_invitations);
 
 }
 
@@ -6968,6 +7106,12 @@ async function submitMemberInvite(event) {
 
 async function changeMemberRole(userSub) {
 
+    if (!userSub || userSub === signedInSubject()) {
+
+        return;
+
+    }
+
     const organizationId = memberOrganizationId();
     const select = document.querySelector(`[data-member-role="${CSS.escape(userSub)}"]`);
     const role = select ? select.value : "";
@@ -6995,14 +7139,113 @@ async function changeMemberRole(userSub) {
 }
 
 
+function closeRemoveMemberDialog() {
+
+    pendingMemberRemoval = null;
+    $("removeMemberModal")?.classList.add("hidden");
+
+}
+
+
+function openRemoveMemberDialog(userSub, email) {
+
+    if (!userSub || String(userSub).startsWith("invite-") || userSub === signedInSubject()) {
+
+        return;
+
+    }
+
+    pendingMemberRemoval = {
+        userSub: userSub,
+        email: email || ""
+    };
+
+    const emailLabel = $("removeMemberEmail");
+    const organizationLabel = $("removeMemberOrganization");
+    const organizationName = currentUser.organization && currentUser.organization.name
+        ? currentUser.organization.name
+        : "this organization";
+
+    if (emailLabel) {
+
+        emailLabel.textContent = email || "this member";
+
+    }
+
+    if (organizationLabel) {
+
+        organizationLabel.textContent = organizationName;
+
+    }
+
+    $("removeMemberModal")?.classList.remove("hidden");
+    $("removeMemberClose")?.focus();
+
+}
+
+
+async function confirmRemoveMember() {
+
+    const removal = pendingMemberRemoval;
+    const organizationId = memberOrganizationId();
+
+    if (!removal || !organizationId) {
+
+        closeRemoveMemberDialog();
+
+        return;
+
+    }
+
+    closeRemoveMemberDialog();
+
+    const result = await postMemberOperation({
+        operation: "deactivate_member",
+        organization_id: organizationId,
+        target_user_sub: removal.userSub
+    });
+
+    if (result) {
+
+        showToast(result.message || "Member removed.");
+        await loadOrganizationMembers();
+
+    }
+
+}
+
+
+async function cancelPendingInvitation(email) {
+
+    const organizationId = memberOrganizationId();
+
+    if (!organizationId || !email || !window.confirm("Cancel this invitation?")) {
+
+        return;
+
+    }
+
+    const result = await postMemberOperation({
+        operation: "deactivate_member",
+        organization_id: organizationId,
+        email: email
+    });
+
+    if (result) {
+
+        showToast(result.message || "Invitation cancelled.");
+        await loadOrganizationMembers();
+
+    }
+
+}
+
+
 async function setMemberActive(userSub, operation) {
 
     const organizationId = memberOrganizationId();
-    const message = operation === "deactivate_member"
-        ? "Deactivate this member?"
-        : "Reactivate this member?";
 
-    if (!organizationId || !window.confirm(message)) {
+    if (operation !== "reactivate_member" || !organizationId || !window.confirm("Reactivate this member?")) {
 
         return;
 

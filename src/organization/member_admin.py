@@ -97,6 +97,10 @@ def _find(rows, user_sub):
     return None
 
 
+def _is_invitation(item):
+    return str((item or {}).get("user_sub") or "").startswith("invite-")
+
+
 def _public_member(item):
     view = {
         "user_sub": item.get("user_sub", ""),
@@ -113,6 +117,25 @@ def _public_member(item):
         view["joined_at"] = item["joined_at"]
 
     return view
+
+
+def _public_invitation(item):
+    return {
+        "email": item.get("email") or "",
+        "role": item.get("role") or "",
+        "status": "PENDING",
+        "created_at": item.get("created_at") or "",
+    }
+
+
+def _visible_member(item):
+    if _is_invitation(item):
+        visible = _public_invitation(item)
+        visible["status"] = member_status(item)
+
+        return visible
+
+    return _public_member(item)
 
 
 def _audit(table, organization_id, actor_sub, actor_role, action, target, old_role, new_role):
@@ -242,6 +265,20 @@ def _target(body, rows):
     return target, row
 
 
+def _pending_invitation(body, rows):
+    email = normalize_email(body.get("email"))
+    target = invite_subject(email)
+    row = _find(rows, target)
+
+    if not row or not _is_invitation(row) or member_status(row) != "PENDING":
+        raise AccessError(404, "Invitation not found")
+
+    if str(row.get("email") or "").strip().lower() != email:
+        raise AccessError(404, "Invitation not found")
+
+    return target, row
+
+
 def _guard_owner(actor_role, row, rows, new_role=None):
     if row.get("role") == "OWNER" and actor_role != "OWNER":
         raise AccessError(403, "Owner membership cannot be changed")
@@ -313,14 +350,17 @@ def handle_member_read(event):
     organization_id = membership["organization_id"]
     rows = _query_members(organization_id)
     rows.sort(key=lambda item: (item.get("email") or "", item.get("user_sub") or ""))
+    members = [item for item in rows if not _is_invitation(item)]
+    pending = [item for item in rows if _is_invitation(item) and member_status(item) == "PENDING"]
+    payload = {
+        "organization_id": organization_id,
+        "members": [_public_member(item) for item in members],
+    }
 
-    return api_response(
-        200,
-        {
-            "organization_id": organization_id,
-            "members": [_public_member(item) for item in rows],
-        },
-    )
+    if pending:
+        payload["pending_invitations"] = [_public_invitation(item) for item in pending]
+
+    return api_response(200, payload)
 
 
 def handle_member_operation(event, body, actor_sub, audit_table):
@@ -469,9 +509,15 @@ def _set_active(event, body, actor_sub, audit_table, active):
     actor_sub, membership = _manage(event, body)
     organization_id = membership["organization_id"]
     rows = _query_members(organization_id)
-    target, row = _target(body, rows)
 
-    if str(target).startswith("invite-") and active:
+    if str(body.get("target_user_sub") or "").strip():
+        target, row = _target(body, rows)
+    elif not active:
+        target, row = _pending_invitation(body, rows)
+    else:
+        raise AccessError(400, "Member is invalid")
+
+    if _is_invitation(row) and active:
         raise AccessError(400, "Accept the invitation to activate this member")
 
     current = member_status(row)
@@ -481,11 +527,14 @@ def _set_active(event, body, actor_sub, audit_table, active):
         raise AccessError(400, "Accept the invitation to activate this member")
 
     if current == desired:
-        return api_response(200, {"message": "Membership unchanged", "member": _public_member(row)})
+        return api_response(200, {"message": "Membership unchanged", "member": _visible_member(row)})
 
     _guard_owner(membership.get("role"), row, rows, new_role=None if desired == "INACTIVE" else row.get("role"))
 
     if target == actor_sub:
+        if not active:
+            raise AccessError(409, "You cannot remove yourself from the organization.")
+
         raise AccessError(403, "You cannot change your own membership")
 
     _claim(organization_id)
@@ -515,7 +564,7 @@ def _set_active(event, body, actor_sub, audit_table, active):
     changed = dict(row)
     changed["status"] = desired
 
-    return api_response(200, {"message": "Membership updated", "member": _public_member(changed)})
+    return api_response(200, {"message": "Membership updated", "member": _visible_member(changed)})
 
 
 def _accept(event, body, actor_sub, audit_table):

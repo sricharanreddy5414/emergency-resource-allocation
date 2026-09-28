@@ -1401,6 +1401,8 @@
 
         </form>
 
+        <div id="organizationPendingInvitations"></div>
+
         <div id="organizationMembers"></div>
 
     </div>
@@ -2529,6 +2531,67 @@
 
 </div>
 
+
+
+<!-- =====================================================
+     REMOVE MEMBER
+====================================================== -->
+
+<div
+    class="modal hidden"
+    id="removeMemberModal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="removeMemberTitle"
+>
+
+
+    <div class="modal-card">
+
+
+        <button
+            class="modal-close"
+            id="removeMemberClose"
+            type="button"
+            aria-label="Close"
+        >
+            ×
+        </button>
+
+
+        <h2 id="removeMemberTitle">
+            Remove Member?
+        </h2>
+
+
+        <p class="modal-description" id="removeMemberPrompt">
+            Are you sure you want to remove
+            <strong id="removeMemberEmail"></strong>
+            from
+            <strong id="removeMemberOrganization"></strong>?
+        </p>
+
+
+        <p class="modal-description">
+            They will lose access to this organization.
+        </p>
+
+
+        <div class="modal-actions">
+
+            <button class="secondary-btn" id="removeMemberCancel" type="button">
+                Cancel
+            </button>
+
+            <button class="primary-btn" id="removeMemberConfirm" type="button">
+                Remove Member
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
 
 
 <!-- =====================================================

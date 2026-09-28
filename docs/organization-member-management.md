@@ -15,6 +15,10 @@ Creating an organization still writes one `OWNER` membership with `status` `ACTI
 
 `ADMIN`, `OPERATOR`, and `MEMBER` are the only roles that can be assigned after an organization exists. The member API rejects `role` `OWNER`. An admin cannot change an owner. Nobody can change their own membership. The last active owner cannot be demoted or deactivated.
 
+An admin managing another admin is intentional. The admin column means non-owner members: another `ADMIN`, an `OPERATOR`, or a `MEMBER`. An admin cannot remove or change an `OWNER`, and cannot remove or change their own membership.
+
+More than one ACTIVE `OWNER` membership can exist. An owner can change or remove a different owner only when another ACTIVE owner would remain. An owner cannot remove or change themselves. The member table shows that same capability: controls appear on another owner's row only for a signed-in owner when another active owner remains. An admin does not see owner controls. The signed-in user's own row has no role or removal control.
+
 An inactive or pending membership does not authorize organization operations.
 
 ## Invitation
@@ -47,7 +51,7 @@ Successful changes write `MEMBER_INVITED`, `MEMBER_ACTIVATED`, `MEMBER_ROLE_CHAN
 
 ## Frontend
 
-The Admin Dashboard shows Organization Members to an owner or admin. The selector offers `ADMIN`, `OPERATOR`, and `MEMBER`. Owner rows have no promotion or removal controls. Hidden buttons are not authorization: the API rejects the same action from an operator or member.
+The Admin Dashboard shows Organization Members to an owner or admin. The selector offers `ADMIN`, `OPERATOR`, and `MEMBER`. It does not offer `OWNER`. Hidden buttons are not authorization: the API enforces the same role, self, and last-owner rules.
 
 ## Live role validation
 

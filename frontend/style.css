@@ -1480,6 +1480,14 @@ tbody tr:hover {
 }
 
 
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+
 .modal-description {
     color: var(--muted);
 

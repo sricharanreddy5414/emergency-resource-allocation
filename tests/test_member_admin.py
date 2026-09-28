@@ -792,3 +792,344 @@ def test_frontend_member_controls_do_not_offer_owner_promotion():
     assert 'operation: "invite_member"' in invite
     assert "target_user_sub" not in invite
     assert "canManageMembers" in script
+    assert "openRemoveMemberDialog" in script
+    assert 'class="primary-btn remove-member"' in script
+    assert "window.confirm(\"Deactivate this member?\")" not in script
+
+
+def _members_view(rows):
+    result = get_handler.lambda_handler(
+        event(method="GET", query={"view": "members", "organization_id": ORG}),
+        None,
+    )
+
+    return result, body_of(result)
+
+
+def test_member_list_shows_actual_members_once(monkeypatch):
+    email = "admin@example.com"
+    seed(
+        monkeypatch,
+        [
+            owner_row(email="owner@example.com"),
+            owner_row(MEMBER, role="ADMIN", status="ACTIVE", email=email),
+        ],
+    )
+
+    result, payload = _members_view([])
+    emails = [item["email"] for item in payload["members"]]
+
+    assert result["statusCode"] == 200
+    assert emails.count(email) == 1
+    assert {item["user_sub"] for item in payload["members"]} == {OWNER, MEMBER}
+    assert "pending_invitations" not in payload
+    assert "invite-" not in json.dumps(payload)
+
+
+def test_active_member_and_consumed_invitation_appear_once(monkeypatch):
+    email = "admin@example.com"
+    seed(
+        monkeypatch,
+        [
+            owner_row(),
+            owner_row(MEMBER, role="ADMIN", status="ACTIVE", email=email),
+            owner_row(
+                member_admin.invite_subject(email),
+                role="ADMIN",
+                status="INACTIVE",
+                email=email,
+            ),
+        ],
+    )
+
+    result, payload = _members_view([])
+    matching = [item for item in payload["members"] if item.get("email") == email]
+
+    assert result["statusCode"] == 200
+    assert matching == [{
+        "user_sub": MEMBER,
+        "role": "ADMIN",
+        "status": "ACTIVE",
+        "email": email,
+        "created_at": "2026-09-28T00:00:00+00:00",
+    }]
+    assert "invite-" not in json.dumps(payload)
+
+
+def test_pending_invitation_is_not_a_duplicate_member(monkeypatch):
+    member_email = "admin@example.com"
+    invited_email = "operator@example.com"
+    seed(
+        monkeypatch,
+        [
+            owner_row(),
+            owner_row(MEMBER, role="ADMIN", status="ACTIVE", email=member_email),
+            owner_row(
+                member_admin.invite_subject(invited_email),
+                role="OPERATOR",
+                status="PENDING",
+                email=invited_email,
+            ),
+            owner_row(
+                member_admin.invite_subject(member_email),
+                role="ADMIN",
+                status="INACTIVE",
+                email=member_email,
+            ),
+        ],
+    )
+
+    result, payload = _members_view([])
+    member_emails = [item.get("email") for item in payload["members"]]
+
+    assert result["statusCode"] == 200
+    assert member_emails.count(member_email) == 1
+    assert invited_email not in member_emails
+    assert payload["pending_invitations"] == [{
+        "email": invited_email,
+        "role": "OPERATOR",
+        "status": "PENDING",
+        "created_at": "2026-09-28T00:00:00+00:00",
+    }]
+    assert "invite-" not in json.dumps(payload)
+
+
+def test_owner_can_remove_admin_operator_and_member(monkeypatch):
+    rows = [
+        owner_row(),
+        owner_row(ADMIN, role="ADMIN", email="admin@example.com"),
+        owner_row(OPERATOR, role="OPERATOR", email="operator@example.com"),
+        owner_row(MEMBER, role="MEMBER", email="member@example.com"),
+    ]
+    organizations, members, audits = seed(monkeypatch, rows)
+
+    for target, role in ((ADMIN, "ADMIN"), (OPERATOR, "OPERATOR"), (MEMBER, "MEMBER")):
+        removed = handler.lambda_handler(
+            event(body={
+                "operation": "deactivate_member",
+                "organization_id": ORG,
+                "target_user_sub": target,
+                "user_sub": OTHER,
+                "role": "MEMBER",
+            }),
+            None,
+        )
+        stored = next(row for row in members.rows if row["user_sub"] == target)
+
+        assert removed["statusCode"] == 200
+        assert stored["status"] == "INACTIVE"
+        assert stored["role"] == role
+        assert stored["user_sub"] == target
+
+    assert [item["action"] for item in audits.items] == ["MEMBER_DEACTIVATED"] * 3
+    assert organizations.items[ORG]["membership_epoch"] == 3
+    assert next(row for row in members.rows if row["user_sub"] == OWNER).get("status", "ACTIVE") == "ACTIVE"
+
+
+def test_admin_can_remove_permitted_members_but_not_owner(monkeypatch):
+    rows = [
+        owner_row(),
+        owner_row(ADMIN, role="ADMIN"),
+        owner_row("second-admin", role="ADMIN", email="second@example.com"),
+        owner_row(OPERATOR, role="OPERATOR"),
+        owner_row(MEMBER, role="MEMBER"),
+    ]
+    _organizations, members, audits = seed(monkeypatch, rows)
+
+    for target in ("second-admin", OPERATOR, MEMBER):
+        removed = handler.lambda_handler(
+            event(
+                body={"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": target},
+                subject=ADMIN,
+            ),
+            None,
+        )
+
+        assert removed["statusCode"] == 200
+        assert next(row for row in members.rows if row["user_sub"] == target)["status"] == "INACTIVE"
+
+    owner = handler.lambda_handler(
+        event(
+            body={"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": OWNER},
+            subject=ADMIN,
+        ),
+        None,
+    )
+
+    assert owner["statusCode"] == 403
+    assert next(row for row in members.rows if row["user_sub"] == OWNER).get("status", "ACTIVE") == "ACTIVE"
+    assert [item["action"] for item in audits.items] == ["MEMBER_DEACTIVATED"] * 3
+
+
+def test_operator_and_member_cannot_remove_members(monkeypatch):
+    rows = [
+        owner_row(),
+        owner_row(ADMIN, role="ADMIN"),
+        owner_row(OPERATOR, role="OPERATOR"),
+        owner_row(MEMBER, role="MEMBER"),
+    ]
+    organizations, members, audits = seed(monkeypatch, rows)
+    body = {"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": ADMIN, "user_sub": OWNER}
+
+    operator = handler.lambda_handler(event(body=body, subject=OPERATOR), None)
+    member = handler.lambda_handler(event(body=body, subject=MEMBER), None)
+
+    assert operator["statusCode"] == 403
+    assert member["statusCode"] == 403
+    assert next(row for row in members.rows if row["user_sub"] == ADMIN).get("status", "ACTIVE") == "ACTIVE"
+    assert audits.items == []
+    assert organizations.items[ORG].get("membership_epoch") is None
+
+
+def test_owner_can_remove_another_owner_when_one_remains(monkeypatch):
+    organizations, members, audits = seed(
+        monkeypatch,
+        [owner_row(), owner_row(OTHER, role="OWNER", email="other@example.com")],
+    )
+
+    removed = handler.lambda_handler(
+        event(body={"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": OTHER}),
+        None,
+    )
+    last = handler.lambda_handler(
+        event(body={"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": OWNER}),
+        None,
+    )
+    other = next(row for row in members.rows if row["user_sub"] == OTHER)
+    owner = next(row for row in members.rows if row["user_sub"] == OWNER)
+
+    assert removed["statusCode"] == 200
+    assert other["status"] == "INACTIVE"
+    assert last["statusCode"] == 409
+    assert body_of(last)["message"] == "The last owner cannot be changed"
+    assert owner.get("status", "ACTIVE") == "ACTIVE"
+    assert [item["action"] for item in audits.items] == ["MEMBER_DEACTIVATED"]
+    assert organizations.items[ORG]["membership_epoch"] == 1
+
+
+def test_user_cannot_remove_themselves(monkeypatch):
+    organizations, members, audits = seed(
+        monkeypatch,
+        [owner_row(), owner_row(OTHER, role="OWNER")],
+    )
+
+    result = handler.lambda_handler(
+        event(body={"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": OWNER}),
+        None,
+    )
+
+    assert result["statusCode"] == 409
+    assert body_of(result)["message"] == "You cannot remove yourself from the organization."
+    assert all(row.get("status", "ACTIVE") == "ACTIVE" for row in members.rows)
+    assert audits.items == []
+    assert organizations.items[ORG].get("membership_epoch") is None
+
+
+def test_removed_member_loses_access_until_reactivated(monkeypatch):
+    _organizations, members, audits = seed(
+        monkeypatch,
+        [owner_row(), owner_row(MEMBER, role="MEMBER", status="ACTIVE", email="member@example.com")],
+    )
+
+    removed = handler.lambda_handler(
+        event(body={"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": MEMBER}),
+        None,
+    )
+    stored = next(row for row in members.rows if row["user_sub"] == MEMBER)
+
+    assert removed["statusCode"] == 200
+    assert stored["status"] == "INACTIVE"
+    assert stored["email"] == "member@example.com"
+    assert stored["role"] == "MEMBER"
+
+    with pytest.raises(AccessError) as denied:
+        access.authorize(event(subject=MEMBER), {"organization_id": ORG})
+
+    assert denied.value.status_code == 403
+
+    restored = handler.lambda_handler(
+        event(body={"operation": "reactivate_member", "organization_id": ORG, "target_user_sub": MEMBER}),
+        None,
+    )
+    actor, membership = access.authorize(event(subject=MEMBER), {"organization_id": ORG})
+
+    assert restored["statusCode"] == 200
+    assert stored["status"] == "ACTIVE"
+    assert actor == MEMBER
+    assert membership["organization_id"] == ORG
+    assert [item["action"] for item in audits.items] == ["MEMBER_DEACTIVATED", "MEMBER_REACTIVATED"]
+    assert audits.items[0]["entity_id"] == MEMBER
+    assert audits.items[0]["organization_id"] == ORG
+    assert audits.items[0]["actor_sub"] == OWNER
+
+
+def test_cancel_invitation_by_email_keeps_the_active_member(monkeypatch):
+    email = "admin@example.com"
+    invited = "new@example.com"
+    _organizations, members, audits = seed(
+        monkeypatch,
+        [
+            owner_row(),
+            owner_row(MEMBER, role="ADMIN", status="ACTIVE", email=email),
+            owner_row(member_admin.invite_subject(invited), role="MEMBER", status="PENDING", email=invited),
+        ],
+    )
+
+    cancelled = handler.lambda_handler(
+        event(body={"operation": "deactivate_member", "organization_id": ORG, "email": invited}),
+        None,
+    )
+    invitation = next(row for row in members.rows if row["user_sub"].startswith("invite-"))
+    member = next(row for row in members.rows if row["user_sub"] == MEMBER)
+
+    assert cancelled["statusCode"] == 200
+    assert invitation["status"] == "INACTIVE"
+    assert member["status"] == "ACTIVE"
+    assert "invite-" not in json.dumps(body_of(cancelled))
+    assert audits.items[0]["action"] == "MEMBER_DEACTIVATED"
+
+
+def test_member_update_conflict_does_not_deactivate_or_audit(monkeypatch):
+    organizations, members, audits = seed(
+        monkeypatch,
+        [owner_row(), owner_row(MEMBER, role="MEMBER", status="ACTIVE")],
+    )
+
+    def conflict(Key, ExpressionAttributeValues, **kwargs):
+        raise conditional_error()
+
+    members.update_item = conflict
+    result = handler.lambda_handler(
+        event(body={"operation": "deactivate_member", "organization_id": ORG, "target_user_sub": MEMBER}),
+        None,
+    )
+    stored = next(row for row in members.rows if row["user_sub"] == MEMBER)
+
+    assert result["statusCode"] == 409
+    assert body_of(result)["message"] == "Membership changed. Retry."
+    assert stored["status"] == "ACTIVE"
+    assert audits.items == []
+    assert organizations.items[ORG]["membership_epoch"] == 1
+
+
+def test_cross_tenant_removal_is_rejected(monkeypatch):
+    organizations, members, audits = seed(
+        monkeypatch,
+        [owner_row(), owner_row(OTHER, organization_id=ORG_B, role="ADMIN", status="ACTIVE")],
+    )
+
+    result = handler.lambda_handler(
+        event(body={
+            "operation": "deactivate_member",
+            "organization_id": ORG_B,
+            "target_user_sub": OTHER,
+            "user_sub": OWNER,
+            "role": "OWNER",
+        }),
+        None,
+    )
+
+    assert result["statusCode"] == 403
+    assert next(row for row in members.rows if row["user_sub"] == OTHER).get("status", "ACTIVE") == "ACTIVE"
+    assert audits.items == []
+    assert organizations.items[ORG_B].get("membership_epoch") is None
