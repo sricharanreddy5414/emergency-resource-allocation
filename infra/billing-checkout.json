@@ -103,17 +103,44 @@
     "alias": "live",
     "authentication": "Razorpay HMAC-SHA256 of the raw body"
   },
+  "entitlement_iam": {
+    "note": "Specification only. Attach GetItem to every operational Lambda that calls authorize with access write, and only after OrganizationSubscriptions exists. A missing row stays grandfathered. Do not grant PutItem here.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "ReadSubscriptionForEnforcement",
+        "Effect": "Allow",
+        "Action": "dynamodb:GetItem",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions"
+      }
+    ]
+  },
+  "trial_iam": {
+    "note": "Specification only. Attach only to erap-create-organization. The trial write is a conditional put. It does not scan and it does not update an existing row.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "CreateTrialSubscription",
+        "Effect": "Allow",
+        "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions"
+      }
+    ]
+  },
   "webhook_iam": {
     "Version": "2012-10-17",
     "Statement": [
       {
+        "Sid": "WebhookSubscriptionItem",
+        "Effect": "Allow",
+        "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions"
+      },
+      {
         "Sid": "WebhookSubscriptionLookup",
         "Effect": "Allow",
-        "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"],
-        "Resource": [
-          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions",
-          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions/index/ProviderSubscriptionIndex"
-        ]
+        "Action": "dynamodb:Query",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions/index/ProviderSubscriptionIndex"
       },
       {
         "Sid": "WebhookEventsWithoutDelete",

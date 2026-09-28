@@ -58,6 +58,22 @@ EVENT_FIELDS = {
 }
 
 
+def item_for_storage(item, index_attributes):
+    """Drop blank global-index keys. DynamoDB rejects an empty string key.
+
+    A missing provider subscription id keeps the subscription out of
+    ProviderSubscriptionIndex. A billing event with no organization stays
+    out of OrganizationBillingEventsIndex. Callers still use "" in memory.
+    """
+    stored = dict(item)
+
+    for name in index_attributes:
+        if stored.get(name) == "":
+            del stored[name]
+
+    return stored
+
+
 def access_when_subscription_missing():
     """A missing OrganizationSubscriptions row keeps current access.
 

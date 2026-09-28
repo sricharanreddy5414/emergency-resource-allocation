@@ -130,7 +130,8 @@ class Subscriptions:
                 {"Error": {"Code": "ConditionalCheckFailedException", "Message": "conflict"}},
                 "UpdateItem",
             )
-        row["subscription_status"] = values[":status"]
+        if ":status" in values:
+            row["subscription_status"] = values[":status"]
         row["updated_at"] = values[":updated"]
         for field, token in (
             ("current_period_start", ":period_start"),
@@ -174,7 +175,8 @@ class Events:
             )
         row["processing_status"] = values[":status"]
         row["processed_at"] = values[":processed"]
-        row["organization_id"] = values[":organization"]
+        if values.get(":organization"):
+            row["organization_id"] = values[":organization"]
         row["payment_state"] = values[":payment"]
         row["provider_payment_id"] = values[":payment_id"]
 
@@ -310,7 +312,7 @@ def test_unknown_subscription_is_ignored():
     assert subscriptions.updates == 0
     assert ORG_B not in subscriptions.rows
     assert events.rows["evt_1"]["processing_status"] == "IGNORED"
-    assert events.rows["evt_1"]["organization_id"] == ""
+    assert not events.rows["evt_1"].get("organization_id")
 
 
 def test_malformed_signed_body_is_rejected():
@@ -382,6 +384,38 @@ def test_older_charge_does_not_reactivate_a_cancellation():
     assert _send(charge, subscriptions, events, "evt_old")[0] == 200
     assert subscriptions.rows[ORG_A]["subscription_status"] == "CANCELLED"
     assert events.rows["evt_old"]["processing_status"] == "IGNORED"
+
+
+def test_renewal_while_active_updates_the_period_without_clearing_cancellation():
+    body = payload(
+        "subscription.charged",
+        SUB_A,
+        period=(1_700_259_100, 1_700_518_500),
+        created_at=1_700_259_100,
+    )
+    current = subscription(ORG_A, SUB_A, "ACTIVE")
+    current["cancel_at_period_end"] = True
+    current["current_period_end"] = "2023-11-14T22:13:20+00:00"
+    _, _, subscriptions, events = deliver(body, [current], event_id="evt_renew")
+    row = subscriptions.rows[ORG_A]
+
+    assert row["subscription_status"] == "ACTIVE"
+    assert row["cancel_at_period_end"] is True
+    assert row["current_period_end"] == datetime.fromtimestamp(1_700_518_500, timezone.utc).isoformat()
+    assert events.rows["evt_renew"]["processing_status"] == "PROCESSED"
+
+
+def test_reactivation_clears_a_scheduled_cancellation():
+    current = subscription(ORG_A, SUB_A, "CANCELLED")
+    current["cancel_at_period_end"] = True
+    current["cancelled_at"] = datetime.fromtimestamp(1_700_000_100, timezone.utc).isoformat()
+    body = payload("subscription.charged", SUB_A, created_at=1_700_000_300)
+    _, _, subscriptions, events = deliver(body, [current])
+    row = subscriptions.rows[ORG_A]
+
+    assert row["subscription_status"] == "ACTIVE"
+    assert row["cancel_at_period_end"] is False
+    assert events.rows["evt_1"]["processing_status"] == "PROCESSED"
 
 
 def test_newer_charge_can_reactivate_after_cancellation():

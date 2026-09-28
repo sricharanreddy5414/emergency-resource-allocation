@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 from .errors import BillingError
-from .models import format_utc, validate_billing_event
+from .models import format_utc, item_for_storage, validate_billing_event
 from .provider.razorpay import parse_webhook, signatures_match
 from .transitions import change_subscription_status
 
@@ -98,17 +98,23 @@ def _apply(subscriptions, parsed, resume=False):
     if current is None:
         return {"organization_id": "", "processing_status": "IGNORED", "changed": False}
 
-    decision = _decision(current, parsed)
+    decision = _decision(current, parsed, resume)
 
-    if decision != "apply":
-        status = "PROCESSED" if resume and decision == "unchanged" else "IGNORED"
+    if decision == "ignore":
         return {
             "organization_id": current["organization_id"],
-            "processing_status": status,
+            "processing_status": "IGNORED",
             "changed": False,
         }
 
-    _save_transition(subscriptions, current, parsed)
+    if decision == "unchanged":
+        return {
+            "organization_id": current["organization_id"],
+            "processing_status": "PROCESSED",
+            "changed": False,
+        }
+
+    _save_transition(subscriptions, current, parsed, changing=decision == "apply")
     return {
         "organization_id": current["organization_id"],
         "processing_status": "PROCESSED",
@@ -116,7 +122,7 @@ def _apply(subscriptions, parsed, resume=False):
     }
 
 
-def _decision(current, parsed):
+def _decision(current, parsed, resume):
     target = parsed["target_status"]
 
     if not target:
@@ -126,7 +132,7 @@ def _decision(current, parsed):
         return "ignore"
 
     if current.get("subscription_status") == target:
-        return "unchanged"
+        return "unchanged" if resume else "refresh"
 
     try:
         change_subscription_status(current.get("subscription_status"), target)
@@ -170,16 +176,19 @@ def _find_subscription(subscriptions, provider_subscription_id):
     return items[0]
 
 
-def _save_transition(subscriptions, current, parsed):
+def _save_transition(subscriptions, current, parsed, changing):
     target = parsed["target_status"]
     names = {"#status": "subscription_status"}
     values = {
-        ":status": target,
         ":expected": current.get("subscription_status"),
         ":sid": current.get("provider_subscription_id"),
         ":updated": parsed["event_time"] or format_utc(datetime.now(timezone.utc)),
     }
-    sets = ["#status = :status", "updated_at = :updated"]
+    sets = ["updated_at = :updated"]
+
+    if changing:
+        sets.append("#status = :status")
+        values[":status"] = target
 
     if parsed["period_start"]:
         sets.append("current_period_start = :period_start")
@@ -189,13 +198,21 @@ def _save_transition(subscriptions, current, parsed):
         sets.append("current_period_end = :period_end")
         values[":period_end"] = parsed["period_end"]
 
-    if target == "CANCELLED":
+    cancel_flag = parsed["cancel_at_period_end"]
+
+    if changing and target == "CANCELLED":
         sets.append("cancelled_at = :cancelled_at")
         values[":cancelled_at"] = parsed["cancelled_at"] or parsed["event_time"]
 
-        if parsed["cancel_at_period_end"] is not None:
+        if cancel_flag is not None:
             sets.append("cancel_at_period_end = :cancel_at_period_end")
-            values[":cancel_at_period_end"] = parsed["cancel_at_period_end"]
+            values[":cancel_at_period_end"] = cancel_flag
+    elif changing and target == "ACTIVE":
+        sets.append("cancel_at_period_end = :cancel_at_period_end")
+        values[":cancel_at_period_end"] = False if cancel_flag is None else cancel_flag
+    elif cancel_flag is not None:
+        sets.append("cancel_at_period_end = :cancel_at_period_end")
+        values[":cancel_at_period_end"] = cancel_flag
 
     try:
         subscriptions.update_item(
@@ -218,38 +235,48 @@ def _save_transition(subscriptions, current, parsed):
 
 
 def _finish(events, event_id, parsed, outcome, now):
+    sets = [
+        "processing_status = :status",
+        "processed_at = :processed",
+        "payment_state = :payment",
+        "provider_payment_id = :payment_id",
+    ]
+    values = {
+        ":status": outcome["processing_status"],
+        ":processed": format_utc(now),
+        ":payment": parsed["payment_state"],
+        ":payment_id": parsed["provider_payment_id"],
+        ":received": "RECEIVED",
+    }
+
+    if outcome["organization_id"]:
+        sets.append("organization_id = :organization")
+        values[":organization"] = outcome["organization_id"]
+
     events.update_item(
         Key={"provider_event_id": event_id},
-        UpdateExpression=(
-            "SET processing_status = :status, processed_at = :processed, "
-            "organization_id = :organization, payment_state = :payment, "
-            "provider_payment_id = :payment_id"
-        ),
+        UpdateExpression="SET " + ", ".join(sets),
         ConditionExpression="processing_status = :received",
-        ExpressionAttributeValues={
-            ":status": outcome["processing_status"],
-            ":processed": format_utc(now),
-            ":organization": outcome["organization_id"],
-            ":payment": parsed["payment_state"],
-            ":payment_id": parsed["provider_payment_id"],
-            ":received": "RECEIVED",
-        },
+        ExpressionAttributeValues=values,
     )
 
 
 def _event_item(event_id, parsed, organization_id, status, now, processed_at):
-    return validate_billing_event(
-        {
-            "provider_event_id": event_id,
-            "provider": "razorpay",
-            "event_type": parsed["event_type"],
-            "organization_id": organization_id,
-            "provider_payment_id": parsed["provider_payment_id"],
-            "payment_state": parsed["payment_state"],
-            "received_at": format_utc(now),
-            "processed_at": processed_at,
-            "processing_status": status,
-        }
+    return item_for_storage(
+        validate_billing_event(
+            {
+                "provider_event_id": event_id,
+                "provider": "razorpay",
+                "event_type": parsed["event_type"],
+                "organization_id": organization_id,
+                "provider_payment_id": parsed["provider_payment_id"],
+                "payment_state": parsed["payment_state"],
+                "received_at": format_utc(now),
+                "processed_at": processed_at,
+                "processing_status": status,
+            }
+        ),
+        ("organization_id",),
     )
 
 

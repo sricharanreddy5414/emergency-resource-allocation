@@ -392,6 +392,55 @@ def test_billing_lookup_failure_does_not_grandfather_a_write(monkeypatch):
 class _Members:
     def __init__(self, rows):
         self.rows = rows
+        self.writes = 0
 
     def query(self, **kwargs):
         return {"Items": list(self.rows)}
+
+    def put_item(self, **kwargs):
+        self.writes += 1
+        raise AssertionError("invitation acceptance must not write when billing blocks it")
+
+    def update_item(self, **kwargs):
+        self.writes += 1
+        raise AssertionError("invitation acceptance must not write when billing blocks it")
+
+
+def test_expired_organization_blocks_invitation_acceptance(monkeypatch):
+    import member_admin
+
+    email = "member@example.com"
+    members = _Members([
+        {
+            "organization_id": ORG_A,
+            "user_sub": member_admin.invite_subject(email),
+            "role": "MEMBER",
+            "status": "PENDING",
+            "email": email,
+        }
+    ])
+    monkeypatch.setattr(membership, "members_table", lambda: members)
+    use_subscriptions(monkeypatch, Subscriptions([row("EXPIRED")]))
+    event = {
+        "requestContext": {
+            "authorizer": {
+                "claims": {
+                    "sub": "new-member",
+                    "email": email,
+                    "email_verified": "true",
+                }
+            }
+        }
+    }
+
+    result = member_admin.handle_member_operation(
+        event,
+        {"operation": "accept_invitation", "organization_id": ORG_A},
+        "new-member",
+        None,
+    )
+    body = json.loads(result["body"])
+
+    assert result["statusCode"] == 403
+    assert body["error"]["code"] == "BILLING_REQUIRED"
+    assert members.writes == 0

@@ -128,6 +128,11 @@ def authorize(
     return user_sub, membership
 
 
+def require_operational_write(organization_id, subscriptions=None):
+    """Block CANCELLED, EXPIRED, and unknown billing states. Do not create a row."""
+    _require_operational_write(organization_id, subscriptions)
+
+
 def _require_operational_write(organization_id, subscriptions):
     table = subscriptions if subscriptions is not None else subscriptions_table()
 

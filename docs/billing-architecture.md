@@ -84,7 +84,7 @@ The model rejects card numbers, CVV, bank credentials, webhook secrets, and toke
 
 `GRANDFATHERED` means existing access, no provider subscription, and no trial clock. The domain helper can build that shape. It does not write it.
 
-A missing `OrganizationSubscriptions` row means the same legacy access. `access_when_subscription_missing` returns `grandfathered`. `src/shared/access.py` is unchanged, so current organizations keep working. The pilot organization is not modified. The backfill is a later phase.
+A missing `OrganizationSubscriptions` row means the same legacy access. `access_when_subscription_missing` returns `grandfathered`. Phase B did not change authorization. Phase F later checks the stored subscription on operational writes. The pilot organization is not modified. The backfill is a later phase. Viewing billing does not write a grandfathered row.
 
 ## Future Razorpay integration
 
@@ -153,7 +153,7 @@ If the signature and event are valid but DynamoDB fails, the handler returns 500
 
 A later phase may repair a subscription by fetching it from Razorpay. This phase does not.
 
-`erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. Deploy, alias, and route scripts still skip it. Its specified IAM is get, update, and query on `OrganizationSubscriptions` and `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test secret. It has no delete, no scan, and no access to operational tables.
+`erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. Deploy, alias, and route scripts still skip it. Its specified IAM is get and update on `OrganizationSubscriptions`, query only on `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test secret. It has no delete, no scan, and no access to operational tables.
 
 ## Phase E — Billing API
 
@@ -217,6 +217,20 @@ The page shows the returned subscription status, trial or period timestamps, `ne
 
 An operational response with `error.code` `BILLING_REQUIRED` shows "Subscription required for this operation." and can open Billing. Expired organizations keep the rest of the product readable. The billing screen itself stays available to the owner.
 
-## What this phase does not implement
+## Phase H — Production-readiness audit
 
-EventBridge expiry, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, and enabling live Razorpay. The billing workspace is frontend code only. It is not deployed.
+Nothing in Phases A–G is deployed. `infra/billing-tables.json` and `infra/billing-checkout.json` stay `"applied": false`. `MONTHLY` and `YEARLY` stay `purchasable: false`. No Razorpay plan id is configured. The browser does not call the webhook.
+
+A trial row omits a blank `provider_subscription_id`. A billing event omits a blank `organization_id`. Those attributes are index keys, and DynamoDB rejects an empty string key. The in-memory value remains `""`. Checkout still treats a missing provider subscription id as "no checkout in progress."
+
+A known webhook whose target status is already stored updates the billing period when the payload includes period timestamps. It does not clear `cancel_at_period_end` unless the payload sends `cancel_at_cycle_end`. A transition into `ACTIVE` clears that flag unless the payload sets it. A retry of an event already applied does not write the subscription again. An event is not marked `PROCESSED` when the subscription update failed.
+
+Invitation acceptance uses the same write check as other membership changes. The acceptor is not yet a member, so the check uses the organization on the verified invitation. It does not create a subscription row.
+
+`entitlement_iam` is GetItem on `OrganizationSubscriptions` for operational writes. `trial_iam` is GetItem and PutItem for `erap-create-organization` only. The webhook may get, update, and query the provider index. It may not put a subscription. Authenticated billing may get and update a subscription and query billing events. It may not put a subscription.
+
+Deploying the current operational code before the subscription table and the GetItem permission exist makes operational writes fail closed. That protects tenant data and also locks the pilot until the table is present. Reads do not query the subscription table.
+
+## What remains unimplemented
+
+EventBridge expiry, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, enabling live Razorpay, and deploying the billing workspace. Checkout does not yet store the selected commercial plan on the subscription row, because no plan is purchasable and no Razorpay plan id exists. That assignment has to be added before purchase is enabled. `PAST_DUE` recovery is not a new checkout.

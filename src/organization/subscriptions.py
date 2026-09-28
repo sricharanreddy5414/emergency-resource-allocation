@@ -9,7 +9,7 @@ import os
 from botocore.exceptions import ClientError
 
 from billing.errors import BillingError
-from billing.models import new_trial_subscription, parse_utc
+from billing.models import item_for_storage, new_trial_subscription, parse_utc
 
 
 def subscriptions_table():
@@ -31,7 +31,7 @@ def ensure_trial_subscription(table, organization_id, created_at):
 
     try:
         table.put_item(
-            Item=item,
+            Item=item_for_storage(item, ("provider_subscription_id",)),
             ConditionExpression="attribute_not_exists(organization_id)",
         )
     except ClientError as error:

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from access import MANAGE_ROLES, AccessError, access_body, authorize
+from access import MANAGE_ROLES, AccessError, access_body, authorize, require_operational_write
 from common import api_response
 
 ASSIGNABLE_ROLES = {"ADMIN", "OPERATOR", "MEMBER"}
@@ -591,6 +591,7 @@ def _accept(event, body, actor_sub, audit_table):
     if pending.get("role") not in ASSIGNABLE_ROLES:
         raise AccessError(403, "Invitation cannot be accepted")
 
+    require_operational_write(organization_id)
     existing = _find(rows, actor_sub)
 
     if existing and member_status(existing) == "ACTIVE":

@@ -65,7 +65,7 @@ def test_new_organization_receives_one_trial(monkeypatch):
     assert end - start == timedelta(days=15)
     assert subscription["provider"] == ""
     assert subscription["provider_customer_id"] == ""
-    assert subscription["provider_subscription_id"] == ""
+    assert "provider_subscription_id" not in subscription
     assert subscription["current_period_start"] == ""
     assert subscription["current_period_end"] == ""
     assert subscription["cancel_at_period_end"] is False
