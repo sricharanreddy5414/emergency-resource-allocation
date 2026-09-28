@@ -7,6 +7,7 @@ from botocore.exceptions import ClientError
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "src" / "shared"))
 sys.path.insert(0, str(ROOT / "src" / "organization"))
 
@@ -98,6 +99,25 @@ class OrganizationStore:
         return {"Item": item} if item else {}
 
 
+class SubscriptionStore:
+    def __init__(self):
+        self.items = {}
+        self.puts = []
+
+    def put_item(self, Item, ConditionExpression=None):
+        key = Item["organization_id"]
+
+        if ConditionExpression and key in self.items:
+            raise conditional_error()
+
+        self.puts.append(dict(Item))
+        self.items[key] = dict(Item)
+
+    def get_item(self, Key):
+        item = self.items.get(Key["organization_id"])
+        return {"Item": item} if item else {}
+
+
 class MemberStore:
     def __init__(self, rows=None, pages=None):
         self.rows = rows or []
@@ -144,11 +164,16 @@ class MemberStore:
         raise AssertionError("membership lookup must not scan")
 
 
-def use_stores(monkeypatch, organizations, members):
+def use_stores(monkeypatch, organizations, members, subscriptions=None):
+    if subscriptions is None:
+        subscriptions = SubscriptionStore()
+
     monkeypatch.setattr(handler, "organizations_table", lambda: organizations)
     monkeypatch.setattr(handler, "members_table", lambda: members)
+    monkeypatch.setattr(handler, "subscriptions_table", lambda: subscriptions)
     monkeypatch.setattr(membership, "organizations_table", lambda: organizations)
     monkeypatch.setattr(membership, "members_table", lambda: members)
+    return subscriptions
 
 
 def test_authenticated_organization_lookup(monkeypatch):

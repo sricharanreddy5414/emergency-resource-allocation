@@ -8,6 +8,7 @@ from botocore.exceptions import ClientError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [
+    str(ROOT / "src"),
     str(ROOT / "src" / "shared"),
     str(ROOT / "src" / "organization"),
 ]
@@ -163,6 +164,23 @@ class ProjectedMemberStore(MemberStore):
         return {"Items": projected}
 
 
+class SubscriptionStore:
+    def __init__(self):
+        self.items = {}
+
+    def put_item(self, Item, ConditionExpression=None):
+        key = Item["organization_id"]
+
+        if ConditionExpression and key in self.items:
+            raise conditional_error()
+
+        self.items[key] = dict(Item)
+
+    def get_item(self, Key):
+        item = self.items.get(Key["organization_id"])
+        return {"Item": item} if item else {}
+
+
 class AuditStore:
     def __init__(self):
         self.items = []
@@ -200,10 +218,12 @@ def seed(monkeypatch, rows):
     organizations = OrganizationStore()
     members = MemberStore(rows)
     audits = AuditStore()
+    subscriptions = SubscriptionStore()
     monkeypatch.setattr(membership, "organizations_table", lambda: organizations)
     monkeypatch.setattr(membership, "members_table", lambda: members)
     monkeypatch.setattr(handler, "organizations_table", lambda: organizations)
     monkeypatch.setattr(handler, "members_table", lambda: members)
+    monkeypatch.setattr(handler, "subscriptions_table", lambda: subscriptions)
     monkeypatch.setattr(handler, "audit_table", lambda: audits)
 
     return organizations, members, audits

@@ -19,6 +19,20 @@ A new organization, when a later phase writes the row, receives:
 
 The clock is `datetime` in UTC. A zoned input is converted to UTC. A naive clock is rejected. Retrying the same creation keeps the original `trial_start` and `trial_end`. The one-trial-per-owner rule is not implemented yet.
 
+## Phase B — Organization trial creation
+
+`POST /organization` writes the trial when it creates a new organization. `trial_start` is the same server UTC value stored as `Organizations.created_at`. `trial_end` is that instant plus 15 days, from `new_trial_subscription`. The plan is `FREE_TRIAL`, the interval is `none`, and the status is `TRIALING`. Provider ids and period fields are empty. `cancel_at_period_end` is false.
+
+The response body is unchanged. It does not include provider ids or trial fields.
+
+The same `user_sub` and `client_request_id` still resolve to the same organization id. The subscription write uses `attribute_not_exists(organization_id)`. A replay reads the existing row and does not change `trial_start` or `trial_end`.
+
+Organization creation does not use `TransactWriteItems`. The existing flow writes the organization, then the owner membership, each with its own conditional put. The trial write is a third conditional put after those succeed. A membership failure returns `Unable to create organization` and does not write a trial. A subscription failure returns the same error and is not reported as success. A retry uses the original `created_at` and inserts the trial only if it is still missing.
+
+A missing subscription row still means legacy access through `access_when_subscription_missing`. Creating one organization does not scan or update any other organization. Pilot and other existing rows are not backfilled. One trial per owner is not enforced: each new organization created through this flow receives its own 15-day trial.
+
+`OrganizationSubscriptions` is still not deployed. `infra/billing-tables.json` remains `"applied": false`. The create-organization package includes the billing modules so the function can write the row once the table exists.
+
 ## Subscription states
 
 `TRIALING`, `ACTIVE`, `PAST_DUE`, `CANCELLED`, `EXPIRED`, `GRANDFATHERED`.
@@ -99,6 +113,6 @@ Do not scan or update production organizations in Phase A. When a later phase ba
 
 `infra/billing-tables.json` specifies `OrganizationSubscriptions` (partition key `organization_id`) and `BillingEvents` (partition key `provider_event_id`) in `eu-north-1`, with point-in-time recovery and deletion protection. `"applied": false`. These tables were not created.
 
-## What Phase A does not implement
+## What this phase does not implement
 
-Razorpay, checkout, webhooks, billing API routes, EventBridge expiry, write enforcement, the billing screen, price activation, and the grandfather backfill.
+Razorpay, checkout, webhooks, billing API routes, EventBridge expiry, write enforcement, the billing screen, price activation, the grandfather backfill, and creating the billing tables.

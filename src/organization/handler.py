@@ -13,7 +13,9 @@ from common import (
 )
 from observability import begin_request
 from membership import members_table, organizations_table
+from subscriptions import ensure_trial_subscription, subscriptions_table
 from audit import build_audit_event, record_audit
+from billing.errors import BillingError
 
 
 def audit_table():
@@ -174,6 +176,23 @@ def lambda_handler(event, context):
             print("Membership create failed:", error.response["Error"]["Code"])
             return api_response(500, {"message": "Unable to create organization"})
 
+    try:
+        subscription, subscription_created = ensure_trial_subscription(
+            subscriptions_table(),
+            organization_id,
+            created_at,
+        )
+    except ClientError as error:
+        print("Subscription create failed:", error.response["Error"]["Code"])
+        return api_response(500, {"message": "Unable to create organization"})
+    except BillingError:
+        print("Subscription create failed: invalid trial")
+        return api_response(500, {"message": "Unable to create organization"})
+
+    if not subscription:
+        print("Subscription create failed: missing row")
+        return api_response(500, {"message": "Unable to create organization"})
+
     payload = organization_payload(
         organization_id,
         organization_name,
@@ -192,6 +211,19 @@ def lambda_handler(event, context):
                 "OWNER",
                 "organization.create",
                 "organization",
+                organization_id,
+            ),
+        )
+
+    if subscription_created:
+        record_audit(
+            audit_table(),
+            build_audit_event(
+                organization_id,
+                user_sub,
+                "OWNER",
+                "billing.trial_started",
+                "subscription",
                 organization_id,
             ),
         )

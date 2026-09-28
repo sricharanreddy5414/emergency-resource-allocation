@@ -54,6 +54,12 @@ PACKAGES = {
         "member_admin.py": "src/organization/member_admin.py",
         "audit.py": "src/shared/audit.py",
         "observability.py": "src/shared/observability.py",
+        "subscriptions.py": "src/organization/subscriptions.py",
+        "billing/__init__.py": "src/billing/__init__.py",
+        "billing/errors.py": "src/billing/errors.py",
+        "billing/models.py": "src/billing/models.py",
+        "billing/plans.py": "src/billing/plans.py",
+        "billing/transitions.py": "src/billing/transitions.py",
         "handler.py": "src/organization/handler.py",
     },
     "erap-get-organization": {
