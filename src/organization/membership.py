@@ -91,6 +91,11 @@ def list_memberships(user_sub, members=None, organizations=None):
         if not organization:
             continue
 
+        member_status = item.get("status") or "ACTIVE"
+
+        if member_status != "ACTIVE":
+            continue
+
         memberships.append(
             {
                 "organization_id": organization_id,

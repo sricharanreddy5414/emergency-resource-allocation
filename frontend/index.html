@@ -1353,6 +1353,49 @@
     </div>
 
 
+    <div class="panel" id="organizationMembersPanel" hidden>
+
+        <div class="panel-header">
+
+            <div>
+
+                <span class="panel-label">
+                    ACCESS
+                </span>
+
+                <h3>
+                    Organization Members
+                </h3>
+
+            </div>
+
+        </div>
+
+        <p>
+            Invite a person who already signs in to ERAP. The invitation grants no access until that person accepts it with the same verified email.
+        </p>
+
+        <div id="myInvitations"></div>
+
+        <form id="inviteMemberForm">
+
+            <label for="inviteMemberEmail">Email</label>
+            <input id="inviteMemberEmail" type="email" maxlength="254" autocomplete="off">
+            <label for="inviteMemberRole">Role</label>
+            <select id="inviteMemberRole">
+                <option value="ADMIN">ADMIN</option>
+                <option value="OPERATOR">OPERATOR</option>
+                <option value="MEMBER" selected>MEMBER</option>
+            </select>
+            <button class="primary-btn" id="inviteMemberBtn" type="submit">Invite member</button>
+
+        </form>
+
+        <div id="organizationMembers"></div>
+
+    </div>
+
+
 </section>
 
 <!-- =====================================================
@@ -2502,6 +2545,8 @@
         <p class="modal-description">
             Set up your organization to start managing resources, requests, locations, and team members in ERAP.
         </p>
+
+        <div id="pendingInvitations"></div>
 
 
         <div class="form-group">

@@ -50,6 +50,8 @@ PACKAGES = {
     "erap-create-organization": {
         "common.py": "src/organization/common.py",
         "membership.py": "src/organization/membership.py",
+        "access.py": "src/shared/access.py",
+        "member_admin.py": "src/organization/member_admin.py",
         "audit.py": "src/shared/audit.py",
         "observability.py": "src/shared/observability.py",
         "handler.py": "src/organization/handler.py",
@@ -57,6 +59,8 @@ PACKAGES = {
     "erap-get-organization": {
         "common.py": "src/organization/common.py",
         "membership.py": "src/organization/membership.py",
+        "access.py": "src/shared/access.py",
+        "member_admin.py": "src/organization/member_admin.py",
         "observability.py": "src/shared/observability.py",
         "get_handler.py": "src/organization/get_handler.py",
     },

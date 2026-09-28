@@ -16,8 +16,19 @@ def lambda_handler(event, context):
     if not user_sub:
         return api_response(401, {"message": "Authentication required"})
 
+    from member_admin import handle_member_read, pending_invitations
+
+    query = event.get("queryStringParameters") or {}
+
+    if not isinstance(query, dict):
+        query = {}
+
+    if str(query.get("view") or "") == "members":
+        return handle_member_read(event)
+
     try:
         organizations = list_memberships(user_sub)
+        invitations = pending_invitations(event)
     except Exception as error:
         print(
             "Organization lookup failed:",
@@ -25,4 +36,9 @@ def lambda_handler(event, context):
         )
         return api_response(500, {"message": "Unable to load organizations"})
 
-    return api_response(200, {"organizations": organizations})
+    payload = {"organizations": organizations}
+
+    if invitations:
+        payload["pending_invitations"] = invitations
+
+    return api_response(200, payload)

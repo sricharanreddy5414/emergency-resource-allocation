@@ -10,7 +10,7 @@ OPERATIONAL / GOVERNANCE: the confirmed alarm subscription, the point-in-time re
 
 OVERALL LAUNCH GATE: NOT PASSED.
 
-ADMIN, OPERATOR, and MEMBER remain CODE-LEVEL VERIFIED / LIVE PENDING. `POST /organization` is the only membership write, and it always stores `OWNER`. The application has no supported way to create or change any other OrganizationMembers role. Those live tests cannot be executed without a future role-management capability. No membership row was edited to simulate them.
+ADMIN, OPERATOR, and MEMBER remain CODE-LEVEL VERIFIED / LIVE PENDING. Member management is now implemented and documented in `docs/organization-member-management.md`. An owner or admin can invite `ADMIN`, `OPERATOR`, or `MEMBER`, and the invited person must accept with a verified Cognito email. Live validation of those three roles has not been executed. No existing membership row was edited to simulate a result.
 
 GitHub `production` requires approval from `sricharanreddy5414` and allows only `main`. The `development` environment was not changed.
 

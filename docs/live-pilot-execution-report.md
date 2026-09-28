@@ -306,11 +306,11 @@ OPERATOR: CODE-LEVEL VERIFIED / LIVE PENDING.
 
 MEMBER: CODE-LEVEL VERIFIED / LIVE PENDING.
 
-`POST /organization` is the only write to `OrganizationMembers`, and it always stores `role` as `OWNER`. There is no API, script, or screen that creates or changes ADMIN, OPERATOR, or MEMBER. The backend enforces those roles, and the tests cover them, but a live test needs a membership the current application cannot create. No membership was edited to force a result. Cognito groups are not the role source.
+Organization creation still stores `OWNER`. Owners and admins can now invite `ADMIN`, `OPERATOR`, and `MEMBER`; the invited person accepts with a verified Cognito email. The procedure is in `docs/organization-member-management.md`. Cognito groups are not the role source. No membership was edited to force a result.
 
 ## Remaining launch-gate item
 
-Live validation of ADMIN, OPERATOR, and MEMBER. It stays pending until a future role-management capability exists. It is not completed by signing in as either current user, because both are owners of their own organizations.
+Live validation of ADMIN, OPERATOR, and MEMBER through the new invitation workflow. Signing in as either current user does not complete it, because both are owners of their own organizations. Do not mark those roles live-passed until each role has been accepted and exercised.
 
 ## Final Launch Gate
 
@@ -322,4 +322,4 @@ OPERATIONAL / GOVERNANCE: the confirmed subscription, the new-table restore rehe
 
 OVERALL LAUNCH GATE: NOT PASSED
 
-The required live role validations are still outstanding, and the current application cannot perform them.
+The required live role validations are still outstanding. The invitation workflow can perform them, and they have not been executed with signed-in ADMIN, OPERATOR, and MEMBER users.

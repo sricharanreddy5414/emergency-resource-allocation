@@ -79,6 +79,7 @@ def main():
         expect("resources require auth", "GET", API_BASE + "/allocate/resources", 401, ALLOWED_ORIGIN),
         expect("types require auth", "GET", API_BASE + "/resource-types", 401, ALLOWED_ORIGIN),
         expect("requests require auth", "GET", API_BASE + "/requests", 401, ALLOWED_ORIGIN),
+        expect("members require auth", "GET", API_BASE + "/organization?view=members", 401, ALLOWED_ORIGIN),
         expect("public options", "OPTIONS", API_BASE + "/public/resources", 200, ALLOWED_ORIGIN),
     ]
     page_code, _origin, _page = request("GET", AMPLIFY_URL)

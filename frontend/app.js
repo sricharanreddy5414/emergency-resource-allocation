@@ -90,6 +90,7 @@ let currentUser = {
 };
 
 let organizationOnboardingRequired = false;
+let pendingInvitations = [];
 
 let organizationRequestId = null;
 
@@ -952,6 +953,14 @@ function updateUserInterface() {
 
     }
 
+    const membersPanel = $("organizationMembersPanel");
+
+    if (membersPanel) {
+
+        membersPanel.hidden = !canManageMembers();
+
+    }
+
 
     if ($("adminNavItem")) {
 
@@ -1427,6 +1436,7 @@ function navigateTo(sectionId) {
     ) {
 
         loadAllocations();
+        loadOrganizationMembers();
 
     }
 
@@ -4967,6 +4977,40 @@ function resourceEditDelegatedClick(event) {
 
 function initializeEvents() {
 
+    $("inviteMemberForm")?.addEventListener("submit", submitMemberInvite);
+    document.addEventListener("click", event => {
+
+        const accept = event.target?.closest?.(".accept-invitation-btn");
+        const save = event.target?.closest?.(".save-member-role");
+        const deactivate = event.target?.closest?.(".deactivate-member");
+        const reactivate = event.target?.closest?.(".reactivate-member");
+
+        if (accept) {
+
+            acceptInvitation(accept.dataset.organizationId);
+
+        }
+
+        if (save) {
+
+            changeMemberRole(save.dataset.userSub);
+
+        }
+
+        if (deactivate) {
+
+            setMemberActive(deactivate.dataset.userSub, "deactivate_member");
+
+        }
+
+        if (reactivate) {
+
+            setMemberActive(reactivate.dataset.userSub, "reactivate_member");
+
+        }
+
+    });
+
 
     /* Allocation form */
 
@@ -6532,6 +6576,339 @@ function createOrganizationRequestId() {
 }
 
 
+function canManageMembers() {
+
+    const role = currentUser.organization && currentUser.organization.role;
+
+    return role === "OWNER" || role === "ADMIN";
+
+}
+
+
+function memberOrganizationId() {
+
+    return currentUser.organization && currentUser.organization.organization_id || "";
+
+}
+
+
+function renderInvitationList(container) {
+
+    if (!container) {
+
+        return;
+
+    }
+
+    if (!pendingInvitations.length) {
+
+        container.innerHTML = "";
+
+        return;
+
+    }
+
+    container.innerHTML = pendingInvitations.map(invitation => `
+
+        <p>
+            Invitation to ${escapeHtml(invitation.name || invitation.organization_id)}
+            as ${escapeHtml(invitation.role)}.
+            <button type="button" class="primary-btn accept-invitation-btn" data-organization-id="${escapeHtml(invitation.organization_id)}">
+                Accept
+            </button>
+        </p>
+
+    `).join("");
+
+}
+
+
+function renderMemberRows(members) {
+
+    const container = $("organizationMembers");
+
+    if (!container) {
+
+        return;
+
+    }
+
+    if (!members.length) {
+
+        container.innerHTML = "<p>No members are recorded for this organization.</p>";
+
+        return;
+
+    }
+
+    container.innerHTML = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${members.map(member => {
+                    const protectedOwner = member.role === "OWNER";
+                    const pending = member.status === "PENDING";
+                    const inactive = member.status === "INACTIVE";
+                    const roleControl = protectedOwner
+                        ? "OWNER"
+                        : `
+                            <select data-member-role="${escapeHtml(member.user_sub)}">
+                                ${["ADMIN", "OPERATOR", "MEMBER"].map(role => `
+                                    <option value="${role}" ${member.role === role ? "selected" : ""}>${role}</option>
+                                `).join("")}
+                            </select>
+                            <button type="button" class="primary-btn save-member-role" data-user-sub="${escapeHtml(member.user_sub)}">Save role</button>
+                        `;
+                    const activation = protectedOwner
+                        ? ""
+                        : inactive
+                            ? `<button type="button" class="primary-btn reactivate-member" data-user-sub="${escapeHtml(member.user_sub)}">Reactivate</button>`
+                            : `<button type="button" class="primary-btn deactivate-member" data-user-sub="${escapeHtml(member.user_sub)}">${pending ? "Cancel invitation" : "Deactivate"}</button>`;
+
+                    return `
+                        <tr>
+                            <td>${escapeHtml(member.email || "Verified member")}</td>
+                            <td>${roleControl}</td>
+                            <td>${escapeHtml(member.status || "ACTIVE")}</td>
+                            <td>${activation}</td>
+                        </tr>
+                    `;
+                }).join("")}
+            </tbody>
+        </table>
+    `;
+
+}
+
+
+async function postMemberOperation(body) {
+
+    const idToken = await waitForIdToken();
+
+    if (!idToken) {
+
+        showToast("Cognito ID token is not available.");
+
+        return null;
+
+    }
+
+    const response = await fetch(ORGANIZATION_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + idToken
+        },
+        body: JSON.stringify(body)
+    });
+    const data = await readJsonResponse(response);
+
+    if (!response.ok) {
+
+        showToast(organizationErrorMessage(response.status, data));
+
+        return null;
+
+    }
+
+    return data;
+
+}
+
+
+async function loadOrganizationMembers() {
+
+    const panel = $("organizationMembersPanel");
+
+    if (!panel || !canManageMembers()) {
+
+        if (panel) {
+
+            panel.hidden = true;
+
+        }
+
+        return;
+
+    }
+
+    panel.hidden = false;
+    renderInvitationList($("myInvitations"));
+
+    const organizationId = memberOrganizationId();
+
+    if (!organizationId) {
+
+        return;
+
+    }
+
+    const idToken = await waitForIdToken();
+
+    if (!idToken) {
+
+        return;
+
+    }
+
+    const response = await fetch(
+        ORGANIZATION_API_URL + "?view=members&organization_id=" + encodeURIComponent(organizationId),
+        {
+            method: "GET",
+            headers: {
+                "Accept": "application/json",
+                "Authorization": "Bearer " + idToken
+            }
+        }
+    );
+    const data = await readJsonResponse(response);
+
+    if (!response.ok) {
+
+        showToast(organizationErrorMessage(response.status, data));
+
+        return;
+
+    }
+
+    renderMemberRows(Array.isArray(data.members) ? data.members : []);
+
+}
+
+
+async function submitMemberInvite(event) {
+
+    event.preventDefault();
+
+    const organizationId = memberOrganizationId();
+    const email = $("inviteMemberEmail")?.value.trim() || "";
+    const role = $("inviteMemberRole")?.value || "";
+
+    if (!organizationId || !email) {
+
+        showToast("Email address is required.");
+
+        return;
+
+    }
+
+    const result = await postMemberOperation({
+        operation: "invite_member",
+        organization_id: organizationId,
+        email: email,
+        role: role
+    });
+
+    if (!result) {
+
+        return;
+
+    }
+
+    if ($("inviteMemberEmail")) {
+
+        $("inviteMemberEmail").value = "";
+
+    }
+
+    showToast(result.message || "Invitation created.");
+    await loadOrganizationMembers();
+
+}
+
+
+async function changeMemberRole(userSub) {
+
+    const organizationId = memberOrganizationId();
+    const select = document.querySelector(`[data-member-role="${CSS.escape(userSub)}"]`);
+    const role = select ? select.value : "";
+
+    if (!organizationId || !window.confirm("Change this member's role to " + role + "?")) {
+
+        return;
+
+    }
+
+    const result = await postMemberOperation({
+        operation: "change_role",
+        organization_id: organizationId,
+        target_user_sub: userSub,
+        role: role
+    });
+
+    if (result) {
+
+        showToast(result.message || "Role updated.");
+        await loadOrganizationMembers();
+
+    }
+
+}
+
+
+async function setMemberActive(userSub, operation) {
+
+    const organizationId = memberOrganizationId();
+    const message = operation === "deactivate_member"
+        ? "Deactivate this member?"
+        : "Reactivate this member?";
+
+    if (!organizationId || !window.confirm(message)) {
+
+        return;
+
+    }
+
+    const result = await postMemberOperation({
+        operation: operation,
+        organization_id: organizationId,
+        target_user_sub: userSub
+    });
+
+    if (result) {
+
+        showToast(result.message || "Membership updated.");
+        await loadOrganizationMembers();
+
+    }
+
+}
+
+
+async function acceptInvitation(organizationId) {
+
+    const result = await postMemberOperation({
+        operation: "accept_invitation",
+        organization_id: organizationId
+    });
+
+    if (!result) {
+
+        return;
+
+    }
+
+    showToast(result.message || "Invitation accepted.");
+    const organizations = await loadOrganizationMembership();
+
+    if (organizations && organizations.length) {
+
+        closeOrganizationOnboarding();
+        applyOrganizationContext(organizations);
+        await startDashboardData();
+
+    }
+
+}
+
+
 function openOrganizationOnboarding() {
 
     organizationOnboardingRequired = true;
@@ -6543,6 +6920,7 @@ function openOrganizationOnboarding() {
     }
 
     $("organizationModal")?.classList.remove("hidden");
+    renderInvitationList($("pendingInvitations"));
 
 }
 
@@ -6650,6 +7028,10 @@ async function loadOrganizationMembership() {
             return null;
 
         }
+
+        pendingInvitations = Array.isArray(data.pending_invitations) ? data.pending_invitations : [];
+        renderInvitationList($("pendingInvitations"));
+        renderInvitationList($("myInvitations"));
 
         return Array.isArray(data.organizations) ? data.organizations : [];
 

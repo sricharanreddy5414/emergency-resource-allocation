@@ -19,6 +19,7 @@ The browser stores the ID token in `sessionStorage` and sends it as `Authorizati
 | Register, update, and release resources | yes | yes | yes | no |
 | Create and update requests | yes | yes | yes | yes |
 | Allocate | yes | yes | yes | no |
+| Manage members | yes | non-owner members only | no | no |
 | Publish a resource | yes | yes | yes | no |
 | Public discovery | public route, no role | | | |
 

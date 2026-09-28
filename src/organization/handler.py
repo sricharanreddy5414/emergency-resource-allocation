@@ -93,6 +93,13 @@ def lambda_handler(event, context):
 
     organization_name = str(raw_name).strip()
 
+    operation = str(body.get("operation") or "").strip()
+
+    if operation:
+        from member_admin import handle_member_operation
+
+        return handle_member_operation(event, body, user_sub, audit_table())
+
     if not organization_name:
         return api_response(400, {"message": "Organization name is required"})
 
@@ -157,6 +164,7 @@ def lambda_handler(event, context):
                 "organization_id": organization_id,
                 "user_sub": user_sub,
                 "role": "OWNER",
+                "status": "ACTIVE",
                 "created_at": created_at,
             },
             ConditionExpression="attribute_not_exists(organization_id)",
