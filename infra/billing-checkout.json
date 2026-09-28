@@ -1,7 +1,7 @@
 {
   "applied": false,
   "region": "eu-north-1",
-  "note": "Specification only. Do not create the Lambda, route, or secret. The existing API and the nine deployed functions stay unchanged. The webhook route has no Cognito authorizer.",
+  "note": "Specification only. Do not create the Lambda, routes, or secret. The existing API and the nine deployed functions stay unchanged. Authenticated billing routes use authorizer y0hzhr. The webhook route has no Cognito authorizer.",
   "route": {
     "restApiId": "4c6dni17l3",
     "stage": "dev",
@@ -12,6 +12,48 @@
     "function": "erap-billing",
     "alias": "live"
   },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/billing",
+      "authorization": "COGNITO_USER_POOLS",
+      "authorizerId": "y0hzhr",
+      "function": "erap-billing",
+      "alias": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/billing/plans",
+      "authorization": "COGNITO_USER_POOLS",
+      "authorizerId": "y0hzhr",
+      "function": "erap-billing",
+      "alias": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/billing/checkout",
+      "authorization": "COGNITO_USER_POOLS",
+      "authorizerId": "y0hzhr",
+      "function": "erap-billing",
+      "alias": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/billing/cancel",
+      "authorization": "COGNITO_USER_POOLS",
+      "authorizerId": "y0hzhr",
+      "function": "erap-billing",
+      "alias": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/billing/events",
+      "authorization": "COGNITO_USER_POOLS",
+      "authorizerId": "y0hzhr",
+      "function": "erap-billing",
+      "alias": "live"
+    }
+  ],
   "secret": {
     "name": "erap/billing/razorpay/test",
     "store": "AWS Secrets Manager",
@@ -42,6 +84,12 @@
         "Effect": "Allow",
         "Action": "secretsmanager:GetSecretValue",
         "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/test*"
+      },
+      {
+        "Sid": "BillingEventsByOrganization",
+        "Effect": "Allow",
+        "Action": "dynamodb:Query",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/BillingEvents/index/OrganizationBillingEventsIndex"
       }
     ]
   },

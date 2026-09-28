@@ -188,6 +188,28 @@ def get_plan(plan_id):
     return dict(plan)
 
 
+def customer_plans():
+    """Plans a billing page may show. Provider ids and entitlements stay internal."""
+    listed = []
+
+    for plan_id in ("MONTHLY", "YEARLY"):
+        plan = get_plan(plan_id)
+        public = {
+            "plan_id": plan["plan_id"],
+            "display_name": plan["display_name"],
+            "billing_interval": plan["billing_interval"],
+            "currency": plan["currency"],
+            "purchasable": plan["purchasable"],
+        }
+
+        if isinstance(plan.get("amount_minor"), int) and not isinstance(plan.get("amount_minor"), bool):
+            public["amount_minor"] = plan["amount_minor"]
+
+        listed.append(public)
+
+    return listed
+
+
 def require_purchasable(plan_id):
     """Checkout is refused until a plan is explicitly made purchasable."""
     plan = get_plan(plan_id)

@@ -100,9 +100,12 @@ BILLING_PACKAGES = {
         "billing/plans.py": "src/billing/plans.py",
         "billing/transitions.py": "src/billing/transitions.py",
         "billing/checkout.py": "src/billing/checkout.py",
+        "billing/summary.py": "src/billing/summary.py",
+        "billing/cancel.py": "src/billing/cancel.py",
+        "billing/events.py": "src/billing/events.py",
         "billing/provider/__init__.py": "src/billing/provider/__init__.py",
         "billing/provider/razorpay.py": "src/billing/provider/razorpay.py",
-        "handler.py": "src/billing/checkout_handler.py",
+        "handler.py": "src/billing/api_handler.py",
     },
     "erap-billing-webhook": {
         "common.py": "src/organization/common.py",

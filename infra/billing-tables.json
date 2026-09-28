@@ -47,6 +47,32 @@
         {
           "AttributeName": "provider_event_id",
           "AttributeType": "S"
+        },
+        {
+          "AttributeName": "organization_id",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "received_at",
+          "AttributeType": "S"
+        }
+      ],
+      "GlobalSecondaryIndexes": [
+        {
+          "IndexName": "OrganizationBillingEventsIndex",
+          "KeySchema": [
+            {
+              "AttributeName": "organization_id",
+              "KeyType": "HASH"
+            },
+            {
+              "AttributeName": "received_at",
+              "KeyType": "RANGE"
+            }
+          ],
+          "Projection": {
+            "ProjectionType": "ALL"
+          }
         }
       ],
       "KeySchema": [
@@ -77,6 +103,12 @@
           "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions",
           "arn:aws:dynamodb:eu-north-1:481838970142:table/BillingEvents"
         ]
+      },
+      {
+        "Sid": "BillingEventsByOrganization",
+        "Effect": "Allow",
+        "Action": "dynamodb:Query",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/BillingEvents/index/OrganizationBillingEventsIndex"
       }
     ]
   }

@@ -155,6 +155,36 @@ A later phase may repair a subscription by fetching it from Razorpay. This phase
 
 `erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. Deploy, alias, and route scripts still skip it. Its specified IAM is get, update, and query on `OrganizationSubscriptions` and `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test secret. It has no delete, no scan, and no access to operational tables.
 
+## Phase E — Billing API
+
+The authenticated billing API is code and tests only. The routes are specified on API `4c6dni17l3`, stage `dev`, with Cognito authorizer `y0hzhr`. `"applied"` stays false. `erap-billing` serves the authenticated routes. `erap-billing-webhook` stays separate and is still signature-authenticated. Neither function is deployed. The billing screen is not implemented. Subscription enforcement is not implemented. `MONTHLY` and `YEARLY` remain `purchasable: false`.
+
+`organization_id` is only a selector. `authorize` checks the Cognito subject, an `ACTIVE` membership, and that organization. One membership and no selector uses that organization. Several memberships and no selector still require a selection. Organization A cannot read or change Organization B. The role in the body is ignored. `GET /organization` is unchanged.
+
+| Route | OWNER | ADMIN | OPERATOR | MEMBER |
+| --- | --- | --- | --- | --- |
+| `GET /billing` | yes | yes | 403 | 403 |
+| `GET /billing/plans` | yes | yes | 403 | 403 |
+| `POST /billing/checkout` | yes | 403 | 403 | 403 |
+| `POST /billing/cancel` | yes | 403 | 403 | 403 |
+| `GET /billing/events` | yes | yes | 403 | 403 |
+
+A missing token is 401. Errors use the existing `message` and `error.code` shape.
+
+`GET /billing` returns `organization_id`, the subscription presentation, and `next_action`. The presentation keeps `TRIALING`, `ACTIVE`, `PAST_DUE`, `CANCELLED`, `EXPIRED`, and `GRANDFATHERED`. Empty timestamps are null. It does not return provider ids, the key secret, or the webhook secret. A missing row is presented as `GRANDFATHERED` with `next_action` `none` and is not written. `TRIALING`, `EXPIRED`, and `CANCELLED` use `subscribe`. `ACTIVE` uses `manage_subscription` until cancellation is requested, then `none`. `PAST_DUE` uses `payment_required`.
+
+`GET /billing/plans` returns `MONTHLY` and `YEARLY` with `plan_id`, `display_name`, `billing_interval`, `currency`, and `purchasable`. `amount_minor` is included only when a price is configured. It is omitted now. Razorpay plan ids, secrets, and entitlements are omitted.
+
+`POST /billing/checkout` is the Phase C flow. The body may contain `plan_id` and a selector `organization_id`. Amount, currency, and provider ids are rejected. An unavailable plan returns 409 before any provider call. A successful provider response stores `provider_subscription_id` and does not set `ACTIVE`.
+
+`POST /billing/cancel` is owner-only. The body cannot set status, timestamps, or the provider subscription id. The state machine must allow `CANCELLED` from the current status, which today means `ACTIVE`. The server subscription id is sent to `POST /v1/subscriptions/{id}/cancel` with Razorpay's `cancel_at_cycle_end: true`, so cancellation is at the end of the current cycle rather than immediate. After Razorpay accepts it, ERAP sets `cancel_at_period_end` and leaves `subscription_status` unchanged. The webhook later applies `ACTIVE` to `CANCELLED`. The call does not set `EXPIRED`. A second request does not call Razorpay again. A provider failure does not change the row.
+
+`GET /billing/events` queries `OrganizationBillingEventsIndex` (`organization_id`, `received_at`) for the authorized organization, newest first, at most 50 items. It does not scan. The response contains the normalized event fields only. That index is specified in `infra/billing-tables.json` and is not created.
+
+The authenticated function's specified IAM is membership get and query, get and update on `OrganizationSubscriptions`, query on `OrganizationBillingEventsIndex`, and `GetSecretValue` on the test secret. It has no delete and no scan. The webhook policy is unchanged.
+
+A later frontend can call these routes. It should display `next_action` and `purchasable` from the API instead of deciding them locally.
+
 ## What this phase does not implement
 
-EventBridge expiry, write enforcement, the billing screen, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating the checkout or webhook routes, creating the Razorpay test secret, and enabling live Razorpay.
+EventBridge expiry, write enforcement, the billing screen, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, and enabling live Razorpay.

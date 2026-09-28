@@ -14,6 +14,7 @@ import json
 import os
 import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from base64 import b64encode
 from datetime import datetime, timezone
@@ -243,6 +244,63 @@ class RazorpaySubscriptionProvider:
             "provider_subscription_id": subscription_id,
             "public_key_id": key_id,
         }
+
+    def cancel_subscription(self, *, provider_subscription_id):
+        """Ask Razorpay to cancel at the end of the current cycle.
+
+        Official parameter: cancel_at_cycle_end true. The subscription status
+        becomes cancelled only when that cycle ends. This method does not
+        decide the ERAP status.
+        """
+        key_id, key_secret = self.secret_loader()
+
+        if not str(key_id).startswith("rzp_test_"):
+            raise BillingError(500, "Billing is not configured")
+
+        if not isinstance(provider_subscription_id, str) or not provider_subscription_id.startswith("sub_"):
+            raise BillingError(409, "Cancellation is not available")
+
+        subscription_id = urllib.parse.quote(provider_subscription_id, safe="")
+        payload = {"cancel_at_cycle_end": True}
+        token = b64encode(f"{key_id}:{key_secret}".encode("utf-8")).decode("ascii")
+        request = urllib.request.Request(
+            f"{SUBSCRIPTIONS_URL}/{subscription_id}/cancel",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Basic {token}",
+            },
+        )
+        parsed = _read_json(self.urlopen, request, self.timeout)
+        returned = parsed.get("id") if isinstance(parsed, dict) else None
+
+        if returned != provider_subscription_id:
+            raise BillingError(502, "Billing provider rejected the request")
+
+        return {"accepted": True}
+
+
+def _read_json(urlopen, request, timeout):
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as error:
+        _discard(error)
+        if getattr(error, "code", 0) >= 500:
+            raise BillingError(503, "Billing provider is unavailable")
+        raise BillingError(502, "Billing provider rejected the request")
+    except (TimeoutError, socket.timeout):
+        raise BillingError(503, "Billing provider is unavailable")
+    except urllib.error.URLError:
+        raise BillingError(503, "Billing provider is unavailable")
+
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError, AttributeError):
+        raise BillingError(502, "Billing provider rejected the request")
+
+    return parsed
 
 
 def _discard(error):
