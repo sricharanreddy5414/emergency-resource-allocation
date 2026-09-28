@@ -261,6 +261,16 @@
         ></select>
 
 
+        <button
+            class="secondary-btn"
+            id="organizationOnboardingBtn"
+            type="button"
+            hidden
+        >
+            Create organization
+        </button>
+
+
         <select
             id="locationSwitcher"
             class="context-select"
@@ -2537,43 +2547,79 @@
     <div class="modal-card">
 
 
+        <button
+            class="modal-close"
+            id="organizationModalClose"
+            type="button"
+            aria-label="Close"
+        >
+            ×
+        </button>
+
+
         <h2 id="organizationModalTitle">
             Create your organization
         </h2>
 
 
-        <p class="modal-description">
+        <p class="modal-description" id="organizationModalDescription">
             Set up your organization to start managing resources, requests, locations, and team members in ERAP.
         </p>
 
         <div id="pendingInvitations"></div>
 
 
-        <div class="form-group">
+        <button
+            class="secondary-btn full-width"
+            id="showOrganizationCreateBtn"
+            type="button"
+            hidden
+        >
+            Create a new organization instead
+        </button>
 
 
-            <label for="organizationName">
-                Organization name
-            </label>
+        <div id="organizationCreateFields">
 
 
-            <input
-                type="text"
-                id="organizationName"
-                maxlength="100"
-                autocomplete="organization"
+            <div class="form-group">
+
+
+                <label for="organizationName">
+                    Organization name
+                </label>
+
+
+                <input
+                    type="text"
+                    id="organizationName"
+                    maxlength="100"
+                    autocomplete="organization"
+                >
+
+
+            </div>
+
+
+            <button
+                class="primary-btn full-width"
+                id="createOrganizationBtn"
+                type="button"
             >
+                Create organization
+            </button>
 
 
         </div>
 
 
         <button
-            class="primary-btn full-width"
-            id="createOrganizationBtn"
+            class="secondary-btn full-width"
+            id="organizationNotNowBtn"
             type="button"
+            hidden
         >
-            Create organization
+            Not now
         </button>
 
 

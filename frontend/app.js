@@ -90,6 +90,7 @@ let currentUser = {
 };
 
 let organizationOnboardingRequired = false;
+let organizationCreateRevealed = false;
 let pendingInvitations = [];
 
 let organizationRequestId = null;
@@ -5369,6 +5370,55 @@ initializeRequestControls();
         );
 
 
+    $("organizationModalClose")
+        ?.addEventListener(
+            "click",
+            dismissOrganizationOnboarding
+        );
+
+
+    $("organizationNotNowBtn")
+        ?.addEventListener(
+            "click",
+            dismissOrganizationOnboarding
+        );
+
+
+    $("organizationOnboardingBtn")
+        ?.addEventListener(
+            "click",
+            openOrganizationOnboarding
+        );
+
+
+    $("showOrganizationCreateBtn")
+        ?.addEventListener(
+            "click",
+            () => {
+
+                organizationCreateRevealed = true;
+
+                syncOrganizationOnboardingView();
+
+            }
+        );
+
+
+    $("organizationModal")
+        ?.addEventListener(
+            "click",
+            event => {
+
+                if (event.target === $("organizationModal")) {
+
+                    dismissOrganizationOnboarding();
+
+                }
+
+            }
+        );
+
+
     /* Register modal background */
 
     $("registerModal")
@@ -5405,7 +5455,12 @@ initializeRequestControls();
             }
 
 
-            if (organizationOnboardingRequired) {
+            if (
+                $("organizationModal") &&
+                !$("organizationModal").classList.contains("hidden")
+            ) {
+
+                dismissOrganizationOnboarding();
 
                 return;
 
@@ -6559,6 +6614,8 @@ function applyOrganizationContext(organizations) {
 
     renderOrganizationSwitcher();
 
+    updateOrganizationOnboardingEntry();
+
 }
 
 
@@ -6604,21 +6661,106 @@ function renderInvitationList(container) {
 
         container.innerHTML = "";
 
+        syncOrganizationOnboardingView();
+
         return;
 
     }
 
-    container.innerHTML = pendingInvitations.map(invitation => `
+    container.innerHTML = pendingInvitations.map(invitation => {
 
-        <p>
-            Invitation to ${escapeHtml(invitation.name || invitation.organization_id)}
-            as ${escapeHtml(invitation.role)}.
-            <button type="button" class="primary-btn accept-invitation-btn" data-organization-id="${escapeHtml(invitation.organization_id)}">
-                Accept
-            </button>
-        </p>
+        const name = escapeHtml(invitation.name || "an organization");
+        const role = escapeHtml(invitation.role || "");
+        const organizationId = escapeHtml(invitation.organization_id || "");
 
-    `).join("");
+        return `
+            <section class="invitation-card">
+                <p>You've been invited to join <strong>${name}</strong></p>
+                <p class="invitation-role-label">Role</p>
+                <p><strong>${role}</strong></p>
+                <button type="button" class="primary-btn full-width accept-invitation-btn" data-organization-id="${organizationId}">
+                    Accept Invitation
+                </button>
+            </section>
+        `;
+
+    }).join("");
+
+    syncOrganizationOnboardingView();
+
+}
+
+
+function updateOrganizationOnboardingEntry() {
+
+    const button = $("organizationOnboardingBtn");
+
+    if (!button) {
+
+        return;
+
+    }
+
+    const hasOrganization = Boolean(currentUser.organization);
+
+    button.hidden = hasOrganization;
+
+    if (!hasOrganization) {
+
+        button.textContent = pendingInvitations.length
+            ? "Invitations"
+            : "Create organization";
+
+    }
+
+}
+
+
+function syncOrganizationOnboardingView() {
+
+    const invited = pendingInvitations.length > 0;
+    const title = $("organizationModalTitle");
+    const description = $("organizationModalDescription");
+    const createFields = $("organizationCreateFields");
+    const notNow = $("organizationNotNowBtn");
+    const createInstead = $("showOrganizationCreateBtn");
+    const single = pendingInvitations.length === 1 ? pendingInvitations[0] : null;
+
+    if (title) {
+
+        title.textContent = invited
+            ? "You've been invited to join " + (single && single.name ? single.name : "an organization")
+            : "Create your organization";
+
+    }
+
+    if (description) {
+
+        description.textContent = invited
+            ? "Accept the invitation to join the existing organization. You can close this and decide later."
+            : "Set up your organization to start managing resources, requests, locations, and team members in ERAP.";
+
+    }
+
+    if (createFields) {
+
+        createFields.hidden = invited && !organizationCreateRevealed;
+
+    }
+
+    if (notNow) {
+
+        notNow.hidden = !invited;
+
+    }
+
+    if (createInstead) {
+
+        createInstead.hidden = !invited || organizationCreateRevealed;
+
+    }
+
+    updateOrganizationOnboardingEntry();
 
 }
 
@@ -6913,6 +7055,8 @@ function openOrganizationOnboarding() {
 
     organizationOnboardingRequired = true;
 
+    organizationCreateRevealed = false;
+
     if (!organizationRequestId) {
 
         organizationRequestId = createOrganizationRequestId();
@@ -6921,6 +7065,7 @@ function openOrganizationOnboarding() {
 
     $("organizationModal")?.classList.remove("hidden");
     renderInvitationList($("pendingInvitations"));
+    $("organizationModalClose")?.focus();
 
 }
 
@@ -6930,6 +7075,15 @@ function closeOrganizationOnboarding() {
     organizationOnboardingRequired = false;
 
     $("organizationModal")?.classList.add("hidden");
+
+    updateOrganizationOnboardingEntry();
+
+}
+
+
+function dismissOrganizationOnboarding() {
+
+    closeOrganizationOnboarding();
 
 }
 

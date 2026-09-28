@@ -1491,6 +1491,50 @@ tbody tr:hover {
 }
 
 
+.invitation-card {
+    border: 1px solid var(--border);
+
+    border-radius: 12px;
+
+    padding: 16px;
+
+    margin-bottom: 16px;
+
+    background: #f7fafc;
+}
+
+
+.invitation-card p {
+    margin: 0 0 8px;
+
+    font-size: 13px;
+
+    line-height: 1.5;
+}
+
+
+.invitation-role-label {
+    color: var(--muted);
+
+    font-size: 10px;
+
+    letter-spacing: 0.5px;
+
+    text-transform: uppercase;
+}
+
+
+.invitation-card .primary-btn {
+    margin-top: 8px;
+}
+
+
+#organizationNotNowBtn,
+#showOrganizationCreateBtn {
+    margin-top: 12px;
+}
+
+
 .modal-avatar {
     width: 60px;
     height: 60px;
