@@ -1,5 +1,15 @@
 # Production readiness checklist
 
+## Current launch gate — 28 September 2026
+
+Commit `b5d72cf1ad7f300800810971bb8c165302f56998`. Gate: PENDING HUMAN ACTION.
+
+The authenticated pilot is complete and no application defect was found in this recheck. Local pytest is 91 passed. Security scan, frontend check, workflow check, package check, and smoke test passed locally. GitHub Deploy backend run 36347114518 succeeded, including Verify hardening, so table protection, throttles, CORS, alarms, the Cognito authorizer, and the public `live` alias were checked through OIDC. The local AWS CLI session is expired, so DynamoDB rows, Cognito settings, Lambda log retention, and the SNS subscription count were not re-read in this pass.
+
+Pending human action: confirm an alarm email, create the GitHub `production` environment with a required reviewer, verify a second user for tenant isolation and non-owner roles, and rehearse restore. A restore rehearsal has not been executed.
+
+The sections below are the earlier Phase 8 snapshot. Where they say no organization exists or the public list is empty, the current pilot section above replaces them.
+
 Status values are PASS, PARTIAL, NOT READY, or DEFERRED. This records the system after the Phase 8 alias, alarm, and log-retention changes.
 
 ## A. Architecture

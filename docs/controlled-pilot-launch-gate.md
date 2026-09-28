@@ -1,5 +1,17 @@
 # Controlled pilot launch gate
 
+## Current decision — 28 September 2026
+
+Commit `b5d72cf1ad7f300800810971bb8c165302f56998`. Decision: PENDING HUMAN ACTION.
+
+The authenticated pilot for ERAP Pilot Operations is complete: request type, request creation, matching, allocation, duplicate rejection, and release. `PILOT-REQ-001`, `PILOT-REQ-002`, `ALLOC-PILOT-REQ-001`, and `ALLOC-PILOT-REQ-002` are RELEASED. `PILOT-MED-001` and `PILOT-MED-002` are AVAILABLE. This pass did not re-read DynamoDB because the local AWS CLI session is expired.
+
+Re-checked here: 91 pytest tests, security scan, frontend check, workflow check, package check, and the public smoke test. Deploy backend run 36347114518 succeeded, including Verify hardening. Public discovery returns only Public Emergency Medical Supplies with safe fields. Protected routes return 401 without a token.
+
+Still pending a person: SNS email confirmation, a second verified Cognito user, the live tenant-isolation test, ADMIN, OPERATOR, and MEMBER live tests, the GitHub `production` environment and reviewer, and a restore rehearsal. No application defect was found in this pass.
+
+The table below is the earlier pre-pilot check. It is not the current decision.
+
 Checked on 27 September 2026 against commit `aa9c9b62ce3931deb8e5fed4edea0be0bf1388a4`.
 
 Statuses are PASS, PENDING, BLOCKED, or DEFERRED. There is no score.
@@ -27,7 +39,9 @@ The signed-in workflow was not executed. Categories that need that workflow stay
 | Frontend | PENDING | The Amplify site responds and redirects to Cognito. Signed-in screens, including edit and logout, were not clicked. |
 | Operational documentation | PASS | Pilot, data-safety, incident, and readiness documents exist. This gate and `docs/live-pilot-validation.md` record the current live check. |
 
-## Launch decision
+## Earlier launch decision
+
+This decision is the 27 September pre-pilot result. The current decision is at the top of this file.
 
 PENDING — HUMAN PILOT ACTION REQUIRED
 

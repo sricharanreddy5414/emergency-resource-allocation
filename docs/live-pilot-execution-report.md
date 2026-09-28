@@ -282,21 +282,23 @@ After that frontend was live, the same browser returned to the application witho
 
 A second allocation of the same request was submitted through the same form. The screen said "Request is not eligible for allocation". The allocations list still has one row for `PILOT-REQ-002`.
 
-Release was opened from that row. The confirmation said "Release resource PILOT-MED-001?". The confirmation was not accepted. After the list was shown again, `ALLOC-PILOT-REQ-002` was still ALLOCATED. Release is not complete. `PILOT-MED-001` remains allocated to `PILOT-REQ-002`.
+The operator completed that release through the normal confirmation. The verified final states are `PILOT-REQ-001` RELEASED, `PILOT-REQ-002` RELEASED, `ALLOC-PILOT-REQ-001` RELEASED, `ALLOC-PILOT-REQ-002` RELEASED, `PILOT-MED-001` AVAILABLE, and `PILOT-MED-002` AVAILABLE. This launch-gate pass did not re-read DynamoDB, because the local AWS CLI session is expired. Those states are the completed authenticated pilot result, not a new query from this pass.
 
-Unauthenticated `GET /public/resources` still returns one item, Public Emergency Medical Supplies, Emergency Medical Kit, Bengaluru, AVAILABLE. Item keys are availability, city, description, name, and resource_type. `PILOT-MED-001` is absent.
+On 28 September 2026, unauthenticated `GET /public/resources` still returns one item, Public Emergency Medical Supplies, Emergency Medical Kit, Bengaluru, AVAILABLE. Item keys are availability, city, description, name, and resource_type. `PILOT-MED-001` is absent. Invalid page size, page token, and availability return 400. `GET /organization` and `GET /locations` return 401. `GET /allocate` returns 403 Missing Authentication Token because that path has no GET method.
 
-Tenant isolation was not executed. Only one verified user exists. ADMIN, OPERATOR, and MEMBER were not signed in. Alarm subscription and the GitHub production environment were not changed. No migration was applied and no pilot record was deleted.
+Tenant isolation was not executed. Only one verified user exists. ADMIN, OPERATOR, and MEMBER were not signed in. No operator mailbox is named in the repository, so no SNS subscription was created. The GitHub `production` environment still returns 404, and this pass did not have permission to create it. No migration was applied and no pilot record was deleted.
+
+Deploy backend run 36347114518 for commit `b5d72cf` succeeded, including Verify hardening. That step checks all ten tables for ACTIVE, point-in-time recovery, and deletion protection, the stage and public throttles, gateway CORS, the five ERAP alarms plus the legacy allocation alarm, authorizer `y0hzhr`, and that public GET invokes alias `live`.
 
 ## Remaining Manual Actions
 
-- Accept the open release confirmation for `PILOT-MED-001`, or click Release on `ALLOC-PILOT-REQ-002` and confirm it. Then refresh and confirm the allocation is RELEASED and `PILOT-MED-001` is available again.
-- Add a subscription to `ERAP-Production-Alarms`. Alarm subscription is pending.
-- Create the GitHub `production` environment with required reviewers and a main-only deployment policy. Production environment governance is pending. The `production` environment still returns 404.
-- Create a second verified user before live tenant-isolation and non-owner role tests.
+- Confirm an email subscription on `ERAP-Production-Alarms`. The topic had no subscription at the last read, and no intended operator address is recorded here.
+- Create the GitHub `production` environment with a required reviewer and a main-only deployment policy.
+- Verify a second Cognito user, then run the live tenant-isolation test and the ADMIN, OPERATOR, and MEMBER permission tests.
+- Rehearse a DynamoDB restore into a new table name. That rehearsal has not been run.
 
 ## Final Launch Gate
 
 PENDING HUMAN ACTION
 
-The signed-in user created `PILOT-REQ-002` from the Request Type dropdown, matched it to `PILOT-MED-001`, allocated it, and saw the duplicate allocation rejected. Release was not completed: the confirmation was shown and the allocation is still ALLOCATED. Tenant isolation, non-owner roles, alarm subscription, and GitHub production protection remain pending. This is not a full pass.
+The authenticated pilot is complete through request type, request creation, matching, allocation, duplicate rejection, and release. The application checks re-run here passed. Governance items that still need a person are the alarm subscription, the GitHub production reviewer, a second verified user, live tenant isolation, non-owner role tests, and a restore rehearsal. This is not a full pass.
