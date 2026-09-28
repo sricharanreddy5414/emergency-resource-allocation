@@ -15,6 +15,7 @@ sys.path[:0] = [
 import access
 import get_handler
 import handler
+import member_admin
 import membership
 from access import AccessError
 
@@ -139,6 +140,27 @@ class MemberStore:
     def scan(self, **kwargs):
         self.scans += 1
         raise AssertionError("member API must not scan")
+
+
+class ProjectedMemberStore(MemberStore):
+    """UserSubIndex projects keys, role, and created_at, not status or email."""
+
+    def query(self, **kwargs):
+        result = super().query(**kwargs)
+
+        if kwargs.get("IndexName") != "UserSubIndex":
+            return result
+
+        projected = []
+
+        for row in result["Items"]:
+            projected.append({
+                key: row[key]
+                for key in ("user_sub", "organization_id", "role", "created_at")
+                if key in row
+            })
+
+        return {"Items": projected}
 
 
 class AuditStore:
@@ -498,6 +520,95 @@ def test_owner_can_list_members_and_member_cannot(monkeypatch):
     assert payload["organization_id"] == ORG
     assert "invited_by" not in json.dumps(payload)
     assert {item["role"] for item in payload["members"]} == {"OWNER", "MEMBER"}
+
+
+def seed_projected(monkeypatch, rows):
+    organizations, members, audits = seed(monkeypatch, rows)
+    projected = ProjectedMemberStore(members.rows)
+    monkeypatch.setattr(membership, "members_table", lambda: projected)
+    monkeypatch.setattr(handler, "members_table", lambda: projected)
+
+    return organizations, projected, audits
+
+
+def test_pending_invitation_reads_status_from_base_table(monkeypatch):
+    email = "member@example.com"
+    subject = member_admin.invite_subject(email)
+    other_email = "other@example.com"
+    rows = [
+        owner_row(),
+        owner_row(subject, role="ADMIN", status="PENDING", email=email),
+        owner_row(
+            member_admin.invite_subject(other_email),
+            organization_id=ORG_B,
+            role="ADMIN",
+            status="PENDING",
+            email=other_email,
+        ),
+    ]
+    seed_projected(monkeypatch, rows)
+
+    visible = get_handler.lambda_handler(
+        event(method="GET", subject=MEMBER, email=email),
+        None,
+    )
+    invitation = body_of(visible)["pending_invitations"][0]
+
+    assert visible["statusCode"] == 200
+    assert invitation == {
+        "organization_id": ORG,
+        "name": "Org A",
+        "role": "ADMIN",
+        "status": "PENDING",
+    }
+    assert body_of(visible)["organizations"] == []
+
+
+@pytest.mark.parametrize("status", ["INACTIVE", "ACTIVE"])
+def test_non_pending_base_status_is_not_an_invitation(monkeypatch, status):
+    email = "member@example.com"
+    seed_projected(
+        monkeypatch,
+        [
+            owner_row(),
+            owner_row(
+                member_admin.invite_subject(email),
+                role="ADMIN",
+                status=status,
+                email=email,
+            ),
+        ],
+    )
+
+    result = get_handler.lambda_handler(
+        event(method="GET", subject=MEMBER, email=email),
+        None,
+    )
+
+    assert result["statusCode"] == 200
+    assert "pending_invitations" not in body_of(result)
+
+
+def test_missing_status_remains_an_active_membership(monkeypatch):
+    email = "member@example.com"
+    seed_projected(
+        monkeypatch,
+        [
+            owner_row(),
+            owner_row(member_admin.invite_subject(email), role="ADMIN", email=email),
+        ],
+    )
+
+    owner = get_handler.lambda_handler(event(method="GET", subject=OWNER), None)
+    invited = get_handler.lambda_handler(
+        event(method="GET", subject=MEMBER, email=email),
+        None,
+    )
+
+    assert body_of(owner)["organizations"][0]["organization_id"] == ORG
+    assert body_of(owner)["organizations"][0]["role"] == "OWNER"
+    assert "pending_invitations" not in body_of(owner)
+    assert "pending_invitations" not in body_of(invited)
 
 
 def test_pending_invitation_is_visible_only_to_verified_email(monkeypatch):

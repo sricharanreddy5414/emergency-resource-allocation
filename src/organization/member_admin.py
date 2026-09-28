@@ -270,10 +270,19 @@ def pending_invitations(event):
     invitations = []
 
     for item in result.get("Items") or []:
-        if member_status(item) != "PENDING":
+        organization_id = item.get("organization_id")
+        user_sub = item.get("user_sub")
+
+        if not organization_id or not user_sub:
             continue
 
-        organization_id = item.get("organization_id")
+        stored = _members().get_item(
+            Key={"organization_id": organization_id, "user_sub": user_sub}
+        ).get("Item")
+
+        if not stored or member_status(stored) != "PENDING":
+            continue
+
         organization = organizations_table().get_item(
             Key={"organization_id": organization_id}
         ).get("Item")
@@ -285,7 +294,7 @@ def pending_invitations(event):
             {
                 "organization_id": organization_id,
                 "name": organization.get("name", ""),
-                "role": item.get("role", ""),
+                "role": stored.get("role", ""),
                 "status": "PENDING",
             }
         )
