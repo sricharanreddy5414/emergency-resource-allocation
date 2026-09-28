@@ -1,0 +1,65 @@
+{
+  "applied": false,
+  "region": "eu-north-1",
+  "note": "Phase A specification only. Do not create these tables until a later reviewed phase. Existing tables are not modified.",
+  "tables": [
+    {
+      "TableName": "OrganizationSubscriptions",
+      "AttributeDefinitions": [
+        {
+          "AttributeName": "organization_id",
+          "AttributeType": "S"
+        }
+      ],
+      "KeySchema": [
+        {
+          "AttributeName": "organization_id",
+          "KeyType": "HASH"
+        }
+      ],
+      "BillingMode": "PAY_PER_REQUEST",
+      "PointInTimeRecoverySpecification": {
+        "PointInTimeRecoveryEnabled": true
+      },
+      "DeletionProtectionEnabled": true
+    },
+    {
+      "TableName": "BillingEvents",
+      "AttributeDefinitions": [
+        {
+          "AttributeName": "provider_event_id",
+          "AttributeType": "S"
+        }
+      ],
+      "KeySchema": [
+        {
+          "AttributeName": "provider_event_id",
+          "KeyType": "HASH"
+        }
+      ],
+      "BillingMode": "PAY_PER_REQUEST",
+      "PointInTimeRecoverySpecification": {
+        "PointInTimeRecoveryEnabled": true
+      },
+      "DeletionProtectionEnabled": true
+    }
+  ],
+  "runtime_iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "BillingItemsWithoutDelete",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem"
+        ],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/BillingEvents"
+        ]
+      }
+    ]
+  }
+}
