@@ -955,6 +955,8 @@ function updateUserInterface() {
 
     }
 
+    refreshShellContext();
+
     const membersPanel = $("organizationMembersPanel");
 
     if (membersPanel) {
@@ -1280,27 +1282,67 @@ function escapeHtml(value) {
 const pageTitles = {
 
     dashboard:
-        "Resource Dashboard",
+        "Overview",
+
+    admin:
+        "Organization",
 
     resources:
-        "Resource Management",
+        "Resources",
 
     requests:
-        "Resource Requests",
+        "Requests",
 
     allocations:
-        "Allocation History",
+        "Allocations",
 
     notifications:
         "Notifications",
 
     settings:
-        "System Settings",
+        "Platform",
 
     help:
-        "Help & FAQ"
+        "Help"
 
 };
+
+
+function refreshShellContext() {
+
+    const welcome = typeof document.querySelector === "function"
+        ? document.querySelector(".welcome")
+        : null;
+
+    if (welcome) {
+
+        const hour = new Date().getHours();
+        const greeting = hour < 12
+            ? "Good morning"
+            : hour < 17
+                ? "Good afternoon"
+                : "Good evening";
+        const name = currentUser.name || "";
+        const usable = name && !name.includes("@") && !["Admin", "Loading...", "Not signed in", "ERAP User"].includes(name);
+        welcome.textContent = usable ? greeting + ", " + name.split(" ")[0] : greeting;
+
+    }
+
+    const context = $("operationalContext");
+
+    if (context) {
+
+        const organization = currentUser.organization && currentUser.organization.name
+            ? currentUser.organization.name
+            : "No organization selected";
+        const location = currentUser.location && currentUser.location.name
+            ? currentUser.location.name
+            : "All locations";
+        context.textContent = organization + " · " + location;
+
+    }
+
+}
 
 
 function navigateTo(sectionId) {
@@ -1381,6 +1423,8 @@ function navigateTo(sectionId) {
             "ERAP";
 
     }
+
+    refreshShellContext();
 
 
     window.scrollTo({
@@ -2087,7 +2131,7 @@ function renderRequests() {
         table.innerHTML = `
             <tr>
                 <td colspan="6">
-                    No matching requests found.
+                    No matching requests. Create a request when your organization needs a resource.
                 </td>
             </tr>
         `;
@@ -2136,17 +2180,17 @@ const createdAt =
         if (status === "ALLOCATED") {
 
             statusClass += " status-allocated";
-            statusLabel = "✓ ALLOCATED";
+            statusLabel = "ALLOCATED";
 
         } else if (status === "PENDING") {
 
             statusClass += " status-pending";
-            statusLabel = "◷ PENDING";
+            statusLabel = "PENDING";
 
         } else if (status === "WAITING") {
 
             statusClass += " status-waiting";
-            statusLabel = "⌛ WAITING";
+            statusLabel = "WAITING";
 
         }
 
@@ -2639,9 +2683,9 @@ function renderAnalyticsBars(
 
     if (total === 0) {
 
-        container.innerHTML = `
+                container.innerHTML = `
             <div class="analytics-empty">
-                No data available yet.
+                No activity in the current view.
             </div>
         `;
 
@@ -2787,8 +2831,8 @@ function renderResourcesTable() {
 
             <tr>
 
-                <td colspan="5">
-                    No resource data available.
+                <td colspan="4">
+                    No resources registered for this view.
                 </td>
 
             </tr>
@@ -2817,11 +2861,13 @@ function renderResourcesTable() {
 
                             <td>
 
-                                <strong>
-                                    ${escapeHtml(
-                                        resource.id
-                                    )}
-                                </strong>
+                                <div class="cell-title">
+                                    ${escapeHtml(resource.name || resource.type || "Resource")}
+                                </div>
+
+                                <div class="cell-meta">
+                                    ${escapeHtml(resource.id)}
+                                </div>
 
                             </td>
 
@@ -2890,8 +2936,8 @@ function renderResourcesPage() {
 
             <tr>
 
-                <td colspan="5">
-                    No resource data available.
+                <td colspan="6">
+                    No resources registered. Add a resource for this organization to start allocation.
                 </td>
 
             </tr>
@@ -2923,11 +2969,13 @@ function renderResourcesPage() {
 
                             <td>
 
-                                <strong>
-                                    ${escapeHtml(
-                                        resource.id
-                                    )}
-                                </strong>
+                                <div class="cell-title">
+                                    ${escapeHtml(resource.name || resource.type || "Resource")}
+                                </div>
+
+                                <div class="cell-meta">
+                                    ${escapeHtml(resource.id)}
+                                </div>
 
                             </td>
 
@@ -2958,6 +3006,12 @@ function renderResourcesPage() {
 
                                 </span>
 
+                            </td>
+
+                            <td>
+                                <span class="status-badge ${(resource.visibility || "PRIVATE") === "PUBLIC" ? "public" : "private"}">
+                                    ${escapeHtml(resource.visibility || "PRIVATE")}
+                                </span>
                             </td>
 
                             <td>
@@ -3650,8 +3704,8 @@ function applyResourcePageFilters() {
 
                 <tr>
 
-                    <td colspan="5">
-                        No matching resources found.
+                    <td colspan="6">
+                        No resources match these filters.
                     </td>
 
                 </tr>
@@ -4436,8 +4490,7 @@ function renderAllocations() {
 
                 <td colspan="8">
 
-                    No allocation records captured
-                    in this browser session.
+                    No allocations yet. Completed allocations from this session appear here.
 
                 </td>
 
