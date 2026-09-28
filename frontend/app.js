@@ -28,6 +28,9 @@ const ALLOCATIONS_API_URL =
 const ORGANIZATION_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/organization";
 
+const BILLING_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/billing";
+
 const LOCATIONS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/locations";
 
@@ -769,6 +772,8 @@ window.fetch = async function (input, options) {
 
     if (response.status !== 401) {
 
+        noteBillingRequired(response);
+
         return response;
 
     }
@@ -783,7 +788,11 @@ window.fetch = async function (input, options) {
 
     next.headers.Authorization = "Bearer " + getIdToken();
 
-    return originalFetch(input, next);
+    response = await originalFetch(input, next);
+
+    noteBillingRequired(response);
+
+    return response;
 
 };
 
@@ -972,6 +981,14 @@ function updateUserInterface() {
     if (managementNav) {
 
         managementNav.hidden = !(currentUser.isAdmin || canManageCatalog());
+
+    }
+
+    const billingNav = $("billingNavItem");
+
+    if (billingNav) {
+
+        billingNav.hidden = !canViewBilling();
 
     }
 
@@ -1305,7 +1322,10 @@ const pageTitles = {
         "Platform",
 
     help:
-        "Help"
+        "Help",
+
+    billing:
+        "Billing"
 
 };
 
@@ -1501,6 +1521,12 @@ function navigateTo(sectionId) {
 
         loadAllocations();
         loadOrganizationMembers();
+
+    }
+
+    if (sectionId === "billing") {
+
+        loadBilling();
 
     }
 
@@ -6023,6 +6049,22 @@ function renderLocationSwitcher() {
 }
 
 
+function canViewBilling() {
+
+    const role = currentUser.organization && currentUser.organization.role;
+
+    return role === "OWNER" || role === "ADMIN";
+
+}
+
+
+function canManageBilling() {
+
+    return Boolean(currentUser.organization && currentUser.organization.role === "OWNER");
+
+}
+
+
 function canManageCatalog() {
 
     const role = currentUser.organization?.role;
@@ -6861,6 +6903,13 @@ async function switchOrganization(organizationId) {
     currentUser.location = null;
 
     sessionStorage.removeItem("erap_location_" + organizationId);
+
+    if ($("billing") && $("billing").classList.contains("active-section")) {
+
+        billingCancelArmed = false;
+        loadBilling();
+
+    }
 
     tenantContextLoading = true;
 
@@ -7967,6 +8016,724 @@ async function startDashboardData() {
 
 
 /* =========================================================
+   BILLING
+========================================================= */
+
+const BILLING_STATUS_LABELS = {
+    TRIALING: "Free trial",
+    ACTIVE: "Active",
+    PAST_DUE: "Payment required",
+    CANCELLED: "Cancelled",
+    EXPIRED: "Subscription expired",
+    GRANDFATHERED: "Legacy access"
+};
+
+let billingLoad = 0;
+let billingCancelArmed = false;
+let billingSnapshot = null;
+
+
+function noteBillingRequired(response) {
+
+    if (!response || response.status !== 403 || typeof response.clone !== "function") {
+
+        return;
+
+    }
+
+    response.clone().json().then(payload => {
+
+        const body = unwrapApiPayload(payload);
+
+        if (!body || !body.error || body.error.code !== "BILLING_REQUIRED") {
+
+            return;
+
+        }
+
+        showToast("Subscription required for this operation.");
+
+        const toast = $("toast");
+
+        if (toast) {
+
+            toast.onclick = () => {
+
+                if ($("billing")) {
+
+                    navigateTo("billing");
+
+                }
+
+            };
+
+        }
+
+    }).catch(() => {});
+
+}
+
+
+function unwrapApiPayload(payload) {
+
+    if (!payload || typeof payload !== "object") {
+
+        return {};
+
+    }
+
+    if (typeof payload.body === "string") {
+
+        try {
+
+            return JSON.parse(payload.body);
+
+        } catch (error) {
+
+            return {};
+
+        }
+
+    }
+
+    return payload;
+
+}
+
+
+function billingQuery() {
+
+    const organizationId = selectedOrganizationId();
+
+    if (!organizationId) {
+
+        return "";
+
+    }
+
+    return "?organization_id=" + encodeURIComponent(organizationId);
+
+}
+
+
+function billingSelector() {
+
+    const organizationId = selectedOrganizationId();
+
+    return organizationId ? { organization_id: organizationId } : {};
+
+}
+
+
+function formatBillingStamp(value) {
+
+    if (!value) {
+
+        return "—";
+
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+
+        return String(value);
+
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short"
+    }).format(date);
+
+}
+
+
+function formatPlanAmount(amountMinor, currency) {
+
+    if (typeof amountMinor !== "number" || !Number.isFinite(amountMinor) || !currency) {
+
+        return "";
+
+    }
+
+    try {
+
+        const format = new Intl.NumberFormat(undefined, {
+            style: "currency",
+            currency: currency
+        });
+        const digits = format.resolvedOptions().maximumFractionDigits;
+        return format.format(amountMinor / (10 ** digits));
+
+    } catch (error) {
+
+        return "";
+
+    }
+
+}
+
+
+function billingIntervalLabel(interval) {
+
+    if (interval === "month") {
+
+        return "Monthly";
+
+    }
+
+    if (interval === "year") {
+
+        return "Yearly";
+
+    }
+
+    if (interval === "none" || !interval) {
+
+        return "No billing interval";
+
+    }
+
+    return String(interval);
+
+}
+
+
+function trialRemainingText(trialEnd) {
+
+    if (!trialEnd) {
+
+        return "";
+
+    }
+
+    const end = new Date(trialEnd);
+
+    if (Number.isNaN(end.getTime())) {
+
+        return "";
+
+    }
+
+    const remaining = end.getTime() - Date.now();
+
+    if (remaining <= 0) {
+
+        return "The trial end time has passed. The status above is still the one reported by ERAP.";
+
+    }
+
+    const days = Math.ceil(remaining / 86400000);
+
+    return days === 1 ? "1 day remaining in the trial." : days + " days remaining in the trial.";
+
+}
+
+
+function apiFailureText(payload, fallback) {
+
+    if (payload && payload.error && payload.error.code === "BILLING_REQUIRED") {
+
+        return "Subscription required for this operation.";
+
+    }
+
+    if (payload && payload.message) {
+
+        return String(payload.message);
+
+    }
+
+    return fallback;
+
+}
+
+
+async function billingRequest(path, method, body) {
+
+    const options = {
+        method: method,
+        headers: {
+            "Authorization": "Bearer " + getIdToken()
+        }
+    };
+
+    if (body) {
+
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify(body);
+
+    }
+
+    try {
+
+        const response = await fetch(BILLING_API_URL + path + (method === "GET" ? billingQuery() : ""), options);
+        const payload = unwrapApiPayload(await response.json().catch(() => ({})));
+
+        return {
+            ok: response.ok,
+            status: response.status,
+            payload: payload
+        };
+
+    } catch (error) {
+
+        return {
+            ok: false,
+            status: 0,
+            payload: { message: "Unable to reach billing." }
+        };
+
+    }
+
+}
+
+
+function initializeBilling() {
+
+    const root = $("billing");
+
+    if (!root || root.dataset.bound === "1") {
+
+        return;
+
+    }
+
+    root.dataset.bound = "1";
+
+    $("billingRefreshBtn")?.addEventListener("click", () => {
+
+        billingCancelArmed = false;
+        loadBilling();
+
+    });
+
+    root.addEventListener("click", onBillingClick);
+
+}
+
+
+async function loadBilling() {
+
+    const workspace = $("billingWorkspace");
+
+    if (!workspace) {
+
+        return;
+
+    }
+
+    const ticket = ++billingLoad;
+    workspace.innerHTML = `<p class="billing-note">Loading billing…</p>`;
+
+    const [summary, plans, events] = await Promise.all([
+        billingRequest("", "GET"),
+        billingRequest("/plans", "GET"),
+        billingRequest("/events", "GET")
+    ]);
+
+    if (ticket !== billingLoad) {
+
+        return;
+
+    }
+
+    renderBilling(summary, plans, events);
+
+}
+
+
+function onBillingClick(event) {
+
+    const button = event.target.closest("[data-billing-action]");
+
+    if (!button) {
+
+        return;
+
+    }
+
+    const action = button.dataset.billingAction;
+
+    if (action === "retry") {
+
+        billingCancelArmed = false;
+        loadBilling();
+        return;
+
+    }
+
+    if (!billingSnapshot) {
+
+        return;
+
+    }
+
+    if (action === "cancel-ask") {
+
+        billingCancelArmed = true;
+        renderBilling(billingSnapshot.summary, billingSnapshot.plans, billingSnapshot.events);
+        return;
+
+    }
+
+    if (action === "cancel-dismiss") {
+
+        billingCancelArmed = false;
+        renderBilling(billingSnapshot.summary, billingSnapshot.plans, billingSnapshot.events);
+        return;
+
+    }
+
+    if (action === "cancel-confirm") {
+
+        confirmBillingCancellation();
+        return;
+
+    }
+
+    if (action === "checkout") {
+
+        startBillingCheckout(button.dataset.planId, button.dataset.purchasable === "true");
+
+    }
+
+}
+
+
+async function startBillingCheckout(planId, purchasable) {
+
+    if (!purchasable || !planId || !canManageBilling()) {
+
+        return;
+
+    }
+
+    const result = await billingRequest("/checkout", "POST", {
+        ...billingSelector(),
+        plan_id: planId
+    });
+
+    if (!result.ok) {
+
+        showToast(apiFailureText(result.payload, "Checkout could not be started."));
+        return;
+
+    }
+
+    showToast("Checkout reference saved. Payment is confirmed only after the provider notifies ERAP.");
+    billingCancelArmed = false;
+    loadBilling();
+
+}
+
+
+async function confirmBillingCancellation() {
+
+    const result = await billingRequest("/cancel", "POST", billingSelector());
+
+    if (!result.ok) {
+
+        showToast(apiFailureText(result.payload, "Cancellation could not be scheduled."));
+        return;
+
+    }
+
+    billingCancelArmed = false;
+    showToast("Cancellation request sent. The subscription status will update from ERAP.");
+    loadBilling();
+
+}
+
+
+function renderBilling(summary, plans, events) {
+
+    billingSnapshot = { summary, plans, events };
+    const workspace = $("billingWorkspace");
+
+    if (!workspace) {
+
+        return;
+
+    }
+
+    if (!summary.ok && (summary.status === 401 || summary.status === 403)) {
+
+        workspace.innerHTML = `
+            <p class="billing-error">${escapeHtml(apiFailureText(summary.payload, "You do not have access to billing for this organization."))}</p>
+            <button class="secondary-btn" type="button" data-billing-action="retry">Retry</button>
+        `;
+        return;
+
+    }
+
+    if (!summary.ok && !plans.ok && !events.ok) {
+
+        workspace.innerHTML = `
+            <p class="billing-error">${escapeHtml(apiFailureText(summary.payload, "Billing could not be loaded."))}</p>
+            <button class="secondary-btn" type="button" data-billing-action="retry">Retry</button>
+        `;
+        return;
+
+    }
+
+    const subscription = summary.ok && summary.payload.subscription ? summary.payload.subscription : null;
+    const status = subscription ? subscription.subscription_status : "";
+    const planList = plans.ok && Array.isArray(plans.payload.plans) ? plans.payload.plans : [];
+    const planName = planDisplayName(planList, subscription);
+    const eventList = events.ok && Array.isArray(events.payload.events) ? events.payload.events : [];
+
+    workspace.innerHTML = `
+        ${summary.ok && subscription ? billingOverview(subscription, summary.payload.next_action, planName) : summary.ok ? `<p class="billing-note">No subscription details were returned.</p>` : `<p class="billing-error">${escapeHtml(apiFailureText(summary.payload, "Subscription details could not be loaded."))}</p>`}
+        ${plans.ok ? billingPlans(planList, subscription) : `<p class="billing-error">${escapeHtml(apiFailureText(plans.payload, "Plans could not be loaded."))}</p>`}
+        ${billingActions(subscription, summary.payload && summary.payload.next_action)}
+        ${events.ok ? billingEvents(eventList) : `<p class="billing-error">${escapeHtml(apiFailureText(events.payload, "Billing history could not be loaded."))}</p><button class="secondary-btn" type="button" data-billing-action="retry">Retry</button>`}
+    `;
+
+}
+
+
+function planDisplayName(planList, subscription) {
+
+    if (!subscription) {
+
+        return "";
+
+    }
+
+    const match = planList.find(plan => plan.plan_id === subscription.plan_id);
+
+    return match && match.display_name ? match.display_name : (subscription.plan_id || "—");
+
+}
+
+
+function billingOverview(subscription, nextAction, planName) {
+
+    const status = subscription.subscription_status || "";
+    const label = BILLING_STATUS_LABELS[status] || status || "Unknown";
+    const lines = [
+        ["Status code", status || "—"],
+        ["Plan", planName || "—"],
+        ["Billing interval", billingIntervalLabel(subscription.billing_interval)]
+    ];
+
+    if (status === "TRIALING") {
+
+        lines.push(["Trial start", formatBillingStamp(subscription.trial_start)]);
+        lines.push(["Trial end", formatBillingStamp(subscription.trial_end)]);
+
+    }
+
+    if (subscription.current_period_start || subscription.current_period_end) {
+
+        lines.push(["Period start", formatBillingStamp(subscription.current_period_start)]);
+        lines.push(["Period end", formatBillingStamp(subscription.current_period_end)]);
+
+    }
+
+    if (subscription.cancelled_at) {
+
+        lines.push(["Cancelled at", formatBillingStamp(subscription.cancelled_at)]);
+
+    }
+
+    return `
+        <p class="billing-kicker">Current subscription</p>
+        <div class="billing-status">
+            <strong>${escapeHtml(label)}</strong>
+            <span>${escapeHtml(status)}</span>
+        </div>
+        <p>${escapeHtml(billingNarrative(subscription, nextAction))}</p>
+        <div class="billing-facts">
+            ${lines.map(line => `<div><span>${escapeHtml(line[0])}</span><span>${escapeHtml(line[1])}</span></div>`).join("")}
+        </div>
+    `;
+
+}
+
+
+function billingNarrative(subscription, nextAction) {
+
+    const status = subscription.subscription_status;
+
+    if (status === "TRIALING") {
+
+        return trialRemainingText(subscription.trial_end) || "This organization is in a trial. The dates above come from ERAP.";
+
+    }
+
+    if (status === "ACTIVE" && subscription.cancel_at_period_end) {
+
+        return "Cancellation scheduled. Access continues through the current billing period. This is not an immediate cancellation.";
+
+    }
+
+    if (status === "ACTIVE") {
+
+        return "The subscription is active for the current billing period.";
+
+    }
+
+    if (status === "PAST_DUE") {
+
+        return "Payment required. The organization is not marked expired. Operational access follows the current ERAP rules.";
+
+    }
+
+    if (status === "EXPIRED") {
+
+        return "Your organization is currently read-only. Renew your subscription to restore operational changes.";
+
+    }
+
+    if (status === "CANCELLED") {
+
+        return "The subscription is cancelled. Records remain with the organization.";
+
+    }
+
+    if (status === "GRANDFATHERED") {
+
+        return "This organization currently has legacy access. Viewing this page does not create a subscription.";
+
+    }
+
+    if (nextAction === "subscribe") {
+
+        return "A subscription can be started when a plan is available for purchase.";
+
+    }
+
+    return "The subscription state shown here is the one returned by ERAP.";
+
+}
+
+
+function billingPlans(planList, subscription) {
+
+    const owner = canManageBilling();
+    const items = planList.map(plan => {
+
+        const price = formatPlanAmount(plan.amount_minor, plan.currency);
+        const purchasable = plan.purchasable === true;
+        const label = purchasable ? "Start checkout" : "Not currently available";
+        const detail = [
+            plan.display_name || plan.plan_id,
+            billingIntervalLabel(plan.billing_interval),
+            price
+        ].filter(Boolean).join(" · ");
+
+        return `
+            <div class="billing-plan">
+                <p>${escapeHtml(detail)}${purchasable ? "" : ". Coming soon."}</p>
+                <button
+                    class="secondary-btn"
+                    type="button"
+                    data-billing-action="checkout"
+                    data-plan-id="${escapeHtml(plan.plan_id || "")}"
+                    data-purchasable="${purchasable ? "true" : "false"}"
+                    ${purchasable && owner ? "" : "disabled"}
+                >${escapeHtml(label)}</button>
+            </div>
+        `;
+
+    }).join("");
+
+    const note = owner
+        ? ""
+        : `<p class="billing-note">Only the organization owner can start checkout or schedule cancellation.</p>`;
+
+    return `
+        <p class="billing-kicker">Plans</p>
+        <div class="billing-plans">${items || `<p class="billing-note">No plans were returned.</p>`}</div>
+        ${note}
+    `;
+
+}
+
+
+function billingActions(subscription, nextAction) {
+
+    if (!subscription || !canManageBilling()) {
+
+        return "";
+
+    }
+
+    if (subscription.cancel_at_period_end) {
+
+        return `<p class="billing-note">A cancellation is already scheduled. Another request will not be sent.</p>`;
+
+    }
+
+    if (subscription.subscription_status !== "ACTIVE" || nextAction !== "manage_subscription") {
+
+        return "";
+
+    }
+
+    if (!billingCancelArmed) {
+
+        return `
+            <p class="billing-kicker">Account action</p>
+            <button class="secondary-btn" type="button" data-billing-action="cancel-ask">Schedule cancellation</button>
+        `;
+
+    }
+
+    return `
+        <div class="billing-confirm">
+            <p>Cancellation is scheduled at the end of the current billing period. Access continues until then. This does not delete the organization or its operational records. Billing history stays with the organization.</p>
+            <div class="text-actions">
+                <button class="secondary-btn" type="button" data-billing-action="cancel-confirm">Confirm cancellation</button>
+                <button class="secondary-btn" type="button" data-billing-action="cancel-dismiss">Keep subscription</button>
+            </div>
+        </div>
+    `;
+
+}
+
+
+function billingEvents(eventList) {
+
+    if (!eventList.length) {
+
+        return `
+            <p class="billing-kicker">History</p>
+            <p class="billing-note">No billing events yet.</p>
+        `;
+
+    }
+
+    const rows = eventList.map(item => {
+
+        const parts = [
+            item.event_type,
+            item.processing_status,
+            item.received_at ? formatBillingStamp(item.received_at) : ""
+        ].filter(Boolean);
+
+        if (item.provider_payment_id) {
+
+            parts.push(item.provider_payment_id);
+
+        }
+
+        return `<div class="billing-event"><p>${escapeHtml(parts.join(" · "))}</p></div>`;
+
+    }).join("");
+
+    return `
+        <p class="billing-kicker">History</p>
+        <div class="billing-events">${rows}</div>
+    `;
+
+}
+
+
+/* =========================================================
    APPLICATION INITIALIZATION
 ========================================================= */
 
@@ -8015,6 +8782,8 @@ async function initializeApp() {
     initializeEvents();
 
     initializeNotifications();
+
+    initializeBilling();
 
 
     document.addEventListener(

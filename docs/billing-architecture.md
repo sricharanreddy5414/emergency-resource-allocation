@@ -157,7 +157,7 @@ A later phase may repair a subscription by fetching it from Razorpay. This phase
 
 ## Phase E — Billing API
 
-The authenticated billing API is code and tests only. The routes are specified on API `4c6dni17l3`, stage `dev`, with Cognito authorizer `y0hzhr`. `"applied"` stays false. `erap-billing` serves the authenticated routes. `erap-billing-webhook` stays separate and is still signature-authenticated. Neither function is deployed. The billing screen is not implemented. Subscription enforcement is not implemented. `MONTHLY` and `YEARLY` remain `purchasable: false`.
+The authenticated billing API is code and tests only. The routes are specified on API `4c6dni17l3`, stage `dev`, with Cognito authorizer `y0hzhr`. `"applied"` stays false. `erap-billing` serves the authenticated routes. `erap-billing-webhook` stays separate and is still signature-authenticated. Neither function is deployed. The billing workspace is Phase G and is not deployed. Subscription enforcement is Phase F and is not deployed. `MONTHLY` and `YEARLY` remain `purchasable: false`.
 
 `organization_id` is only a selector. `authorize` checks the Cognito subject, an `ACTIVE` membership, and that organization. One membership and no selector uses that organization. Several memberships and no selector still require a selection. Organization A cannot read or change Organization B. The role in the body is ignored. `GET /organization` is unchanged.
 
@@ -209,6 +209,14 @@ Blocked writes return 403 with code `BILLING_REQUIRED` and the message `An activ
 
 The write routes that pass `access="write"` are location create, update, and deactivate; resource create, update, and release; request create and update; allocation; resource-type and request-type changes; and member invite, role change, deactivate, reactivate, and invitation acceptance. Creating an organization does not pass through this check.
 
+## Phase G — Billing workspace
+
+The existing command menu includes Billing for an organization `OWNER` or `ADMIN`. Hiding the item is only navigation. `GET /billing`, `GET /billing/plans`, and `GET /billing/events` still decide access. The browser does not call `POST /billing/webhook` and does not store a provider secret.
+
+The page shows the returned subscription status, trial or period timestamps, `next_action`, and plans. A missing `amount_minor` is not shown as a price. `purchasable: false` keeps checkout disabled. `POST /billing/checkout` sends `plan_id` and the selected `organization_id` only after a plan is purchasable. `POST /billing/cancel` sends only the organization selector, after a confirmation that cancellation waits until the current period ends. The page reloads `GET /billing` and does not mark the subscription cancelled locally.
+
+An operational response with `error.code` `BILLING_REQUIRED` shows "Subscription required for this operation." and can open Billing. Expired organizations keep the rest of the product readable. The billing screen itself stays available to the owner.
+
 ## What this phase does not implement
 
-EventBridge expiry, the billing screen, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, and enabling live Razorpay.
+EventBridge expiry, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, and enabling live Razorpay. The billing workspace is frontend code only. It is not deployed.

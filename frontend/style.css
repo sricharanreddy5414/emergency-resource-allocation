@@ -803,6 +803,87 @@ td {
     border-top: 1px solid var(--line);
 }
 
+.billing-note,
+.billing-error {
+    margin: 12px 0 20px;
+    color: var(--muted);
+}
+
+.billing-error {
+    color: var(--danger);
+}
+
+.billing-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px 16px;
+    margin: 8px 0 18px;
+}
+
+.billing-status strong {
+    font-size: 28px;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+}
+
+.billing-status span,
+.billing-kicker {
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.billing-facts,
+.billing-plans,
+.billing-events {
+    margin: 0 0 28px;
+}
+
+.billing-facts div,
+.billing-plan,
+.billing-event {
+    display: grid;
+    grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+    gap: 8px 16px;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+}
+
+.billing-facts div span:first-child {
+    color: var(--muted);
+}
+
+.billing-plan {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+}
+
+.billing-plan p,
+.billing-event p,
+.billing-confirm p {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.billing-plan button:disabled {
+    color: var(--muted);
+    cursor: not-allowed;
+    border-bottom-color: transparent;
+}
+
+.billing-confirm {
+    margin: 8px 0 24px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+}
+
+.billing-confirm .text-actions {
+    margin-top: 12px;
+}
+
 .nav-overlay {
     position: fixed;
     inset: 0;
@@ -843,6 +924,26 @@ td {
         display: flex;
         flex-wrap: wrap;
         margin-top: 8px;
+    }
+
+    .billing-facts div,
+    .billing-plan,
+    .billing-event {
+        display: block;
+    }
+
+    .billing-facts div span {
+        display: block;
+    }
+
+    .billing-facts div span + span {
+        margin-top: 2px;
+    }
+
+    .billing-plan button,
+    .billing-confirm button {
+        margin-top: 8px;
+        margin-right: 16px;
     }
 
     .profile-info {

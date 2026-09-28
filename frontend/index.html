@@ -137,6 +137,10 @@
         <button class="nav-item" data-section="admin" data-desk="team" type="button">
             <span>Team</span>
         </button>
+
+        <button class="nav-item" data-section="billing" type="button" id="billingNavItem" hidden>
+            <span>Billing</span>
+        </button>
         </div>
 
         <p class="nav-label">System</p>
@@ -1405,6 +1409,59 @@
 
 
 <!-- =====================================================
+     BILLING
+====================================================== -->
+
+<section
+    class="page-section"
+    id="billing"
+>
+
+
+    <div class="section-hero">
+
+
+        <div>
+
+            <span class="panel-label">
+                SUBSCRIPTION
+            </span>
+
+            <h2>
+                Billing
+            </h2>
+
+            <p id="billingLead">
+                Subscription status, plans, and payment history for this organization.
+            </p>
+
+        </div>
+
+
+        <button
+            class="secondary-btn"
+            id="billingRefreshBtn"
+            type="button"
+        >
+            Refresh
+        </button>
+
+
+    </div>
+
+
+    <div id="billingWorkspace">
+
+        <p class="billing-note">Billing loads when you open this page.</p>
+
+    </div>
+
+
+</section>
+
+
+
+<!-- =====================================================
      HELP
 ====================================================== -->
 
@@ -1477,6 +1534,20 @@
 
             <p>
                 Create a request with a request type, location, and priority. Priority 1 is the highest. Allocation matches that request to an available resource. Release returns the resource to available.
+            </p>
+
+        </details>
+
+
+
+        <details class="faq-item">
+
+            <summary>
+                Billing
+            </summary>
+
+            <p>
+                Owners and admins can open Billing for the selected organization. The page shows the subscription state returned by ERAP. Purchase stays unavailable until a plan is offered. Cancellation, when the owner requests it, is scheduled through the end of the current period.
             </p>
 
         </details>
