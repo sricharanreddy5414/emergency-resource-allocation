@@ -1,5 +1,6 @@
 """Subscription and billing-event records. No payment instruments."""
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 from .errors import BillingError
@@ -48,6 +49,7 @@ SUBSCRIPTION_FIELDS = {
     "lifecycle_due_at",
 }
 LIFECYCLE_INDEX = "LifecycleDueIndex"
+LIFECYCLE_SHARDS = 16
 SUBSCRIPTION_INDEX_ATTRIBUTES = (
     "provider_subscription_id",
     "lifecycle_partition",
@@ -68,27 +70,36 @@ EVENT_FIELDS = {
 }
 
 
-def lifecycle_keys(status, trial_end, cancel_at_period_end, current_period_end):
-    """Index entry for one due date. Blank values stay off LifecycleDueIndex.
+def lifecycle_shard(organization_id):
+    """Stable shard. The due check is lifecycle_due_at, not the partition."""
+    digest = hashlib.sha256(str(organization_id).encode("utf-8")).hexdigest()
 
-    The partition is the kind plus the UTC date the row becomes due, so the
-    daily job queries that day and a short lookback. It does not put every
-    trialing organization in one partition.
+    return int(digest[:8], 16) % LIFECYCLE_SHARDS
+
+
+def lifecycle_keys(organization_id, status, trial_end, cancel_at_period_end, current_period_end):
+    """Index entry for a row the expiry job must be able to find later.
+
+    The partition is the kind plus a shard of the organization id. The sort
+    key is the real UTC timestamp. A job that was offline still finds every
+    row whose timestamp is already due, because it queries each shard with
+    lifecycle_due_at <= now. Blank values stay off the index.
     """
     if status == "TRIALING" and trial_end:
-        return _lifecycle_entry("TRIAL", trial_end)
+        return _lifecycle_entry("TRIAL", organization_id, trial_end)
 
     if status == "ACTIVE" and cancel_at_period_end is True and current_period_end:
-        return _lifecycle_entry("CANCEL", current_period_end)
+        return _lifecycle_entry("CANCEL", organization_id, current_period_end)
 
     return {"lifecycle_partition": "", "lifecycle_due_at": ""}
 
 
-def _lifecycle_entry(kind, due_at):
+def _lifecycle_entry(kind, organization_id, due_at):
     due = format_utc(parse_utc(due_at, "lifecycle_due_at"))
+    shard = f"{lifecycle_shard(organization_id):02d}"
 
     return {
-        "lifecycle_partition": kind + "#" + due[:10],
+        "lifecycle_partition": kind + "#" + shard,
         "lifecycle_due_at": due,
     }
 
@@ -273,11 +284,18 @@ def validate_subscription(item):
             raise BillingError(400, "Trial timestamps must both be set")
 
     _ordered_period(period_start, period_end, "current_period_start", "current_period_end")
+    organization_id = _text(item, "organization_id", required=True)
     pending_plan_id = _pending_plan(item)
-    indexed = lifecycle_keys(status, trial_end, item["cancel_at_period_end"], period_end)
+    indexed = lifecycle_keys(
+        organization_id,
+        status,
+        trial_end,
+        item["cancel_at_period_end"],
+        period_end,
+    )
 
     return {
-        "organization_id": _text(item, "organization_id", required=True),
+        "organization_id": organization_id,
         "provider": provider,
         "provider_customer_id": _text(item, "provider_customer_id"),
         "provider_subscription_id": _text(item, "provider_subscription_id"),

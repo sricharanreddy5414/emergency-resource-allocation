@@ -13,7 +13,7 @@
     "name": "LifecycleDueIndex",
     "partition_key": "lifecycle_partition",
     "sort_key": "lifecycle_due_at",
-    "purpose": "TRIAL#YYYY-MM-DD and CANCEL#YYYY-MM-DD partitions. The job queries today and the previous 62 UTC dates."
+    "purpose": "TRIAL#00 through TRIAL#15 and CANCEL#00 through CANCEL#15. The shard is a hash of organization_id. The job queries every shard with lifecycle_due_at <= now, so an outage does not drop older due rows."
   },
   "schedule": {
     "service": "EventBridge Scheduler",

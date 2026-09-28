@@ -5,42 +5,40 @@ LifecycleDueIndex for the UTC dates that are already due.
 """
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from .errors import BillingError
-from .models import LIFECYCLE_INDEX, format_utc, parse_utc
+from .models import LIFECYCLE_INDEX, LIFECYCLE_SHARDS, format_utc, parse_utc
 from .transitions import change_subscription_status
 
 
-LOOKBACK_DAYS = 62
-
-
-def run_expiry(subscriptions, now=None, invocation_id="", lookback_days=LOOKBACK_DAYS):
+def run_expiry(subscriptions, now=None, invocation_id=""):
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise BillingError(400, "Expiry clock must be UTC")
 
     now = now.astimezone(timezone.utc)
     counts = {"expired": 0, "cancelled": 0, "skipped": 0}
+    now_text = format_utc(now)
 
-    for partition in _partitions(now, lookback_days):
-        for item in _due_items(subscriptions, partition, format_utc(now)):
+    for partition in _partitions():
+        for item in _due_items(subscriptions, partition, now_text):
             outcome = _advance(subscriptions, item, now, invocation_id)
             counts[outcome] += 1
 
     return counts
 
 
-def _partitions(now, lookback_days):
+def _partitions():
     partitions = []
 
-    for offset in range(lookback_days + 1):
-        day = (now.date() - timedelta(days=offset)).isoformat()
-        partitions.append("TRIAL#" + day)
-        partitions.append("CANCEL#" + day)
+    for shard in range(LIFECYCLE_SHARDS):
+        label = f"{shard:02d}"
+        partitions.append("TRIAL#" + label)
+        partitions.append("CANCEL#" + label)
 
     return partitions
 

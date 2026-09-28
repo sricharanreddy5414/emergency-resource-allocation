@@ -386,6 +386,39 @@ def test_past_due_cancellation_is_ignored():
     assert events.rows["evt_1"]["processing_status"] == "IGNORED"
 
 
+def test_older_charge_does_not_reactivate_an_expired_trial():
+    current = subscription(ORG_A, SUB_A, "EXPIRED")
+    current["plan_id"] = "FREE_TRIAL"
+    current["billing_interval"] = "none"
+    current["updated_at"] = datetime.fromtimestamp(1_700_000_200, timezone.utc).isoformat()
+    current["trial_end"] = datetime.fromtimestamp(1_700_000_200, timezone.utc).isoformat()
+    old = payload("subscription.charged", SUB_A, created_at=1_700_000_100)
+    _, _, subscriptions, events = deliver(old, [current], event_id="evt_old")
+
+    assert subscriptions.rows[ORG_A]["subscription_status"] == "EXPIRED"
+    assert events.rows["evt_old"]["processing_status"] == "IGNORED"
+
+
+def test_paid_period_after_expiry_can_still_activate():
+    current = subscription(ORG_A, SUB_A, "EXPIRED")
+    current["plan_id"] = "FREE_TRIAL"
+    current["billing_interval"] = "none"
+    current["pending_plan_id"] = "MONTHLY"
+    current["updated_at"] = datetime.fromtimestamp(1_700_000_200, timezone.utc).isoformat()
+    body = payload(
+        "subscription.activated",
+        SUB_A,
+        created_at=1_700_000_100,
+        period=(1_700_000_100, 1_700_259_100),
+    )
+    _, _, subscriptions, events = deliver(body, [current])
+    row = subscriptions.rows[ORG_A]
+
+    assert row["subscription_status"] == "ACTIVE"
+    assert row["plan_id"] == "MONTHLY"
+    assert events.rows["evt_1"]["processing_status"] == "PROCESSED"
+
+
 def test_older_charge_does_not_reactivate_a_cancellation():
     cancel = payload("subscription.cancelled", SUB_A, created_at=1_700_000_200, ended_at=1_700_000_200)
     charge = payload("subscription.charged", SUB_A, created_at=1_700_000_100)

@@ -144,17 +144,33 @@ def _decision(current, parsed, resume):
 
 
 def _stale(current, parsed, target):
-    """An older activation must not undo a cancellation of the same subscription."""
-    if current.get("subscription_status") != "CANCELLED" or target != "ACTIVE":
+    """An older activation must not undo a local cancellation or trial expiry."""
+    if target != "ACTIVE":
         return False
 
-    cancelled_at = current.get("cancelled_at") or ""
+    status = current.get("subscription_status")
+
+    if status == "CANCELLED":
+        boundary = current.get("cancelled_at") or ""
+    elif status == "EXPIRED":
+        boundary = current.get("updated_at") or ""
+    else:
+        return False
+
     event_time = parsed.get("event_time") or ""
 
-    if not cancelled_at or not event_time:
+    if not boundary or not event_time:
         return True
 
-    return event_time <= cancelled_at
+    if event_time > boundary:
+        return False
+
+    period_end = parsed.get("period_end") or ""
+
+    if status == "EXPIRED" and period_end and period_end > boundary:
+        return False
+
+    return True
 
 
 def _find_subscription(subscriptions, provider_subscription_id):
@@ -224,6 +240,7 @@ def _save_transition(subscriptions, current, parsed, changing):
     removes = _lifecycle_assignment(
         sets,
         values,
+        current.get("organization_id") or "",
         resulting_status,
         current.get("trial_end") or "",
         resulting_cancel,
@@ -270,8 +287,8 @@ def _apply_pending_plan(current, sets, values):
     values[":pending_cleared"] = ""
 
 
-def _lifecycle_assignment(sets, values, status, trial_end, cancel_at_period_end, period_end):
-    indexed = lifecycle_keys(status, trial_end, cancel_at_period_end, period_end)
+def _lifecycle_assignment(sets, values, organization_id, status, trial_end, cancel_at_period_end, period_end):
+    indexed = lifecycle_keys(organization_id, status, trial_end, cancel_at_period_end, period_end)
 
     if indexed["lifecycle_partition"]:
         sets.append("lifecycle_partition = :lifecycle_partition")

@@ -16,9 +16,10 @@ sys.path[:0] = [
     str(ROOT / "scripts"),
 ]
 
-from billing.expiry import LOOKBACK_DAYS, run_expiry
+from billing.cancel import _mark_period_end
+from billing.expiry import run_expiry
 from billing.expiry_handler import lambda_handler
-from billing.models import new_trial_subscription
+from billing.models import lifecycle_shard, new_trial_subscription
 from lambda_manifest import BILLING_PACKAGES, PACKAGES
 
 
@@ -120,6 +121,10 @@ class Table:
         raise AssertionError("scan")
 
 
+def _part(kind, organization_id):
+    return kind + "#" + f"{lifecycle_shard(organization_id):02d}"
+
+
 def trial(trial_end, status="TRIALING", organization_id=ORG):
     return {
         "organization_id": organization_id,
@@ -128,22 +133,22 @@ def trial(trial_end, status="TRIALING", organization_id=ORG):
         "trial_end": trial_end,
         "cancel_at_period_end": False,
         "current_period_end": "",
-        "lifecycle_partition": "TRIAL#" + trial_end[:10],
+        "lifecycle_partition": _part("TRIAL", organization_id),
         "lifecycle_due_at": trial_end,
         "webhook_secret": "must-not-log",
     }
 
 
-def scheduled(period_end, status="ACTIVE", cancel=True):
+def scheduled(period_end, status="ACTIVE", cancel=True, organization_id=ORG):
     return {
-        "organization_id": ORG,
+        "organization_id": organization_id,
         "subscription_status": status,
         "plan_id": "MONTHLY",
         "billing_interval": "month",
         "trial_end": "",
         "cancel_at_period_end": cancel,
         "current_period_end": period_end,
-        "lifecycle_partition": "CANCEL#" + period_end[:10],
+        "lifecycle_partition": _part("CANCEL", organization_id),
         "lifecycle_due_at": period_end,
         "webhook_secret": "must-not-log",
     }
@@ -153,7 +158,8 @@ def test_new_trial_is_indexed_on_its_end_date():
     item = new_trial_subscription(ORG, datetime(2026, 9, 1, tzinfo=UTC))
 
     assert item["trial_end"].startswith("2026-09-16")
-    assert item["lifecycle_partition"] == "TRIAL#2026-09-16"
+    assert item["lifecycle_partition"] == _part("TRIAL", ORG)
+    assert item["lifecycle_due_at"] == item["trial_end"]
     assert item["pending_plan_id"] == ""
 
 
@@ -281,8 +287,8 @@ def test_repeat_invocation_is_a_no_op():
     assert table.updates == updates
 
 
-def test_old_due_dates_outside_the_lookback_are_not_queried_as_today():
-    stale = (NOW - timedelta(days=LOOKBACK_DAYS + 5)).isoformat()
+def test_a_long_outage_still_expires_an_old_due_trial():
+    stale = (NOW - timedelta(days=400)).isoformat()
     recent = (NOW - timedelta(days=3)).isoformat()
     table = Table([
         trial(stale, organization_id="ORG-OLD"),
@@ -290,9 +296,10 @@ def test_old_due_dates_outside_the_lookback_are_not_queried_as_today():
     ])
     result = run_expiry(table, NOW)
 
-    assert result["expired"] == 1
-    assert table.rows["ORG-OLD"]["subscription_status"] == "TRIALING"
+    assert result["expired"] == 2
+    assert table.rows["ORG-OLD"]["subscription_status"] == "EXPIRED"
     assert table.rows["ORG-NEW"]["subscription_status"] == "EXPIRED"
+    assert "lifecycle_partition" not in table.rows["ORG-OLD"]
 
 
 def test_handler_does_not_use_cognito(monkeypatch):
@@ -315,6 +322,48 @@ def test_handler_does_not_use_cognito(monkeypatch):
     assert result["expired"] == 1
     assert "erap-billing-expiry" in BILLING_PACKAGES
     assert "erap-billing-expiry" not in PACKAGES
+
+
+def test_cancel_replaces_or_removes_the_lifecycle_entry():
+    class Store:
+        def __init__(self, row):
+            self.row = dict(row)
+
+        def update_item(self, **kwargs):
+            values = kwargs["ExpressionAttributeValues"]
+            expression = kwargs["UpdateExpression"]
+            self.row["cancel_at_period_end"] = values[":flag"]
+            self.row["updated_at"] = values[":updated"]
+
+            if " REMOVE " in expression:
+                self.row.pop("lifecycle_partition", None)
+                self.row.pop("lifecycle_due_at", None)
+
+            if ":lifecycle_partition" in values:
+                self.row["lifecycle_partition"] = values[":lifecycle_partition"]
+                self.row["lifecycle_due_at"] = values[":lifecycle_due_at"]
+
+        def get_item(self, Key):
+            return {"Item": dict(self.row)}
+
+    stale = trial((NOW - timedelta(days=1)).isoformat())
+    stale["subscription_status"] = "ACTIVE"
+    stale["provider"] = "razorpay"
+    stale["provider_subscription_id"] = "sub_Cancel0000001"
+    open_row = Store(stale)
+    _mark_period_end(open_row, ORG, dict(stale), NOW)
+
+    assert "lifecycle_partition" not in open_row.row
+
+    period_end = (NOW + timedelta(days=10)).isoformat()
+    current = dict(stale)
+    current["current_period_end"] = period_end
+    scheduled_row = Store(current)
+    _mark_period_end(scheduled_row, ORG, dict(current), NOW)
+
+    assert scheduled_row.row["lifecycle_partition"] == _part("CANCEL", ORG)
+    assert scheduled_row.row["lifecycle_due_at"] == period_end
+    assert scheduled_row.row["cancel_at_period_end"] is True
 
 
 def test_expiry_specification_is_not_applied():

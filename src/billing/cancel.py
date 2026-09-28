@@ -74,18 +74,32 @@ def _mark_period_end(subscriptions, organization_id, current, now):
         ":open": False,
     }
     sets = ["cancel_at_period_end = :flag", "updated_at = :updated"]
-    indexed = lifecycle_keys("ACTIVE", "", True, current.get("current_period_end") or "")
+    indexed = lifecycle_keys(
+        organization_id,
+        "ACTIVE",
+        "",
+        True,
+        current.get("current_period_end") or "",
+    )
+    removes = []
 
     if indexed["lifecycle_partition"]:
         sets.append("lifecycle_partition = :lifecycle_partition")
         sets.append("lifecycle_due_at = :lifecycle_due_at")
         values[":lifecycle_partition"] = indexed["lifecycle_partition"]
         values[":lifecycle_due_at"] = indexed["lifecycle_due_at"]
+    else:
+        removes = ["lifecycle_partition", "lifecycle_due_at"]
+
+    expression = "SET " + ", ".join(sets)
+
+    if removes:
+        expression += " REMOVE " + ", ".join(removes)
 
     try:
         subscriptions.update_item(
             Key={"organization_id": organization_id},
-            UpdateExpression="SET " + ", ".join(sets),
+            UpdateExpression=expression,
             ConditionExpression=(
                 "subscription_status = :status AND "
                 "provider_subscription_id = :sid AND "
