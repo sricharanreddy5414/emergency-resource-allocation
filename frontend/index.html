@@ -168,6 +168,8 @@
 
 </aside>
 
+<div id="navOverlay" class="nav-overlay" hidden></div>
+
 
 
 <!-- =====================================================
@@ -317,794 +319,163 @@
 >
 
 
-    <!-- STATISTICS -->
-
-    <div class="stats-grid">
-
-
-        <div class="stat-card">
-
-            <div class="stat-header">
-
-                <span>
-                    Total Resources
-                </span>
-
-                <div class="stat-icon">
-                    ◈
-                </div>
-
-            </div>
-
-
-            <h2 id="totalResources">
-                0
-            </h2>
-
-
-            <p>
-                Registered resources
-            </p>
-
+    <header class="command-header">
+        <div>
+            <p class="panel-label">ERAP Operations</p>
+            <h2>Command center</h2>
+            <p id="commandContext" class="context-line">Organization and location appear here after sign-in.</p>
         </div>
-
-
-
-        <div class="stat-card">
-
-            <div class="stat-header">
-
-                <span>
-                    Available
-                </span>
-
-                <div class="stat-icon">
-                    ✓
-                </div>
-
-            </div>
-
-
-            <h2 id="availableResources">
-                0
-            </h2>
-
-
-            <p>
-                Ready for allocation
-            </p>
-
+        <div class="command-actions">
+            <button class="primary-btn" id="overviewCreateRequest" type="button">Create Request</button>
+            <button class="secondary-btn" id="registerResourceBtn" type="button">Register Resource</button>
         </div>
+    </header>
 
-
-
-        <div class="stat-card">
-
-            <div class="stat-header">
-
-                <span>
-                    Allocated
-                </span>
-
-                <div class="stat-icon">
-                    →
-                </div>
-
+    <section class="snapshot" aria-label="Operational snapshot">
+        <div class="snapshot-primary">
+            <span class="panel-label">Resource readiness</span>
+            <strong id="availableResources">0</strong>
+            <p><span id="totalResources">0</span> registered · <span id="allocatedResources">0</span> allocated</p>
+            <div class="readiness-track" aria-hidden="true">
+                <span id="readinessAvailableBar"></span>
             </div>
-
-
-            <h2 id="allocatedResources">
-                0
-            </h2>
-
-
-            <p>
-                Currently allocated
-            </p>
-
         </div>
-
-
-
-        <div class="stat-card">
-
-            <div class="stat-header">
-
-                <span>
-                    System Status
-                </span>
-
-                <div class="stat-icon">
-                    ●
-                </div>
-
-            </div>
-
-
-            <h2 class="operational">
-                Operational
-            </h2>
-
-
-            <p>
-                Signed in and ready
-            </p>
-
-        </div>
-
-
-    </div>
-
-
-
-    <!-- DASHBOARD CONTENT -->
-
-    <div class="content-grid">
-
-
-        <!-- ALLOCATION FORM -->
-
-        <section class="panel">
-
-
-            <div class="panel-header">
-
-                <div>
-
-                    <span class="panel-label">
-                        RESOURCE ALLOCATION
-                    </span>
-
-                    <h2>
-                        Create Resource Request
-                    </h2>
-
-                    <p>
-                        Submit a request and allocate a matching resource.
-                    </p>
-
-                </div>
-
-            </div>
-
-
-
-            <form id="allocationForm">
-
-
-                <div class="form-row">
-
-
-                    <div class="form-group">
-
-                        <label for="requestId">
-                            Request ID
-                        </label>
-
-                        <input
-                            type="text"
-                            id="requestId"
-                            placeholder="Example: REQ011"
-                            autocomplete="off"
-                            required
-                        >
-
-                    </div>
-
-
-
-                    <div class="form-group">
-
-                        <label for="resourceType">
-                            Request Type
-                        </label>
-
-                        <select
-                            id="resourceType"
-                            required
-                        >
-
-                            <option value="">
-                                Select request type
-                            </option>
-
-                        </select>
-
-                        <div id="requestAttributeFields"></div>
-
-                    </div>
-
-
-                </div>
-
-
-
-                <div class="form-row">
-
-
-                    <div class="form-group">
-
-                        <label for="location">
-                            Location
-                        </label>
-
-                        <select
-                            id="location"
-                            required
-                        >
-                            <option value="">
-                                Select location
-                            </option>
-                        </select>
-
-                    </div>
-
-
-
-                    <div class="form-group">
-
-                        <label for="priority">
-                            Priority
-                        </label>
-
-                        <select
-                            id="priority"
-                            required
-                        >
-
-                            <option value="">
-                                Select priority
-                            </option>
-
-                            <option value="1">
-                                Priority 1 - Critical
-                            </option>
-
-                            <option value="2">
-                                Priority 2 - High
-                            </option>
-
-                            <option value="3">
-                                Priority 3 - Normal
-                            </option>
-
-                        </select>
-
-                    </div>
-
-
-                </div>
-
-
-
-                <button
-                    type="submit"
-                    class="allocate-btn"
-                    id="allocateBtn"
-                >
-
-                    <span>
-                        Allocate Resource
-                    </span>
-
-                    <span>
-                        →
-                    </span>
-
-                </button>
-
-
-            </form>
-
-
-
-            <div
-                id="result"
-                class="result-box hidden"
-            ></div>
-
-
-        </section>
-
-
-
-        <!-- QUICK ACTIONS -->
-
-        <section class="panel">
-
-
-            <div class="panel-header">
-
-                <div>
-
-                    <span class="panel-label">
-                        QUICK ACTIONS
-                    </span>
-
-                    <h2>
-                        Platform Operations
-                    </h2>
-
-                    <p>
-                        Access frequently used functions.
-                    </p>
-
-                </div>
-
-            </div>
-
-
-
-            <div class="quick-actions">
-
-
-                <button
-                    class="quick-action"
-                    id="registerResourceBtn"
-                    type="button"
-                >
-
-                    <span class="quick-icon">
-                        ＋
-                    </span>
-
-                    <span>
-                        Register Resource
-                    </span>
-
-                    <span class="quick-arrow">
-                        →
-                    </span>
-
-                </button>
-
-
-
-                <button
-                    class="quick-action"
-                    id="refreshDataBtn"
-                    type="button"
-                >
-
-                    <span class="quick-icon">
-                        ↻
-                    </span>
-
-                    <span>
-                        Refresh Data
-                    </span>
-
-                    <span class="quick-arrow">
-                        →
-                    </span>
-
-                </button>
-
-
-
-                <button
-                    class="quick-action"
-                    id="viewAllocationsBtn"
-                    type="button"
-                >
-
-                    <span class="quick-icon">
-                        ▣
-                    </span>
-
-                    <span>
-                        View Allocations
-                    </span>
-
-                    <span class="quick-arrow">
-                        →
-                    </span>
-
-                </button>
-
-
-
-                <button
-                    class="quick-action"
-                    id="settingsBtn"
-                    type="button"
-                >
-
-                    <span class="quick-icon">
-                        ⚙
-                    </span>
-
-                    <span>
-                        System Settings
-                    </span>
-
-                    <span class="quick-arrow">
-                        →
-                    </span>
-
-                </button>
-
-
-            </div>
-
-
-        </section>
-
-
-    </div>
-
-
-
-    <!-- RESOURCE AVAILABILITY -->
-
-    <section class="panel">
-
-
-        <div class="panel-header">
-
-
+        <div class="snapshot-secondary">
             <div>
-
-                <span class="panel-label">
-                    LIVE DATA
-                </span>
-
-                <h2>
-                    Resource Availability
-                </h2>
-
-                <p>
-                    Current inventory for this organization.
-                </p>
-
+                <span class="panel-label">Request load</span>
+                <strong id="analyticsPendingRequests">0</strong>
+                <p>Pending now</p>
             </div>
-
-
-            <button
-                class="refresh-btn"
-                id="resourceRefreshBtn"
-                type="button"
-            >
-                ↻ Refresh
-            </button>
-
-
+            <div>
+                <span class="panel-label">Active allocations</span>
+                <strong id="analyticsAllocatedRequests">0</strong>
+                <p><span id="analyticsTotalRequests">0</span> requests · <span id="analyticsReleasedRequests">0</span> released</p>
+            </div>
         </div>
+    </section>
 
+    <section class="ops-workspace">
+        <div class="ops-main">
+            <div class="section-heading">
+                <div>
+                    <span class="panel-label">Active operations</span>
+                    <h2>Requests that need attention</h2>
+                </div>
+            </div>
+            <div id="activeOperations"></div>
+        </div>
+        <aside class="ops-side">
+            <div class="section-heading">
+                <div>
+                    <span class="panel-label">Resource readiness</span>
+                    <h2>Current inventory</h2>
+                </div>
+            </div>
+            <div id="resourceStatusChart" class="analytics-chart"></div>
+            <div id="requestStatusChart" class="analytics-chart"></div>
+            <div id="priorityChart" class="analytics-chart"></div>
+        </aside>
+    </section>
 
+    <section class="ops-lower">
+        <div>
+            <div class="section-heading">
+                <div>
+                    <span class="panel-label">Recent operations</span>
+                    <h2>What changed</h2>
+                </div>
+            </div>
+            <div id="recentOperations"></div>
+        </div>
+        <div>
+            <div class="section-heading">
+                <div>
+                    <span class="panel-label">Commands</span>
+                    <h2>Quick operations</h2>
+                </div>
+            </div>
+            <div class="command-row">
+                <button class="secondary-btn" id="refreshDataBtn" type="button">Refresh</button>
+                <button class="secondary-btn" id="viewAllocationsBtn" type="button">View Allocations</button>
+                <button class="secondary-btn" id="settingsBtn" type="button">Organization</button>
+            </div>
+        </div>
+    </section>
 
+    <details class="allocate-drawer">
+        <summary>Allocate an existing request</summary>
+        <form id="allocationForm">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="requestId">Request ID</label>
+                    <input type="text" id="requestId" placeholder="Existing request ID" autocomplete="off" required>
+                </div>
+                <div class="form-group">
+                    <label for="resourceType">Request Type</label>
+                    <select id="resourceType" required>
+                        <option value="">Select request type</option>
+                    </select>
+                    <div id="requestAttributeFields"></div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <select id="location" required>
+                        <option value="">Select location</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="priority">Priority</label>
+                    <select id="priority" required>
+                        <option value="">Select priority</option>
+                        <option value="1">Priority 1 - Critical</option>
+                        <option value="2">Priority 2 - High</option>
+                        <option value="3">Priority 3 - Normal</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="allocate-btn" id="allocateBtn">Allocate Resource</button>
+        </form>
+        <div id="result" class="result-box hidden"></div>
+    </details>
+
+    <section class="panel ops-inventory">
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">Inventory</span>
+                <h2>Resource availability</h2>
+            </div>
+            <button class="refresh-btn" id="resourceRefreshBtn" type="button">Refresh</button>
+        </div>
         <div class="table-toolbar">
-
-
-            <input
-                type="search"
-                id="resourceSearch"
-                placeholder="Search resources..."
-            >
-
-
-            <select id="resourceFilter">
-
-                <option value="ALL">
-                    All Status
-                </option>
-
-                <option value="AVAILABLE">
-                    Available
-                </option>
-
-                <option value="ALLOCATED">
-                    Allocated
-                </option>
-
+            <input type="search" id="resourceSearch" placeholder="Search resources...">
+            <select id="resourceFilter" aria-label="Availability">
+                <option value="ALL">All Status</option>
+                <option value="AVAILABLE">Available</option>
+                <option value="ALLOCATED">Allocated</option>
             </select>
-
-
         </div>
-
-
-
         <div class="table-container">
-
-
-            <table>
-
-
+            <table class="ops-table">
                 <thead>
-
                     <tr>
-
-                        <th>
-                            Resource
-                        </th>
-
-                        <th>
-                            Type
-                        </th>
-
-                        <th>
-                            Location
-                        </th>
-
-                        <th>
-                            Status
-                        </th>
-
+                        <th>Resource</th>
+                        <th>Type</th>
+                        <th>Location</th>
+                        <th>Status</th>
                     </tr>
-
                 </thead>
-
-
-
                 <tbody id="resourcesTable">
-
                     <tr>
-
-                        <td colspan="4">
-                            Loading resources...
-                        </td>
-
+                        <td colspan="4">Loading resources...</td>
                     </tr>
-
                 </tbody>
-
-
             </table>
-
-
         </div>
-
-
     </section>
-
-
-
-    <!-- WORKFLOW -->
-
-    <section class="panel">
-
-
-        <div class="panel-header">
-
-            <div>
-
-                <span class="panel-label">
-                    SYSTEM WORKFLOW
-                </span>
-
-                <h2>
-                    How ERAP Works
-                </h2>
-
-                <p>
-                    Serverless allocation workflow powered by AWS.
-                </p>
-
-            </div>
-
-        </div>
-
-
-
-        <div class="workflow-grid">
-
-
-            <div class="workflow-step">
-
-                <div class="workflow-number">
-                    01
-                </div>
-
-                <strong>
-                    Request
-                </strong>
-
-                <span>
-                    User submits a resource request.
-                </span>
-
-            </div>
-
-
-            <div class="workflow-line">
-                →
-            </div>
-
-
-            <div class="workflow-step">
-
-                <div class="workflow-number">
-                    02
-                </div>
-
-                <strong>
-                    Lambda
-                </strong>
-
-                <span>
-                    Allocation logic processes the request.
-                </span>
-
-            </div>
-
-
-            <div class="workflow-line">
-                →
-            </div>
-
-
-            <div class="workflow-step">
-
-                <div class="workflow-number">
-                    03
-                </div>
-
-                <strong>
-                    DynamoDB
-                </strong>
-
-                <span>
-                    Matching resource is reserved.
-                </span>
-
-            </div>
-
-
-            <div class="workflow-line">
-                →
-            </div>
-
-
-            <div class="workflow-step">
-
-                <div class="workflow-number">
-                    04
-                </div>
-
-                <strong>
-                    Notification
-                </strong>
-
-                <span>
-                    EventBridge and SNS publish updates.
-                </span>
-
-            </div>
-
-
-        </div>
-
-
-    </section>
-
 
 </section>
-
-
-
-    <!-- =====================================================
-         ADVANCED ANALYTICS
-    ====================================================== -->
-
-    <section class="analytics-section dashboard-only-section">
-
-        <div class="analytics-header">
-
-            <div>
-                <span class="panel-label">
-                    PLATFORM ANALYTICS
-                </span>
-
-                <h2>
-                    Resource & Request Insights
-                </h2>
-
-                <p>
-                    Live operational overview based on current AWS data.
-                </p>
-            </div>
-
-        </div>
-
-
-        <div class="analytics-kpi-grid">
-
-            <div class="analytics-kpi">
-                <span>Total Requests</span>
-                <strong id="analyticsTotalRequests">0</strong>
-            </div>
-
-            <div class="analytics-kpi">
-                <span>Allocated Requests</span>
-                <strong id="analyticsAllocatedRequests">0</strong>
-            </div>
-
-            <div class="analytics-kpi">
-                <span>Pending Requests</span>
-                <strong id="analyticsPendingRequests">0</strong>
-            </div>
-
-            <div class="analytics-kpi">
-                <span>Released Requests</span>
-                <strong id="analyticsReleasedRequests">0</strong>
-            </div>
-
-        </div>
-
-
-        <div class="analytics-grid">
-
-            <div class="analytics-card">
-
-                <div class="analytics-card-header">
-                    <div>
-                        <span class="panel-label">
-                            RESOURCE STATUS
-                        </span>
-
-                        <h3>
-                            Current Resource Availability
-                        </h3>
-                    </div>
-                </div>
-
-                <div
-                    id="resourceStatusChart"
-                    class="analytics-chart"
-                ></div>
-
-            </div>
-
-
-            <div class="analytics-card">
-
-                <div class="analytics-card-header">
-                    <div>
-                        <span class="panel-label">
-                            REQUEST STATUS
-                        </span>
-
-                        <h3>
-                            Request Distribution
-                        </h3>
-                    </div>
-                </div>
-
-                <div
-                    id="requestStatusChart"
-                    class="analytics-chart"
-                ></div>
-
-            </div>
-
-
-            <div class="analytics-card analytics-card-wide">
-
-                <div class="analytics-card-header">
-                    <div>
-                        <span class="panel-label">
-                            PRIORITY ANALYSIS
-                        </span>
-
-                        <h3>
-                            Requests by Priority
-                        </h3>
-                    </div>
-                </div>
-
-                <div
-                    id="priorityChart"
-                    class="analytics-chart priority-chart"
-                ></div>
-
-            </div>
-
-        </div>
-
-    </section>
-<!-- =====================================================
-     ADMIN DASHBOARD
-====================================================== -->
 
 <section
     class="page-section admin-page-section"
@@ -1121,12 +492,19 @@
             </span>
 
             <h2>
-                Admin Dashboard
+                Management center
             </h2>
 
             <p>
-                Administrative overview of emergency resource operations.
+                Configure types, locations, and the people who can operate this organization.
             </p>
+
+            <nav class="admin-jump" aria-label="Management sections">
+                <a href="#adminResourceTypes">Resource types</a>
+                <a href="#adminRequestTypes">Request types</a>
+                <a href="#organizationMembers">Members</a>
+                <a href="#organizationPendingInvitations">Invitations</a>
+            </nav>
 
         </div>
 
@@ -1486,7 +864,7 @@
         <div class="table-container">
 
 
-            <table>
+            <table class="ops-table">
 
 
                 <thead>
@@ -1546,6 +924,11 @@
             <p>
                 Coordinate incoming resource requirements across your organization.
             </p>
+            <div class="queue-summary">
+                <div><span>Pending</span><strong id="queuePending">0</strong></div>
+                <div><span>Allocated</span><strong id="queueAllocated">0</strong></div>
+                <div><span>Released</span><strong id="queueReleased">0</strong></div>
+            </div>
         </div>
 
         <div class="hero-actions">
@@ -1682,8 +1065,11 @@
             </h2>
 
             <p>
-                Review allocation activity from this session.
+                Follow a request through the matched resource, the allocation, and the release.
             </p>
+            <div class="flow-strip" aria-label="Allocation flow">
+                <span>Request</span><span>→</span><span>Matched resource</span><span>→</span><span>Allocation</span><span>→</span><span>Release</span>
+            </div>
 
         </div>
 
@@ -2979,6 +2365,18 @@
     /* -----------------------------------------
        NEW REQUEST BUTTON
     ----------------------------------------- */
+
+    ["newRequestBtn", "overviewCreateRequest"].forEach(function (id) {
+
+        const button = document.getElementById(id);
+
+        if (button) {
+
+            button.addEventListener("click", openRequestModal, true);
+
+        }
+
+    });
 
     const newRequestBtn =
         document.getElementById("newRequestBtn");

@@ -47,6 +47,10 @@ Transitions are about 180ms. `prefers-reduced-motion` removes animation and tran
 
 From 1100px, metric grids become two columns. From 780px, navigation collapses behind the menu button, the top bar stacks, and the profile name hides so the switchers remain usable.
 
+## Command layout
+
+Overview is an operations workspace. The primary actions are Create Request and Register Resource. Counts, the request queue, readiness, and recent requests or allocations come from data already loaded. The allocation form stays available under “Allocate an existing request” and is no longer the center of the page.
+
 ## What the interface does not do
 
 It does not chart history that the API does not provide. It does not add a public discovery page beyond the existing public API. It does not treat client-side role checks as authorization. Organization, location, request type, and resource type values still come from the existing APIs as `organization_id`, `location_id`, `request_type_id`, and `resource_type_id`.

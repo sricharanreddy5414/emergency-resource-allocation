@@ -942,6 +942,254 @@ tr:hover td {
     }
 }
 
+.command-header,
+.snapshot,
+.ops-workspace,
+.ops-lower,
+.command-row {
+    display: flex;
+    gap: 16px;
+}
+
+.command-header,
+.ops-lower,
+.section-heading {
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 16px;
+}
+
+.command-header h2,
+.ops-main h2,
+.ops-side h2 {
+    font-size: 28px;
+    letter-spacing: -0.04em;
+}
+
+.command-actions,
+.command-row {
+    flex-wrap: wrap;
+}
+
+.snapshot {
+    align-items: stretch;
+    margin-bottom: 18px;
+}
+
+.snapshot-primary,
+.snapshot-secondary,
+.ops-main,
+.ops-side,
+.ops-lower > div,
+.allocate-drawer,
+.ops-item,
+.ops-empty,
+.ops-timeline {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.snapshot-primary {
+    flex: 1.4;
+    padding: 22px;
+}
+
+.snapshot-primary strong,
+.snapshot-secondary strong {
+    display: block;
+    margin: 8px 0 4px;
+    font-size: 42px;
+    letter-spacing: -0.05em;
+    line-height: 1;
+}
+
+.snapshot-secondary {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.snapshot-secondary > div {
+    padding: 18px;
+}
+
+.snapshot-secondary > div + div {
+    border-left: 1px solid var(--border);
+}
+
+.readiness-track {
+    height: 8px;
+    margin-top: 16px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e6ebf1;
+}
+
+#readinessAvailableBar {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--success);
+}
+
+.ops-workspace {
+    align-items: start;
+    margin-bottom: 16px;
+}
+
+.ops-main {
+    flex: 1.6;
+    padding: 18px;
+}
+
+.ops-side {
+    flex: 0.8;
+    padding: 18px;
+}
+
+.ops-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 10px;
+    padding: 14px;
+    box-shadow: none;
+}
+
+.ops-item-high {
+    border-color: #e7c7b4;
+}
+
+.ops-item h3 {
+    margin: 2px 0;
+    font-size: 18px;
+}
+
+.ops-item-meta,
+.command-actions,
+.command-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ops-empty {
+    padding: 28px 8px;
+    text-align: left;
+}
+
+.ops-timeline {
+    margin: 0;
+    padding: 8px 16px 8px 28px;
+}
+
+.ops-timeline li {
+    display: grid;
+    gap: 2px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.ops-timeline span,
+.ops-timeline em {
+    color: var(--muted);
+    font-style: normal;
+    font-size: 12px;
+}
+
+.ops-lower {
+    align-items: stretch;
+    margin-bottom: 16px;
+}
+
+.ops-lower > div {
+    flex: 1;
+    padding: 18px;
+}
+
+.allocate-drawer {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+}
+
+.allocate-drawer summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.nav-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    background: rgba(16, 28, 43, 0.4);
+}
+
+.queue-summary {
+    display: flex;
+    gap: 18px;
+    margin: 8px 0 16px;
+}
+
+.queue-summary strong {
+    display: block;
+    font-size: 22px;
+}
+
+.flow-strip {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 14px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.admin-jump {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+    .command-header,
+    .snapshot,
+    .ops-workspace,
+    .ops-lower,
+    .ops-item,
+    .snapshot-secondary {
+        display: block;
+    }
+
+    .snapshot-secondary > div + div {
+        border-left: 0;
+        border-top: 1px solid var(--border);
+    }
+
+    .ops-table,
+    .ops-table thead,
+    .ops-table tbody,
+    .ops-table tr,
+    .ops-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .ops-table thead {
+        display: none;
+    }
+
+    .ops-table tr {
+        margin-bottom: 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

@@ -1342,6 +1342,14 @@ function refreshShellContext() {
 
     }
 
+    const command = $("commandContext");
+
+    if (command) {
+
+        command.textContent = organization + " · " + location;
+
+    }
+
 }
 
 
@@ -1543,16 +1551,35 @@ function initializeMobileMenu() {
     }
 
 
-    button.addEventListener(
-        "click",
-        () => {
+    const overlay = $("navOverlay");
 
-            sidebar.classList.toggle(
-                "mobile-open"
-            );
+    function setMenu(open) {
+
+        sidebar.classList.toggle("mobile-open", open);
+
+        if (overlay) {
+
+            overlay.hidden = !open;
 
         }
-    );
+
+        button.setAttribute("aria-expanded", open ? "true" : "false");
+
+    }
+
+    button.addEventListener("click", () => {
+
+        setMenu(!sidebar.classList.contains("mobile-open"));
+
+    });
+
+    overlay?.addEventListener("click", () => setMenu(false));
+
+    sidebar.querySelectorAll(".nav-item").forEach(item => {
+
+        item.addEventListener("click", () => setMenu(false));
+
+    });
 
 }
 
@@ -2057,6 +2084,128 @@ async function loadRequests() {
 // =====================================================
 // RENDER REQUESTS
 // =====================================================
+
+function requestRecordStatus(request) {
+
+    return String(request.status ?? request.Status ?? "").toUpperCase();
+
+}
+
+
+function renderActiveOperations() {
+
+    const container = $("activeOperations");
+
+    if (!container) {
+
+        return;
+
+    }
+
+    const active = requests
+        .filter(request => {
+            const status = requestRecordStatus(request);
+            return status && status !== "RELEASED" && status !== "COMPLETED";
+        })
+        .sort((left, right) =>
+            Number(left.priority ?? left.Priority ?? 99) -
+            Number(right.priority ?? right.Priority ?? 99)
+        );
+
+    if (!active.length) {
+
+        container.innerHTML = `
+            <div class="ops-empty">
+                <h3>No active operations</h3>
+                <p>New requests will appear here when your organization creates them.</p>
+                <button class="primary-btn js-open-request" type="button">Create Request</button>
+            </div>
+        `;
+
+        return;
+
+    }
+
+    container.innerHTML = active.slice(0, 6).map(request => {
+        const priority = request.priority ?? request.Priority ?? "—";
+        const status = requestRecordStatus(request) || "PENDING";
+        const type = request.resource_type ?? request.ResourceType ?? request.request_type ?? "Request";
+        const location = request.location ?? request.Location ?? "Location unavailable";
+        const created = request.CreatedAt ?? request.createdAt ?? request.created_at ?? "";
+        const emphasis = Number(priority) <= 2 ? " ops-item-high" : "";
+
+        return `
+            <article class="ops-item${emphasis}">
+                <div>
+                    <p class="panel-label">${Number(priority) <= 2 ? "High priority" : "Request"}</p>
+                    <h3>${escapeHtml(String(type))}</h3>
+                    <p>${escapeHtml(String(location))}</p>
+                </div>
+                <div class="ops-item-meta">
+                    <span class="priority-badge">Priority ${escapeHtml(String(priority))}</span>
+                    <span class="status-badge ${status === "ALLOCATED" ? "allocated" : "pending"}">${escapeHtml(status)}</span>
+                    <span class="cell-meta">${escapeHtml(String(created))}</span>
+                    <button class="secondary-btn js-view-requests" type="button">View requests</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+
+}
+
+
+function renderRecentOperations() {
+
+    const container = $("recentOperations");
+
+    if (!container) {
+
+        return;
+
+    }
+
+    const events = [];
+
+    requests.forEach(request => {
+        events.push({
+            title: "Request created",
+            detail: String(request.request_id || "Request") + " · " + String(request.resource_type ?? request.ResourceType ?? ""),
+            time: String(request.CreatedAt ?? request.createdAt ?? request.created_at ?? "")
+        });
+    });
+
+    allocations.forEach(item => {
+        const status = String(item.status || "").toUpperCase();
+        events.push({
+            title: status === "RELEASED" ? "Resource released" : "Allocation completed",
+            detail: String(item.request_id || "") + " · " + String(item.resource_id || ""),
+            time: String(item.created_at || item.allocated_at || item.updated_at || "")
+        });
+    });
+
+    if (!events.length) {
+
+        container.innerHTML = `
+            <div class="ops-empty">
+                <h3>No recent operations</h3>
+                <p>Requests and allocations already loaded for this organization will appear here.</p>
+            </div>
+        `;
+
+        return;
+
+    }
+
+    container.innerHTML = `<ol class="ops-timeline">${events.slice(0, 8).map(event => `
+        <li>
+            <strong>${escapeHtml(event.title)}</strong>
+            <span>${escapeHtml(event.detail)}</span>
+            <em>${escapeHtml(event.time)}</em>
+        </li>
+    `).join("")}</ol>`;
+
+}
+
 
 function renderRequests() {
 
@@ -2563,6 +2712,33 @@ function updateAnalytics() {
         $("analyticsReleasedRequests")
             .textContent =
             releasedRequests;
+    }
+
+    const availableBar = $("readinessAvailableBar");
+
+    if (availableBar) {
+
+        const width = totalResources
+            ? Math.round((availableResources / totalResources) * 100)
+            : 0;
+
+        availableBar.style.width = width + "%";
+
+    }
+
+    renderActiveOperations();
+    renderRecentOperations();
+
+    if ($("queuePending")) {
+        $("queuePending").textContent = pendingRequests;
+    }
+
+    if ($("queueAllocated")) {
+        $("queueAllocated").textContent = allocatedRequests;
+    }
+
+    if ($("queueReleased")) {
+        $("queueReleased").textContent = releasedRequests;
     }
 
 
@@ -5183,19 +5359,6 @@ function initializeEvents() {
         );
 
 
-    $("settingsBtn")
-        ?.addEventListener(
-            "click",
-            () => {
-
-                navigateTo(
-                    "settings"
-                );
-
-            }
-        );
-
-
     /* Resource refresh */
 
     $("resourceRefreshBtn")
@@ -5290,48 +5453,31 @@ initializeRequestControls();
 
     /* New request */
 
-    $("newRequestBtn")
+    $("activeOperations")?.addEventListener("click", event => {
+
+        if (event.target.closest(".js-open-request")) {
+
+            $("newRequestBtn")?.click();
+
+        }
+
+        if (event.target.closest(".js-view-requests")) {
+
+            navigateTo("requests");
+
+        }
+
+    });
+
+    $("settingsBtn")
         ?.addEventListener(
             "click",
             () => {
 
                 navigateTo(
-                    "dashboard"
-                );
-
-
-                setTimeout(
-                    () => {
-
-                        $("requestId")
-                            ?.focus();
-
-                    },
-                    250
-                );
-
-            }
-        );
-
-
-    $("createRequestFromPageBtn")
-        ?.addEventListener(
-            "click",
-            () => {
-
-                navigateTo(
-                    "dashboard"
-                );
-
-
-                setTimeout(
-                    () => {
-
-                        $("requestId")
-                            ?.focus();
-
-                    },
-                    250
+                    (typeof canManageCatalog === "function" && (canManageCatalog() || canManageMembers()))
+                        ? "admin"
+                        : "settings"
                 );
 
             }
