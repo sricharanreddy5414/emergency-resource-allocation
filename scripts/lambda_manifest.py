@@ -126,6 +126,15 @@ BILLING_PACKAGES = {
         "billing/provider/razorpay.py": "src/billing/provider/razorpay.py",
         "handler.py": "src/billing/webhook_handler.py",
     },
+    "erap-billing-expiry": {
+        "billing/__init__.py": "src/billing/__init__.py",
+        "billing/errors.py": "src/billing/errors.py",
+        "billing/models.py": "src/billing/models.py",
+        "billing/plans.py": "src/billing/plans.py",
+        "billing/transitions.py": "src/billing/transitions.py",
+        "billing/expiry.py": "src/billing/expiry.py",
+        "handler.py": "src/billing/expiry_handler.py",
+    },
 }
 
 

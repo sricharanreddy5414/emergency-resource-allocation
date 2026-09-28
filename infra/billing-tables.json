@@ -13,6 +13,14 @@
         {
           "AttributeName": "provider_subscription_id",
           "AttributeType": "S"
+        },
+        {
+          "AttributeName": "lifecycle_partition",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "lifecycle_due_at",
+          "AttributeType": "S"
         }
       ],
       "GlobalSecondaryIndexes": [
@@ -22,6 +30,22 @@
             {
               "AttributeName": "provider_subscription_id",
               "KeyType": "HASH"
+            }
+          ],
+          "Projection": {
+            "ProjectionType": "ALL"
+          }
+        },
+        {
+          "IndexName": "LifecycleDueIndex",
+          "KeySchema": [
+            {
+              "AttributeName": "lifecycle_partition",
+              "KeyType": "HASH"
+            },
+            {
+              "AttributeName": "lifecycle_due_at",
+              "KeyType": "RANGE"
             }
           ],
           "Projection": {

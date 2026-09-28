@@ -59,6 +59,7 @@ def _grandfathered():
         "current_period_end": None,
         "cancel_at_period_end": False,
         "cancelled_at": None,
+        "pending_plan_id": None,
     }
 
 
@@ -73,6 +74,7 @@ def _subscription(item):
         "current_period_end": _present(item.get("current_period_end")),
         "cancel_at_period_end": item.get("cancel_at_period_end") is True,
         "cancelled_at": _present(item.get("cancelled_at")),
+        "pending_plan_id": _present(item.get("pending_plan_id")),
     }
 
 

@@ -130,9 +130,20 @@ class Subscriptions:
                 {"Error": {"Code": "ConditionalCheckFailedException", "Message": "conflict"}},
                 "UpdateItem",
             )
+        expression = kwargs.get("UpdateExpression") or ""
+        if " REMOVE " in expression:
+            for name in expression.split(" REMOVE ", 1)[1].split(","):
+                row.pop(name.strip(), None)
         if ":status" in values:
             row["subscription_status"] = values[":status"]
         row["updated_at"] = values[":updated"]
+        if ":plan_id" in values:
+            row["plan_id"] = values[":plan_id"]
+            row["billing_interval"] = values[":interval"]
+            row["pending_plan_id"] = values[":pending_cleared"]
+        if ":lifecycle_partition" in values:
+            row["lifecycle_partition"] = values[":lifecycle_partition"]
+            row["lifecycle_due_at"] = values[":lifecycle_due_at"]
         for field, token in (
             ("current_period_start", ":period_start"),
             ("current_period_end", ":period_end"),
@@ -386,6 +397,69 @@ def test_older_charge_does_not_reactivate_a_cancellation():
     assert events.rows["evt_old"]["processing_status"] == "IGNORED"
 
 
+def test_activation_promotes_only_a_pending_commercial_plan():
+    current = subscription(ORG_A, SUB_A)
+    current["pending_plan_id"] = "MONTHLY"
+    body = payload("subscription.activated", SUB_A, period=(1_700_000_300, 1_700_259_100))
+    _, _, subscriptions, events = deliver(body, [current])
+    row = subscriptions.rows[ORG_A]
+
+    assert row["subscription_status"] == "ACTIVE"
+    assert row["plan_id"] == "MONTHLY"
+    assert row["billing_interval"] == "month"
+    assert row["pending_plan_id"] == ""
+    assert events.rows["evt_1"]["processing_status"] == "PROCESSED"
+
+
+def test_activation_without_a_pending_plan_does_not_invent_one():
+    current = subscription(ORG_A, SUB_A)
+    body = payload("subscription.activated", SUB_A)
+    _, _, subscriptions, _ = deliver(body, [current])
+
+    assert subscriptions.rows[ORG_A]["plan_id"] == "FREE_TRIAL"
+    assert subscriptions.rows[ORG_A]["billing_interval"] == "none"
+
+
+def test_grandfathered_activation_does_not_invent_a_commercial_plan():
+    current = subscription(ORG_A, SUB_A, "GRANDFATHERED")
+    current["plan_id"] = "GRANDFATHERED"
+    current["billing_interval"] = "none"
+    current["pending_plan_id"] = ""
+    body = payload("subscription.charged", SUB_A, created_at=1_700_000_300)
+    _, _, subscriptions, _ = deliver(body, [current])
+    row = subscriptions.rows[ORG_A]
+
+    assert row["subscription_status"] == "ACTIVE"
+    assert row["plan_id"] == "GRANDFATHERED"
+    assert row["billing_interval"] == "none"
+
+
+def test_failed_payment_does_not_activate_a_pending_plan():
+    current = subscription(ORG_A, SUB_A)
+    current["pending_plan_id"] = "YEARLY"
+    body = payload("payment.failed", SUB_A, payment_id="pay_Fail0001")
+    _, _, subscriptions, events = deliver(body, [current])
+    row = subscriptions.rows[ORG_A]
+
+    assert row["subscription_status"] == "TRIALING"
+    assert row["plan_id"] == "FREE_TRIAL"
+    assert row["pending_plan_id"] == "YEARLY"
+    assert events.rows["evt_1"]["processing_status"] == "IGNORED"
+
+
+def test_past_due_charge_recovers_without_replacing_the_plan():
+    current = subscription(ORG_A, SUB_A, "PAST_DUE")
+    current["plan_id"] = "YEARLY"
+    current["billing_interval"] = "year"
+    body = payload("subscription.charged", SUB_A, period=(1_700_259_100, 1_732_795_100))
+    _, _, subscriptions, _ = deliver(body, [current])
+    row = subscriptions.rows[ORG_A]
+
+    assert row["subscription_status"] == "ACTIVE"
+    assert row["plan_id"] == "YEARLY"
+    assert row["billing_interval"] == "year"
+
+
 def test_renewal_while_active_updates_the_period_without_clearing_cancellation():
     body = payload(
         "subscription.charged",
@@ -400,6 +474,8 @@ def test_renewal_while_active_updates_the_period_without_clearing_cancellation()
     row = subscriptions.rows[ORG_A]
 
     assert row["subscription_status"] == "ACTIVE"
+    assert row["plan_id"] == "MONTHLY"
+    assert row["billing_interval"] == "month"
     assert row["cancel_at_period_end"] is True
     assert row["current_period_end"] == datetime.fromtimestamp(1_700_518_500, timezone.utc).isoformat()
     assert events.rows["evt_renew"]["processing_status"] == "PROCESSED"

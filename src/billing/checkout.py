@@ -50,6 +50,7 @@ def create_checkout(
         organization_id,
         created["provider_subscription_id"],
         current.get("subscription_status"),
+        plan["plan_id"],
         now or datetime.now(timezone.utc),
     )
     return {
@@ -119,13 +120,18 @@ def _require_checkout_state(current):
         raise BillingError(409, "A checkout is already in progress")
 
 
-def _save_reference(subscriptions, organization_id, provider_subscription_id, status, now):
+def _save_reference(subscriptions, organization_id, provider_subscription_id, status, plan_id, now):
+    """Remember the provider subscription and the plan waiting for confirmation.
+
+    plan_id on the row stays unchanged until a verified webhook activates it.
+    """
     try:
         subscriptions.update_item(
             Key={"organization_id": organization_id},
             UpdateExpression=(
                 "SET provider = :provider, "
                 "provider_subscription_id = :sid, "
+                "pending_plan_id = :pending, "
                 "updated_at = :updated"
             ),
             ConditionExpression=(
@@ -137,6 +143,7 @@ def _save_reference(subscriptions, organization_id, provider_subscription_id, st
             ExpressionAttributeValues={
                 ":provider": "razorpay",
                 ":sid": provider_subscription_id,
+                ":pending": plan_id,
                 ":updated": format_utc(now),
                 ":status": status,
                 ":empty": "",

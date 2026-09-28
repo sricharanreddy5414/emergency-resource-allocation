@@ -100,6 +100,7 @@ class Subscriptions:
             return
         item["provider"] = values[":provider"]
         item["provider_subscription_id"] = values[":sid"]
+        item["pending_plan_id"] = values.get(":pending", "")
         item["updated_at"] = values[":updated"]
 
 

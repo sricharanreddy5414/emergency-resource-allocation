@@ -33,6 +33,7 @@ SUBSCRIPTION_FIELDS = {
     "provider_customer_id",
     "provider_subscription_id",
     "plan_id",
+    "pending_plan_id",
     "billing_interval",
     "subscription_status",
     "trial_start",
@@ -43,7 +44,16 @@ SUBSCRIPTION_FIELDS = {
     "cancelled_at",
     "created_at",
     "updated_at",
+    "lifecycle_partition",
+    "lifecycle_due_at",
 }
+LIFECYCLE_INDEX = "LifecycleDueIndex"
+SUBSCRIPTION_INDEX_ATTRIBUTES = (
+    "provider_subscription_id",
+    "lifecycle_partition",
+    "lifecycle_due_at",
+)
+COMMERCIAL_PLAN_IDS = {"MONTHLY", "YEARLY"}
 
 EVENT_FIELDS = {
     "provider_event_id",
@@ -56,6 +66,31 @@ EVENT_FIELDS = {
     "processed_at",
     "processing_status",
 }
+
+
+def lifecycle_keys(status, trial_end, cancel_at_period_end, current_period_end):
+    """Index entry for one due date. Blank values stay off LifecycleDueIndex.
+
+    The partition is the kind plus the UTC date the row becomes due, so the
+    daily job queries that day and a short lookback. It does not put every
+    trialing organization in one partition.
+    """
+    if status == "TRIALING" and trial_end:
+        return _lifecycle_entry("TRIAL", trial_end)
+
+    if status == "ACTIVE" and cancel_at_period_end is True and current_period_end:
+        return _lifecycle_entry("CANCEL", current_period_end)
+
+    return {"lifecycle_partition": "", "lifecycle_due_at": ""}
+
+
+def _lifecycle_entry(kind, due_at):
+    due = format_utc(parse_utc(due_at, "lifecycle_due_at"))
+
+    return {
+        "lifecycle_partition": kind + "#" + due[:10],
+        "lifecycle_due_at": due,
+    }
 
 
 def item_for_storage(item, index_attributes):
@@ -238,6 +273,8 @@ def validate_subscription(item):
             raise BillingError(400, "Trial timestamps must both be set")
 
     _ordered_period(period_start, period_end, "current_period_start", "current_period_end")
+    pending_plan_id = _pending_plan(item)
+    indexed = lifecycle_keys(status, trial_end, item["cancel_at_period_end"], period_end)
 
     return {
         "organization_id": _text(item, "organization_id", required=True),
@@ -245,6 +282,7 @@ def validate_subscription(item):
         "provider_customer_id": _text(item, "provider_customer_id"),
         "provider_subscription_id": _text(item, "provider_subscription_id"),
         "plan_id": plan["plan_id"],
+        "pending_plan_id": pending_plan_id,
         "billing_interval": interval,
         "subscription_status": status,
         "trial_start": trial_start,
@@ -255,7 +293,21 @@ def validate_subscription(item):
         "cancelled_at": cancelled_at,
         "created_at": created_at,
         "updated_at": updated_at,
+        "lifecycle_partition": indexed["lifecycle_partition"],
+        "lifecycle_due_at": indexed["lifecycle_due_at"],
     }
+
+
+def _pending_plan(item):
+    pending = _text(item, "pending_plan_id")
+
+    if not pending:
+        return ""
+
+    if pending not in COMMERCIAL_PLAN_IDS:
+        raise BillingError(400, "Pending plan is invalid")
+
+    return get_plan(pending)["plan_id"]
 
 
 def new_trial_subscription(organization_id, now):

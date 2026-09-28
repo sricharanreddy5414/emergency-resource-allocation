@@ -1,0 +1,44 @@
+{
+  "applied": false,
+  "region": "eu-north-1",
+  "note": "Specification only. Do not create the function, the schedule, or the index. The expiry job does not use Cognito, Secrets Manager, or Razorpay.",
+  "function": {
+    "name": "erap-billing-expiry",
+    "handler": "handler.lambda_handler",
+    "alias": "live",
+    "timeout_seconds": 60
+  },
+  "index": {
+    "table": "OrganizationSubscriptions",
+    "name": "LifecycleDueIndex",
+    "partition_key": "lifecycle_partition",
+    "sort_key": "lifecycle_due_at",
+    "purpose": "TRIAL#YYYY-MM-DD and CANCEL#YYYY-MM-DD partitions. The job queries today and the previous 62 UTC dates."
+  },
+  "schedule": {
+    "service": "EventBridge Scheduler",
+    "name": "erap-billing-expiry-daily",
+    "schedule_expression": "cron(0 2 * * ? *)",
+    "timezone": "UTC",
+    "intended_state_after_a_later_deploy": "ENABLED",
+    "target": "erap-billing-expiry",
+    "alias": "live"
+  },
+  "iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "QueryDueSubscriptions",
+        "Effect": "Allow",
+        "Action": "dynamodb:Query",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions/index/LifecycleDueIndex"
+      },
+      {
+        "Sid": "ConditionalLifecycleUpdate",
+        "Effect": "Allow",
+        "Action": "dynamodb:UpdateItem",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions"
+      }
+    ]
+  }
+}

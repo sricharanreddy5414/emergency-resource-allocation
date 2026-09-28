@@ -8539,6 +8539,12 @@ function billingOverview(subscription, nextAction, planName) {
 
     }
 
+    if (subscription.pending_plan_id) {
+
+        lines.push(["Selected plan", subscription.pending_plan_id + " awaiting confirmation"]);
+
+    }
+
     return `
         <p class="billing-kicker">Current subscription</p>
         <div class="billing-status">

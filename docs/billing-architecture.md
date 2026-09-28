@@ -231,6 +231,22 @@ Invitation acceptance uses the same write check as other membership changes. The
 
 Deploying the current operational code before the subscription table and the GetItem permission exist makes operational writes fail closed. That protects tenant data and also locks the pilot until the table is present. Reads do not query the subscription table.
 
+## Phase I — Lifecycle expiry and purchase readiness
+
+`erap-billing-expiry` is a separate scheduled function. It is packaged in `BILLING_PACKAGES` and is not one of the nine deployed functions. It does not use Cognito, Secrets Manager, or Razorpay. `infra/billing-expiry.json` describes a daily EventBridge Scheduler rule at 02:00 UTC. `"applied"` is false. The rule does not exist in AWS.
+
+The job queries `LifecycleDueIndex`. A trialing row stores `lifecycle_partition` `TRIAL#YYYY-MM-DD` and `lifecycle_due_at` equal to `trial_end`. An active row with `cancel_at_period_end` stores `CANCEL#YYYY-MM-DD` and `lifecycle_due_at` equal to `current_period_end`. Other rows omit those attributes. The partition is the due date, not the status alone, so every trialing organization is not forced into one partition. Each run queries today and the previous 62 UTC dates. It does not scan.
+
+At `trial_end`, the job moves `TRIALING` to `EXPIRED` only while the stored status and `trial_end` still match. At `current_period_end`, it moves `ACTIVE` with `cancel_at_period_end` to `CANCELLED` only while the stored period end still matches. A renewal that changes `current_period_end`, or an activation that changes the status, makes the condition fail and the job skips that row. A second run is a no-op. `Organizations.status` is not changed. The job does not call Razorpay. The webhook remains the writer for provider events.
+
+Checkout stores `pending_plan_id` only after Razorpay accepts the subscription create. It does not change `plan_id`. A verified `subscription.activated` or `subscription.charged` that moves the row to `ACTIVE` copies `pending_plan_id` into `plan_id`, sets `billing_interval` from the server catalog, and clears `pending_plan_id`. If there is no pending commercial plan, the existing `plan_id` stays, including `FREE_TRIAL` and `GRANDFATHERED`. A failed provider create stores nothing. A failed payment does not promote the pending plan. A later charge on an already `ACTIVE` subscription updates the period and keeps the current plan and a scheduled cancellation.
+
+`PAST_DUE` stays writable. `POST /billing/checkout` still refuses it, so recovery does not create a second provider subscription. `PAST_DUE` returns to `ACTIVE` only through a verified provider event.
+
+A missing subscription row is still grandfathered, and opening Billing does not create one. Checkout still returns 409 until a reviewed backfill writes a row. This phase does not write that backfill.
+
+The billing page shows `pending_plan_id` as awaiting confirmation. It does not display that selection as the current plan.
+
 ## What remains unimplemented
 
-EventBridge expiry, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, enabling live Razorpay, and deploying the billing workspace. Checkout does not yet store the selected commercial plan on the subscription row, because no plan is purchasable and no Razorpay plan id exists. That assignment has to be added before purchase is enabled. `PAST_DUE` recovery is not a new checkout.
+Price activation, Razorpay plan ids, the grandfather backfill, one trial per owner, refunds, invoices, plan changes, provider repair fetches, creating the billing tables and `LifecycleDueIndex`, creating or deploying the billing routes, creating the Razorpay test secret, creating the expiry schedule, enabling live Razorpay, and deploying the billing workspace or `erap-billing-expiry`. `PAST_DUE` recovery is not a new checkout.

@@ -95,7 +95,9 @@ class SubscriptionTable:
 
         item["provider"] = values[":provider"]
         item["provider_subscription_id"] = values[":sid"]
+        item["pending_plan_id"] = values[":pending"]
         item["updated_at"] = values[":updated"]
+        item["plan_id"] = item.get("plan_id") or "FREE_TRIAL"
 
 
 class FakeProvider:
@@ -272,6 +274,8 @@ def test_allowed_status_can_checkout_when_plan_is_purchasable(status):
     assert "key_secret" not in result
     assert "must-not-leak" not in json.dumps(result)
     assert saved["subscription_status"] == status
+    assert saved["plan_id"] == "FREE_TRIAL"
+    assert saved["pending_plan_id"] == "MONTHLY"
     assert saved["provider"] == "razorpay"
     assert saved["provider_subscription_id"] == "sub_TestCheckout01"
     assert saved["provider_customer_id"] == ""
@@ -303,6 +307,31 @@ def test_open_subscription_does_not_start_another(status, message):
     assert error.value.message == message
     assert provider.calls == []
     assert table.items[ORG_A]["provider_subscription_id"] == "sub_Existing0001"
+    assert "pending_plan_id" not in table.items[ORG_A]
+
+
+def test_provider_failure_does_not_store_a_pending_plan():
+    table = SubscriptionTable(row())
+
+    class Failing(FakeProvider):
+        def create_subscription(self, **kwargs):
+            self.calls.append(kwargs)
+            raise BillingError(502, "Billing provider rejected the request")
+
+    with pytest.raises(BillingError):
+        create_checkout(
+            {"plan_id": "MONTHLY"},
+            ORG_A,
+            table,
+            lambda: Failing(),
+            links=LINKS,
+            plans=purchasable_plans("MONTHLY"),
+            now=NOW,
+        )
+
+    assert table.items[ORG_A]["plan_id"] == "FREE_TRIAL"
+    assert table.items[ORG_A]["subscription_status"] == "TRIALING"
+    assert "pending_plan_id" not in table.items[ORG_A]
 
 
 def test_unknown_plan_is_rejected():

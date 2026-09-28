@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 from .errors import BillingError
-from .models import format_utc
+from .models import format_utc, lifecycle_keys
 from .summary import billing_summary
 from .transitions import change_subscription_status
 
@@ -73,11 +73,19 @@ def _mark_period_end(subscriptions, organization_id, current, now):
         ":sid": current.get("provider_subscription_id"),
         ":open": False,
     }
+    sets = ["cancel_at_period_end = :flag", "updated_at = :updated"]
+    indexed = lifecycle_keys("ACTIVE", "", True, current.get("current_period_end") or "")
+
+    if indexed["lifecycle_partition"]:
+        sets.append("lifecycle_partition = :lifecycle_partition")
+        sets.append("lifecycle_due_at = :lifecycle_due_at")
+        values[":lifecycle_partition"] = indexed["lifecycle_partition"]
+        values[":lifecycle_due_at"] = indexed["lifecycle_due_at"]
 
     try:
         subscriptions.update_item(
             Key={"organization_id": organization_id},
-            UpdateExpression="SET cancel_at_period_end = :flag, updated_at = :updated",
+            UpdateExpression="SET " + ", ".join(sets),
             ConditionExpression=(
                 "subscription_status = :status AND "
                 "provider_subscription_id = :sid AND "

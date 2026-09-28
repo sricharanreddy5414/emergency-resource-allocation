@@ -54,6 +54,7 @@ def test_states_and_non_purchasable_plans_are_represented():
         "Cancellation scheduled",
         "Not currently available",
         "No billing events yet.",
+        "awaiting confirmation",
         "BILLING_REQUIRED",
         "Subscription required for this operation.",
     ):

@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 from .errors import BillingError
-from .models import format_utc, item_for_storage, validate_billing_event
+from .models import COMMERCIAL_PLAN_IDS, format_utc, item_for_storage, lifecycle_keys, validate_billing_event
+from .plans import get_plan
 from .provider.razorpay import parse_webhook, signatures_match
 from .transitions import change_subscription_status
 
@@ -199,6 +200,7 @@ def _save_transition(subscriptions, current, parsed, changing):
         values[":period_end"] = parsed["period_end"]
 
     cancel_flag = parsed["cancel_at_period_end"]
+    resulting_cancel = current.get("cancel_at_period_end") is True
 
     if changing and target == "CANCELLED":
         sets.append("cancelled_at = :cancelled_at")
@@ -207,17 +209,35 @@ def _save_transition(subscriptions, current, parsed, changing):
         if cancel_flag is not None:
             sets.append("cancel_at_period_end = :cancel_at_period_end")
             values[":cancel_at_period_end"] = cancel_flag
+            resulting_cancel = cancel_flag
     elif changing and target == "ACTIVE":
+        resulting_cancel = False if cancel_flag is None else cancel_flag
         sets.append("cancel_at_period_end = :cancel_at_period_end")
-        values[":cancel_at_period_end"] = False if cancel_flag is None else cancel_flag
+        values[":cancel_at_period_end"] = resulting_cancel
+        _apply_pending_plan(current, sets, values)
     elif cancel_flag is not None:
+        resulting_cancel = cancel_flag
         sets.append("cancel_at_period_end = :cancel_at_period_end")
         values[":cancel_at_period_end"] = cancel_flag
+
+    resulting_status = target if changing else current.get("subscription_status")
+    removes = _lifecycle_assignment(
+        sets,
+        values,
+        resulting_status,
+        current.get("trial_end") or "",
+        resulting_cancel,
+        parsed["period_end"] or current.get("current_period_end") or "",
+    )
+    expression = "SET " + ", ".join(sets)
+
+    if removes:
+        expression += " REMOVE " + ", ".join(removes)
 
     try:
         subscriptions.update_item(
             Key={"organization_id": current["organization_id"]},
-            UpdateExpression="SET " + ", ".join(sets),
+            UpdateExpression=expression,
             ConditionExpression="#status = :expected AND provider_subscription_id = :sid",
             ExpressionAttributeNames=names,
             ExpressionAttributeValues=values,
@@ -232,6 +252,35 @@ def _save_transition(subscriptions, current, parsed, changing):
 
         if fresh.get("subscription_status") != target:
             raise
+
+
+def _apply_pending_plan(current, sets, values):
+    """Promote a checkout selection only when the provider confirms ACTIVE."""
+    pending = str(current.get("pending_plan_id") or "").strip()
+
+    if pending not in COMMERCIAL_PLAN_IDS:
+        return
+
+    plan = get_plan(pending)
+    sets.append("plan_id = :plan_id")
+    sets.append("billing_interval = :interval")
+    sets.append("pending_plan_id = :pending_cleared")
+    values[":plan_id"] = plan["plan_id"]
+    values[":interval"] = plan["billing_interval"]
+    values[":pending_cleared"] = ""
+
+
+def _lifecycle_assignment(sets, values, status, trial_end, cancel_at_period_end, period_end):
+    indexed = lifecycle_keys(status, trial_end, cancel_at_period_end, period_end)
+
+    if indexed["lifecycle_partition"]:
+        sets.append("lifecycle_partition = :lifecycle_partition")
+        sets.append("lifecycle_due_at = :lifecycle_due_at")
+        values[":lifecycle_partition"] = indexed["lifecycle_partition"]
+        values[":lifecycle_due_at"] = indexed["lifecycle_due_at"]
+        return []
+
+    return ["lifecycle_partition", "lifecycle_due_at"]
 
 
 def _finish(events, event_id, parsed, outcome, now):
