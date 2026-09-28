@@ -8,6 +8,7 @@ from access import (
     OPERATE_ROLES,
     READ_ROLES,
     AccessError,
+    access_body,
     authorize,
     query_by_organization,
     query_history,
@@ -117,8 +118,14 @@ def lambda_handler(event, context):
 
     try:
         body = parse_body(event) if method in {"POST", "PUT"} else {}
-        roles = OPERATE_ROLES if method in {"POST", "PUT"} else READ_ROLES
-        _user_sub, membership = authorize(event, body, allowed_roles=roles)
+        writing = method in {"POST", "PUT"}
+        roles = OPERATE_ROLES if writing else READ_ROLES
+        _user_sub, membership = authorize(
+            event,
+            body,
+            allowed_roles=roles,
+            access="write" if writing else "read",
+        )
         organization_id = membership["organization_id"]
 
         if method == "POST" and path.endswith("/release"):
@@ -138,7 +145,7 @@ def lambda_handler(event, context):
 
         return response(405, {"message": "Method not allowed"})
     except AccessError as error:
-        return response(error.status_code, {"message": error.message})
+        return response(error.status_code, access_body(error))
     except json.JSONDecodeError:
         return response(400, {"message": "Invalid JSON body"})
     except ValueError as error:

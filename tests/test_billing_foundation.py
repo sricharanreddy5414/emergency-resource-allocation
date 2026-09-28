@@ -248,11 +248,11 @@ def test_payment_instrument_is_rejected():
     assert error.value.status_code == 400
 
 
-def test_missing_subscription_means_legacy_access_without_touching_authorization():
+def test_missing_subscription_means_legacy_access_without_a_local_state_machine():
     assert access_when_subscription_missing() == "grandfathered"
     source = (ROOT / "src" / "shared" / "access.py").read_text(encoding="utf-8")
-    assert "OrganizationSubscriptions" not in source
-    assert "subscription_status" not in source
+    assert "TRANSITIONS" not in source
+    assert "is_operational_write_allowed" in source
 
 
 def _event(**extra):

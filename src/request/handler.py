@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
 
-from access import REQUEST_ROLES, AccessError, authorize, require_location, require_owned
+from access import REQUEST_ROLES, AccessError, access_body, authorize, require_location, require_owned
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
@@ -127,7 +127,7 @@ def lambda_handler(event, context):
     try:
         body = load_object(event.get("body") or {}, event.get("isBase64Encoded"))
 
-        _user_sub, membership = authorize(event, body, allowed_roles=REQUEST_ROLES)
+        _user_sub, membership = authorize(event, body, allowed_roles=REQUEST_ROLES, access="write")
         organization_id = membership["organization_id"]
         request_id = str(body.get("request_id", "")).strip()
         request_type_id = str(body.get("request_type_id") or "").strip()
@@ -198,7 +198,7 @@ def lambda_handler(event, context):
         )
         return response(201, {"message": "Request created successfully", "request": item})
     except AccessError as error:
-        return response(error.status_code, {"message": error.message})
+        return response(error.status_code, access_body(error))
     except json.JSONDecodeError:
         return response(400, {"message": "Invalid JSON request body"})
     except ValueError as error:

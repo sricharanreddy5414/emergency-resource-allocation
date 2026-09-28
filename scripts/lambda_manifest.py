@@ -33,6 +33,8 @@ SHARED = {
     "visibility.py": "src/shared/visibility.py",
     "matching.py": "src/shared/matching.py",
     "observability.py": "src/shared/observability.py",
+    "billing/__init__.py": "src/billing/__init__.py",
+    "billing/entitlements.py": "src/billing/entitlements.py",
 }
 
 PACKAGES = {
@@ -60,6 +62,7 @@ PACKAGES = {
         "billing/models.py": "src/billing/models.py",
         "billing/plans.py": "src/billing/plans.py",
         "billing/transitions.py": "src/billing/transitions.py",
+        "billing/entitlements.py": "src/billing/entitlements.py",
         "handler.py": "src/organization/handler.py",
     },
     "erap-get-organization": {
@@ -68,6 +71,8 @@ PACKAGES = {
         "access.py": "src/shared/access.py",
         "member_admin.py": "src/organization/member_admin.py",
         "observability.py": "src/shared/observability.py",
+        "billing/__init__.py": "src/billing/__init__.py",
+        "billing/entitlements.py": "src/billing/entitlements.py",
         "get_handler.py": "src/organization/get_handler.py",
     },
 }
@@ -96,6 +101,7 @@ BILLING_PACKAGES = {
         "observability.py": "src/shared/observability.py",
         "billing/__init__.py": "src/billing/__init__.py",
         "billing/errors.py": "src/billing/errors.py",
+        "billing/entitlements.py": "src/billing/entitlements.py",
         "billing/models.py": "src/billing/models.py",
         "billing/plans.py": "src/billing/plans.py",
         "billing/transitions.py": "src/billing/transitions.py",

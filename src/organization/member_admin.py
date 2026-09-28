@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from access import MANAGE_ROLES, AccessError, authorize
+from access import MANAGE_ROLES, AccessError, access_body, authorize
 from common import api_response
 
 ASSIGNABLE_ROLES = {"ADMIN", "OPERATOR", "MEMBER"}
@@ -244,7 +244,7 @@ def _update(organization_id, user_sub, fields, expected_role, expected_status):
 
 def _manage(event, body):
     try:
-        actor_sub, membership = authorize(event, body, allowed_roles=MANAGE_ROLES)
+        actor_sub, membership = authorize(event, body, allowed_roles=MANAGE_ROLES, access="write")
     except AccessError:
         raise
 
@@ -345,7 +345,7 @@ def handle_member_read(event):
     try:
         _actor, membership = authorize(event, allowed_roles=MANAGE_ROLES)
     except AccessError as error:
-        return api_response(error.status_code, {"message": error.message})
+        return api_response(error.status_code, access_body(error))
 
     organization_id = membership["organization_id"]
     rows = _query_members(organization_id)
@@ -384,7 +384,7 @@ def handle_member_operation(event, body, actor_sub, audit_table):
 
         return api_response(400, {"message": "Membership operation is invalid"})
     except AccessError as error:
-        return api_response(error.status_code, {"message": error.message})
+        return api_response(error.status_code, access_body(error))
     except ValueError as error:
         return api_response(400, {"message": str(error)})
     except ClientError as error:

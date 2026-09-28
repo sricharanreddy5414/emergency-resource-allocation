@@ -185,6 +185,30 @@ The authenticated function's specified IAM is membership get and query, get and 
 
 A later frontend can call these routes. It should display `next_action` and `purchasable` from the API instead of deciding them locally.
 
+## Phase F — Subscription enforcement
+
+Enforcement is in `authorize`, after the Cognito subject, active membership, organization selector, `Organizations.status`, and role checks. The billing rules live in `billing.entitlements`. Handlers pass `access="read"`, `access="write"`, or `access="billing"`. They do not each decide the subscription state. `Organizations.status` is not changed and is not used as the billing state.
+
+A missing `OrganizationSubscriptions` row is `GRANDFATHERED`. Authorization does not create that row. An existing row uses the stored status. A billing lookup failure on a write returns 500 `Unable to verify billing` and does not treat the organization as grandfathered.
+
+| Stored state | Reads | Operational writes | Billing API |
+| --- | --- | --- | --- |
+| missing row | allowed | allowed | allowed by Phase E role |
+| `GRANDFATHERED` | allowed | allowed | allowed by Phase E role |
+| `TRIALING` | allowed | allowed | allowed by Phase E role |
+| `ACTIVE` | allowed | allowed | allowed by Phase E role |
+| `PAST_DUE` | allowed | allowed | allowed by Phase E role |
+| `CANCELLED` | allowed | blocked | allowed by Phase E role |
+| `EXPIRED` | allowed | blocked | allowed by Phase E role |
+
+`ACTIVE` with `cancel_at_period_end` stays writable through `current_period_end`. Authorization does not move it to `CANCELLED` when the period ends. The webhook remains the status change. Once the stored status is `CANCELLED` or `EXPIRED`, operational writes are blocked even if older cancellation fields remain. `PAST_DUE` has no extra grace timestamp and stays writable.
+
+Reads do not query the subscription table, because every recognized state allows them. Writes query `organization_id` once. Billing routes pass `access="billing"`, so an `EXPIRED` organization can still open billing, including owner checkout and cancel. `ADMIN` checkout and cancel stay 403. Public resource discovery and the auto-release job are unchanged.
+
+Blocked writes return 403 with code `BILLING_REQUIRED` and the message `An active subscription is required for this operation`. The body includes `request_id`. It does not include provider ids or secrets.
+
+The write routes that pass `access="write"` are location create, update, and deactivate; resource create, update, and release; request create and update; allocation; resource-type and request-type changes; and member invite, role change, deactivate, reactivate, and invitation acceptance. Creating an organization does not pass through this check.
+
 ## What this phase does not implement
 
-EventBridge expiry, write enforcement, the billing screen, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, and enabling live Razorpay.
+EventBridge expiry, the billing screen, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating or deploying the billing routes, creating the Razorpay test secret, and enabling live Razorpay.

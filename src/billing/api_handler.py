@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from access import AccessError, authorize
+from access import AccessError, access_body, authorize
 from billing.cancel import request_cancellation
 from billing.checkout import create_checkout
 from billing.errors import BillingError
@@ -75,11 +75,11 @@ def lambda_handler(event, context):
     roles = OWNER_ROLES if (method, path) in {("POST", "/billing/checkout"), ("POST", "/billing/cancel")} else VIEW_ROLES
 
     try:
-        _user_sub, membership = authorize(event, body, allowed_roles=roles)
+        _user_sub, membership = authorize(event, body, allowed_roles=roles, access="billing")
         organization_id = membership["organization_id"]
         result = _dispatch(method, path, body, organization_id)
     except AccessError as error:
-        return api_response(error.status_code, {"message": error.message})
+        return api_response(error.status_code, access_body(error))
     except BillingError as error:
         return api_response(error.status_code, {"message": error.message})
 

@@ -7,6 +7,7 @@ from access import (
     OPERATE_ROLES,
     READ_ROLES,
     AccessError,
+    access_body,
     authorize,
     query_by_organization,
     require_location,
@@ -107,8 +108,14 @@ def lambda_handler(event, context):
 
     try:
         body = parse_body(event) if method == "POST" else {}
-        roles = OPERATE_ROLES if method == "POST" else READ_ROLES
-        _user_sub, membership = authorize(event, body, allowed_roles=roles)
+        writing = method == "POST"
+        roles = OPERATE_ROLES if writing else READ_ROLES
+        _user_sub, membership = authorize(
+            event,
+            body,
+            allowed_roles=roles,
+            access="write" if writing else "read",
+        )
         organization_id = membership["organization_id"]
         query = event.get("queryStringParameters") or {}
         location_id = str(query.get("location_id") or "").strip()
@@ -151,7 +158,7 @@ def lambda_handler(event, context):
 
         return response(405, {"message": "Method not allowed"})
     except AccessError as error:
-        return response(error.status_code, {"message": error.message})
+        return response(error.status_code, access_body(error))
     except json.JSONDecodeError:
         return response(400, {"message": "Invalid request format"})
     except ValueError:
@@ -185,7 +192,7 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         try:
             attributes = validate_attributes(body.get("attributes") or {}, request_type.get("attributes_schema"))
         except AccessError as error:
-            return response(error.status_code, {"message": error.message})
+            return response(error.status_code, access_body(error))
 
         resource_type = resource_type or request_type.get("name", "")
         matching_config = request_type.get("matching_config") or {}

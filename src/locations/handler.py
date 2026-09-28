@@ -7,6 +7,7 @@ from access import (
     LOCATION_WRITE_ROLES,
     READ_ROLES,
     AccessError,
+    access_body,
     authorize,
     query_by_organization,
     require_location,
@@ -105,8 +106,14 @@ def lambda_handler(event, context):
         if method in {"POST", "PUT", "PATCH"}:
             body = parse_json_body(event)
 
-        allowed = LOCATION_WRITE_ROLES if method in {"POST", "PUT", "PATCH", "DELETE"} else READ_ROLES
-        user_sub, membership = authorize(event, body, allowed_roles=allowed)
+        writing = method in {"POST", "PUT", "PATCH", "DELETE"}
+        allowed = LOCATION_WRITE_ROLES if writing else READ_ROLES
+        user_sub, membership = authorize(
+            event,
+            body,
+            allowed_roles=allowed,
+            access="write" if writing else "read",
+        )
         organization_id = membership["organization_id"]
 
         if method == "GET" and not path_location_id(event):
@@ -223,7 +230,7 @@ def lambda_handler(event, context):
         return api_response(405, {"message": "Method not allowed"})
 
     except AccessError as error:
-        return api_response(error.status_code, {"message": error.message})
+        return api_response(error.status_code, access_body(error))
     except ValueError as error:
         return api_response(400, {"message": str(error)})
     except ClientError as error:

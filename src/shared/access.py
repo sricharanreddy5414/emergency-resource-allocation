@@ -1,7 +1,11 @@
 """Tenant authorization. Cognito claims and DynamoDB membership are authoritative."""
 
-from boto3.dynamodb.conditions import Key
+import os
 
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
+
+from billing.entitlements import is_operational_write_allowed
 from common import get_user_sub
 from membership import list_memberships
 
@@ -14,11 +18,35 @@ ORGANIZATION_INDEX = "OrganizationLocationIndex"
 RESOURCE_HISTORY_INDEX = "ResourceIdIndex"
 
 
+READ_ACCESS = "read"
+WRITE_ACCESS = "write"
+BILLING_ACCESS = "billing"
+BILLING_REQUIRED = "An active subscription is required for this operation"
+
+
 class AccessError(Exception):
-    def __init__(self, status_code, message):
+    def __init__(self, status_code, message, code=None):
         super().__init__(message)
         self.status_code = status_code
         self.message = message
+        self.code = code
+
+
+def access_body(error):
+    body = {"message": error.message}
+
+    if getattr(error, "code", None):
+        body["code"] = error.code
+
+    return body
+
+
+def subscriptions_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table(
+        os.environ.get("SUBSCRIPTIONS_TABLE", "OrganizationSubscriptions")
+    )
 
 
 def requested_organization_id(event, body=None):
@@ -40,7 +68,15 @@ def requested_organization_id(event, body=None):
     return value or None
 
 
-def authorize(event, body=None, allowed_roles=READ_ROLES, members=None, organizations=None):
+def authorize(
+    event,
+    body=None,
+    allowed_roles=READ_ROLES,
+    members=None,
+    organizations=None,
+    access=READ_ACCESS,
+    subscriptions=None,
+):
     """Return (user_sub, membership). Fail closed."""
     user_sub = get_user_sub(event)
 
@@ -84,7 +120,25 @@ def authorize(event, body=None, allowed_roles=READ_ROLES, members=None, organiza
     if role not in allowed_roles:
         raise AccessError(403, "You are not allowed to perform this action")
 
+    if access == WRITE_ACCESS:
+        _require_operational_write(membership["organization_id"], subscriptions)
+    elif access not in {READ_ACCESS, BILLING_ACCESS}:
+        raise AccessError(500, "Unable to verify billing")
+
     return user_sub, membership
+
+
+def _require_operational_write(organization_id, subscriptions):
+    table = subscriptions if subscriptions is not None else subscriptions_table()
+
+    try:
+        item = table.get_item(Key={"organization_id": organization_id}).get("Item")
+    except ClientError as error:
+        print("Billing entitlement read failed:", error.response["Error"]["Code"])
+        raise AccessError(500, "Unable to verify billing")
+
+    if not is_operational_write_allowed(item):
+        raise AccessError(403, BILLING_REQUIRED, code="BILLING_REQUIRED")
 
 
 def require_location(locations_table, organization_id, location_id):

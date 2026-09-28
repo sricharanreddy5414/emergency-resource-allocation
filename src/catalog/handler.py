@@ -7,6 +7,7 @@ from botocore.exceptions import ClientError
 from access import (
     READ_ROLES,
     AccessError,
+    access_body,
     authorize,
     query_by_organization,
 )
@@ -186,8 +187,14 @@ def lambda_handler(event, context):
 
     try:
         body = parse_json_body(event) if method in {"POST", "PUT", "PATCH"} else {}
-        roles = CATALOG_WRITE_ROLES if method in {"POST", "PUT", "PATCH", "DELETE"} else READ_ROLES
-        user_sub, membership = authorize(event, body, allowed_roles=roles)
+        writing = method in {"POST", "PUT", "PATCH", "DELETE"}
+        roles = CATALOG_WRITE_ROLES if writing else READ_ROLES
+        user_sub, membership = authorize(
+            event,
+            body,
+            allowed_roles=roles,
+            access="write" if writing else "read",
+        )
         organization_id = membership["organization_id"]
         params = event.get("pathParameters") or {}
         type_id = str(params.get(spec["id_name"]) or "").strip()
@@ -209,7 +216,7 @@ def lambda_handler(event, context):
 
         return response(405, {"message": "Method not allowed"})
     except AccessError as error:
-        return response(error.status_code, {"message": error.message})
+        return response(error.status_code, access_body(error))
     except ClientError as error:
         print("Catalog error:", error.response["Error"]["Code"])
         return response(500, {"message": "Unable to update configuration"})

@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from access import AccessError, authorize
+from access import AccessError, access_body, authorize
 from billing.checkout import create_checkout
 from billing.errors import BillingError
 from billing.provider.razorpay import RazorpaySubscriptionProvider, load_test_secret
@@ -42,9 +42,9 @@ def lambda_handler(event, context):
         return api_response(400, {"message": "Invalid JSON body"})
 
     try:
-        _user_sub, membership = authorize(event, body, allowed_roles={"OWNER"})
+        _user_sub, membership = authorize(event, body, allowed_roles={"OWNER"}, access="billing")
     except AccessError as error:
-        return api_response(error.status_code, {"message": error.message})
+        return api_response(error.status_code, access_body(error))
 
     try:
         result = create_checkout(
