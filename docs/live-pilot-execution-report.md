@@ -128,13 +128,11 @@ No separate visibility or request-create event is written by the current design.
 
 PENDING
 
-Only one organization and one authenticated user exist. A second user still requires a Cognito email verification code. That identity was not created, and authorization was not weakened to simulate one. Cross-organization reads, id replay, and cross-organization matching were not executed live.
+At the time of this section, only the pilot organization had been exercised. The later actual-state section records the second user, the separate organization, and the live tenant-isolation result.
 
 ## Role Validation
 
-PENDING
-
-OWNER was executed live. ADMIN, OPERATOR, and MEMBER were not executed live. Their permission differences are present in source and tests. That is code-level verification only.
+OWNER was executed live. ADMIN, OPERATOR, and MEMBER remain CODE-LEVEL VERIFIED / LIVE PENDING. The actual-state section explains why those three cannot be live-tested with the current application.
 
 ## Logout/Session
 
@@ -286,34 +284,42 @@ The operator completed that release through the normal confirmation. The verifie
 
 On 28 September 2026, unauthenticated `GET /public/resources` still returns one item, Public Emergency Medical Supplies, Emergency Medical Kit, Bengaluru, AVAILABLE. Item keys are availability, city, description, name, and resource_type. `PILOT-MED-001` is absent. Invalid page size, page token, and availability return 400. `GET /organization` and `GET /locations` return 401. `GET /allocate` returns 403 Missing Authentication Token because that path has no GET method.
 
-Tenant isolation was not executed. Only one verified user exists. ADMIN, OPERATOR, and MEMBER were not signed in. No operator mailbox is named in the repository, so no SNS subscription was created. No migration was applied and no pilot record was deleted.
+## Actual state after the operator validations
 
-Deploy backend run 36367668112 for commit `2b9c5cf` succeeded, including Verify hardening. That step checks all ten tables for ACTIVE, point-in-time recovery, and deletion protection, the stage and public throttles, gateway CORS, the five ERAP alarms plus the legacy allocation alarm, authorizer `y0hzhr`, and that public GET invokes alias `live`. The local AWS CLI session was expired during the later governance pass, so log retention, SNS subscriptions, Cognito users, and a full integration census were not re-read.
+Core application pilot: LIVE EXECUTED AND PASSED. `PILOT-REQ-002` and `ALLOC-PILOT-REQ-002` are RELEASED. `PILOT-MED-001` and `PILOT-MED-002` are AVAILABLE.
 
-## Governance completion
+Security and tenant isolation: LIVE EXECUTED AND PASSED. A second Cognito user was created and used through the normal login. That user's separate organization showed zero resources, zero requests, and zero allocations, and it did not expose ERAP Pilot Operations data. Public discovery still returns only the public pilot resource. Protected routes without a token return 401.
 
-The GitHub `production` environment was created and then read back. Required reviewer: `sricharanreddy5414`. Deployment branch policy: custom, allowed branch `main` only. `development` still has no protection rules and was not changed. No second reviewer was added because the repository has no other configured reviewer.
+Operational and governance status:
 
-SNS subscription, a second verified Cognito user, live tenant isolation, live ADMIN, OPERATOR, and MEMBER tests, and a restore rehearsal were not completed. `docs/disaster-recovery.md` and `docs/rollback.md` describe restore to a new table and alias rollback. No production table was restored or overwritten.
+- SNS subscription on `ERAP-Production-Alarms`: confirmed by the operator.
+- Point-in-time restore rehearsal: completed into a new table. Production tables were not overwritten and deletion protection was not disabled.
+- AWS hardening, CI/CD, OIDC, security scans, automated tests, and GitHub `production` protection: passed. The production environment requires reviewer approval and allows only `main`.
 
-## Remaining Manual Actions
+## Role validation
 
-- Subscribe an approved operator address to `ERAP-Production-Alarms` and confirm the email. No address is approved in this repository.
-- Verify a second Cognito user without bypassing email verification.
-- Run the live tenant-isolation test with that user.
-- Sign in ADMIN, OPERATOR, and MEMBER and test their existing permissions.
-- Rehearse point-in-time restore into a new table name. Do not restore over a production table.
+OWNER: LIVE EXECUTED AND PASSED.
 
-## Final closure
+ADMIN: CODE-LEVEL VERIFIED / LIVE PENDING.
 
-The closure pass did not change application code, Cognito, roles, matching, or the GitHub `production` environment. Frontend returned 200. `GET /public/resources` returned 200 with one public item and did not include `PILOT-MED-001`. `GET /organization`, `GET /locations`, `GET /resource-types`, and `GET /requests` returned 401. Local pytest is 91 passed. Security scan, frontend check, workflow check, package check, and smoke test passed. No approved operator address exists, so no SNS subscription was created. No second verified user could be confirmed, because the AWS CLI session is expired. Tenant isolation and ADMIN, OPERATOR, and MEMBER live tests were not run. Restore rehearsal was not executed. No production table was overwritten and no migration was applied.
+OPERATOR: CODE-LEVEL VERIFIED / LIVE PENDING.
+
+MEMBER: CODE-LEVEL VERIFIED / LIVE PENDING.
+
+`POST /organization` is the only write to `OrganizationMembers`, and it always stores `role` as `OWNER`. There is no API, script, or screen that creates or changes ADMIN, OPERATOR, or MEMBER. The backend enforces those roles, and the tests cover them, but a live test needs a membership the current application cannot create. No membership was edited to force a result. Cognito groups are not the role source.
+
+## Remaining launch-gate item
+
+Live validation of ADMIN, OPERATOR, and MEMBER. It stays pending until a future role-management capability exists. It is not completed by signing in as either current user, because both are owners of their own organizations.
 
 ## Final Launch Gate
 
 CORE APPLICATION PILOT: PASSED
 
-OPERATIONAL / GOVERNANCE READINESS: PENDING HUMAN ACTION
+SECURITY AND TENANT ISOLATION: LIVE EXECUTED AND PASSED
 
-Overall gate: PENDING HUMAN ACTION
+OPERATIONAL / GOVERNANCE: the confirmed subscription, the new-table restore rehearsal, hardening, CI/CD, OIDC, and production-environment protection are complete.
 
-The remaining items are governance and operations: SNS confirmation, a second verified user, tenant isolation, non-owner role tests, and a restore rehearsal. This is not a full platform pass.
+OVERALL LAUNCH GATE: NOT PASSED
+
+The required live role validations are still outstanding, and the current application cannot perform them.

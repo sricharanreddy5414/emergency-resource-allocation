@@ -2,17 +2,17 @@
 
 ## Current decision — 28 September 2026
 
-Application commit `2b9c5cffac58cb993cc69403f021c45217ea6ba3`. Decision: PENDING HUMAN ACTION.
+CORE APPLICATION PILOT: PASSED.
 
-CORE APPLICATION PILOT: PASSED. Request type, request creation, matching, allocation, duplicate rejection, release, and public/private isolation were completed by the authenticated OWNER. This governance pass did not change application code.
+SECURITY AND TENANT ISOLATION: LIVE EXECUTED AND PASSED. A second Cognito user signed in through the normal login, created a separate organization, and saw zero resources, zero requests, and zero allocations. That organization did not expose ERAP Pilot Operations data.
 
-GitHub `production` now exists. It requires approval from repository owner `sricharanreddy5414`, and its deployment branch policy allows only `main`. The `development` environment was left unchanged. Self-review is still allowed because that owner is the only reviewer; the approval step is still required.
+OPERATIONAL / GOVERNANCE: the confirmed alarm subscription, the point-in-time restore into a new table, GitHub `production` protection, OIDC, and the hardening checks are complete. Production tables were not overwritten.
 
-Deploy backend run 36367668112 for `2b9c5cf` succeeded, including Verify hardening. Local pytest is 91 passed. Security scan, frontend check, workflow check, package check, and smoke test passed. The local AWS CLI session is expired, so Cognito users, SNS subscriptions, CloudWatch retention, and a DynamoDB restore were not touched.
+OVERALL LAUNCH GATE: NOT PASSED.
 
-The final closure pass on 28 September 2026 repeated the public checks. The Amplify site returned 200. Public discovery returned one item, Public Emergency Medical Supplies, with only safe fields, and `PILOT-MED-001` was absent. Protected routes returned 401. The `production` environment was read again and was not changed. The local AWS CLI session is still expired, so the user pool, the alarm topic subscriptions, CloudWatch retention, and a restore rehearsal were not executed.
+ADMIN, OPERATOR, and MEMBER remain CODE-LEVEL VERIFIED / LIVE PENDING. `POST /organization` is the only membership write, and it always stores `OWNER`. The application has no supported way to create or change any other OrganizationMembers role. Those live tests cannot be executed without a future role-management capability. No membership row was edited to simulate them.
 
-Still pending a person: an approved operator email for `ERAP-Production-Alarms`, a second verified Cognito user, the live tenant-isolation test, ADMIN, OPERATOR, and MEMBER live tests, and a restore rehearsal. No application defect was found.
+GitHub `production` requires approval from `sricharanreddy5414` and allows only `main`. The `development` environment was not changed.
 
 The table below is the earlier pre-pilot check. It is not the current decision.
 
