@@ -959,9 +959,9 @@ function updateUserInterface() {
 
     const membersPanel = $("organizationMembersPanel");
 
-    if (membersPanel) {
+    if (membersPanel && !canManageMembers()) {
 
-        membersPanel.hidden = !canManageMembers();
+        membersPanel.hidden = true;
 
     }
 
@@ -1282,7 +1282,7 @@ function escapeHtml(value) {
 const pageTitles = {
 
     dashboard:
-        "Overview",
+        "Operations",
 
     admin:
         "Organization",
@@ -1419,19 +1419,17 @@ function navigateTo(sectionId) {
     );
 
 
-    const navItem =
-        document.querySelector(
+    document
+        .querySelectorAll(
             `.nav-item[data-section="${sectionId}"]`
-        );
+        )
+        .forEach(navItem => {
 
+            navItem.classList.add(
+                "active"
+            );
 
-    if (navItem) {
-
-        navItem.classList.add(
-            "active"
-        );
-
-    }
+        });
 
 
     if ($("pageTitle")) {
@@ -1510,6 +1508,97 @@ function navigateTo(sectionId) {
 /* =========================================================
    NAVIGATION INITIALIZATION
 ========================================================= */
+
+function initializeAdminDesk() {
+
+    const root = $("admin");
+
+    if (!root || typeof root.querySelectorAll !== "function") {
+        return;
+    }
+
+    const buttons = root.querySelectorAll("[data-desk]");
+    const panels = root.querySelectorAll("[data-desk-panel]");
+
+    function show(name) {
+
+        panels.forEach(panel => {
+
+            if (panel.id === "organizationMembersPanel" && !canManageMembers()) {
+                panel.hidden = true;
+                return;
+            }
+
+            panel.hidden = panel.dataset.deskPanel !== name;
+
+        });
+
+        buttons.forEach(button => {
+            button.classList.toggle("is-on", button.dataset.desk === name);
+        });
+
+    }
+
+    buttons.forEach(button => {
+        button.addEventListener("click", () => show(button.dataset.desk));
+    });
+
+    show("brief");
+
+}
+
+
+function initializeResourceDesk() {
+
+    const table = $("resourcesPageTable");
+    const desk = $("resourceDesk");
+
+    if (!table || !desk || table.dataset.bound === "1") {
+        return;
+    }
+
+    table.dataset.bound = "1";
+
+    table.addEventListener("click", event => {
+
+        if (event.target.closest("button")) {
+            return;
+        }
+
+        const row = event.target.closest("tr");
+        const resource = resources.find(item => item.id === row?.dataset.resourceId);
+
+        if (!resource) {
+            return;
+        }
+
+        const name = $("resourceDeskName");
+        const meta = $("resourceDeskMeta");
+
+        if (name) {
+            name.textContent = resource.name || resource.type || "Resource";
+        }
+
+        if (meta) {
+            meta.textContent = [
+                resource.type,
+                resource.location,
+                getResourceStatus(resource),
+                resource.visibility || "PRIVATE",
+                resource.id
+            ].filter(Boolean).join(" · ");
+        }
+
+        desk.hidden = false;
+
+    });
+
+    $("resourceDeskClose")?.addEventListener("click", () => {
+        desk.hidden = true;
+    });
+
+}
+
 
 function initializeNavigation() {
 
@@ -1639,16 +1728,12 @@ function renderNotifications() {
 
             <div class="empty-state">
 
-                <div class="empty-icon">
-                    ✓
-                </div>
-
                 <h3>
                     No notifications
                 </h3>
 
                 <p>
-                    New platform events will appear here.
+                    Allocation and request messages from this session appear here.
                 </p>
 
             </div>
@@ -1665,11 +1750,7 @@ function renderNotifications() {
             .map(
                 notification => `
 
-                    <div class="notification-item">
-
-                        <div class="notification-icon">
-                            ✓
-                        </div>
+                    <article class="notification-item">
 
                         <div>
 
@@ -1685,9 +1766,17 @@ function renderNotifications() {
                                 )}
                             </p>
 
+                            <time>
+                                ${escapeHtml(
+                                    notification.time
+                                        ? new Date(notification.time).toLocaleString()
+                                        : ""
+                                )}
+                            </time>
+
                         </div>
 
-                    </div>
+                    </article>
 
                 `
             )
@@ -2900,26 +2989,10 @@ function renderAnalyticsBars(
                         );
 
                     return `
-                        <div class="analytics-bar-row">
-
-                            <span class="analytics-bar-label">
-                                ${item.label}
-                            </span>
-
-                            <div class="analytics-bar-track">
-
-                                <div
-                                    class="analytics-bar-fill"
-                                    style="width: ${percentage}%"
-                                ></div>
-
-                            </div>
-
-                            <span class="analytics-bar-value">
-                                ${item.value}
-                            </span>
-
-                        </div>
+                        <p class="tally-line">
+                            <span>${item.label}</span>
+                            <b>${item.value}</b>
+                        </p>
                     `;
 
                 }
@@ -3153,7 +3226,7 @@ function renderResourcesPage() {
 
                     return `
 
-                        <tr>
+                        <tr data-resource-id="${escapeHtml(resource.id)}">
 
                             <td>
 
@@ -4793,6 +4866,11 @@ function renderAllocations() {
                                 "ALLOCATED"
                             ).toUpperCase();
 
+                        const rowClass =
+                            status === "RELEASED"
+                                ? "flow-released"
+                                : "flow-live";
+
                         const action =
                             status === "ALLOCATED"
 
@@ -4813,7 +4891,7 @@ function renderAllocations() {
 
                         return `
 
-                            <tr>
+                            <tr class="${rowClass}">
 
                                 <td>
                                     ${escapeHtml(
@@ -7864,6 +7942,10 @@ async function initializeApp() {
     initializeNavigation();
 
     initializeMobileMenu();
+
+    initializeAdminDesk();
+
+    initializeResourceDesk();
 
     initializeEvents();
 

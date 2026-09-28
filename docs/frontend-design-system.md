@@ -47,9 +47,9 @@ Transitions are about 180ms. `prefers-reduced-motion` removes animation and tran
 
 From 1100px, metric grids become two columns. From 780px, navigation collapses behind the menu button, the top bar stacks, and the profile name hides so the switchers remain usable.
 
-## Command layout
+## Dispatch desk
 
-Overview is an operations workspace. The primary actions are Create Request and Register Resource. Counts, the request queue, readiness, and recent requests or allocations come from data already loaded. The allocation form stays available under “Allocate an existing request” and is no longer the center of the page.
+The shell is a narrow operations rail and a context strip, not an admin sidebar with metric cards. Overview leads with the ready count, the current queue, readiness tallies, and movement already loaded from requests and allocations. Resources are an inventory with a selection panel. Requests are a queue. Allocations distinguish live and released rows. Organization management is split into Organization, resource types, request types, and team.
 
 ## What the interface does not do
 

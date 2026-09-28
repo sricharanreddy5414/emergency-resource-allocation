@@ -30,7 +30,7 @@
 ====================================================== -->
 
 <aside
-    class="sidebar"
+    class="sidebar rail"
     id="sidebar"
 >
 
@@ -183,7 +183,7 @@
      TOPBAR
 ====================================================== -->
 
-<header class="topbar">
+<header class="topbar context-strip">
 
 
     <div class="topbar-left">
@@ -195,23 +195,19 @@
             type="button"
             aria-label="Open menu"
         >
-            ☰
+            <span></span><span></span><span></span>
         </button>
 
 
-        <div>
+        <div class="where-block">
 
             <p class="welcome">
-                Emergency coordination
+                ERAP
             </p>
 
             <h1 id="pageTitle">
-                Overview
+                Operations
             </h1>
-
-            <p class="context-line" id="operationalContext">
-                Select an organization
-            </p>
 
         </div>
 
@@ -222,12 +218,18 @@
 
     <div class="topbar-right">
 
+        <p class="context-line" id="operationalContext">
+            Select an organization
+        </p>
 
-        <select
-            id="organizationSwitcher"
-            class="context-select"
-            aria-label="Organization"
-        ></select>
+        <label class="context-field">
+            Organization
+            <select
+                id="organizationSwitcher"
+                class="context-select"
+                aria-label="Organization"
+            ></select>
+        </label>
 
 
         <button
@@ -240,11 +242,14 @@
         </button>
 
 
-        <select
-            id="locationSwitcher"
-            class="context-select"
-            aria-label="Location"
-        ></select>
+        <label class="context-field">
+            Location
+            <select
+                id="locationSwitcher"
+                class="context-select"
+                aria-label="Location"
+            ></select>
+        </label>
 
 
         <button
@@ -319,88 +324,59 @@
 >
 
 
-    <header class="command-header">
-        <div>
-            <p class="panel-label">ERAP Operations</p>
-            <h2>Command center</h2>
-            <p id="commandContext" class="context-line">Organization and location appear here after sign-in.</p>
-            <p class="context-line">Operational state: <strong id="opsState">Awaiting organization</strong></p>
+    <header class="desk-mast">
+        <div class="desk-kicker">
+            <span>ERAP / Operations</span>
+            <strong id="opsState">Awaiting organization</strong>
         </div>
-        <div class="command-actions">
-            <button class="primary-btn" id="overviewCreateRequest" type="button">Create Request</button>
-            <button class="secondary-btn" id="registerResourceBtn" type="button">Register Resource</button>
-        </div>
-    </header>
-
-    <section class="snapshot" aria-label="Operational snapshot">
-        <div class="snapshot-primary">
-            <span class="panel-label">Resource readiness</span>
-            <strong id="availableResources">0</strong>
-            <p><span id="totalResources">0</span> registered · <span id="allocatedResources">0</span> allocated</p>
-            <div class="readiness-track" aria-hidden="true">
+        <h2 id="commandContext">No organization selected</h2>
+        <div class="desk-situation" aria-label="Operational snapshot">
+            <p class="situation-ready">
+                <span id="availableResources">0</span>
+                <em>ready</em>
+            </p>
+            <ul class="situation-notes">
+                <li><span id="totalResources">0</span> registered</li>
+                <li><span id="allocatedResources">0</span> allocated</li>
+                <li><span id="analyticsPendingRequests">0</span> waiting</li>
+                <li><span id="analyticsAllocatedRequests">0</span> in coordination</li>
+                <li><span id="analyticsTotalRequests">0</span> requests, <span id="analyticsReleasedRequests">0</span> released</li>
+            </ul>
+            <div class="spectrum" aria-hidden="true">
                 <span id="readinessAvailableBar"></span>
             </div>
         </div>
-        <div class="snapshot-secondary">
-            <div>
-                <span class="panel-label">Request load</span>
-                <strong id="analyticsPendingRequests">0</strong>
-                <p>Pending now</p>
-            </div>
-            <div>
-                <span class="panel-label">Active allocations</span>
-                <strong id="analyticsAllocatedRequests">0</strong>
-                <p><span id="analyticsTotalRequests">0</span> requests · <span id="analyticsReleasedRequests">0</span> released</p>
-            </div>
-        </div>
-    </section>
+    </header>
 
-    <section class="ops-workspace">
-        <div class="ops-main">
-            <div class="section-heading">
-                <div>
-                    <span class="panel-label">Active operations</span>
-                    <h2>Requests that need attention</h2>
-                </div>
+    <section class="desk-now">
+        <div class="desk-queue">
+            <div class="desk-head">
+                <h2>Operations now</h2>
+                <button class="primary-btn" id="overviewCreateRequest" type="button">Create request</button>
             </div>
             <div id="activeOperations"></div>
         </div>
-        <aside class="ops-side">
-            <div class="section-heading">
-                <div>
-                    <span class="panel-label">Resource readiness</span>
-                    <h2>Current inventory</h2>
-                </div>
-            </div>
+        <aside class="desk-readiness">
+            <h2>Readiness</h2>
             <div id="resourceStatusChart" class="analytics-chart"></div>
+            <h2>Requests</h2>
             <div id="requestStatusChart" class="analytics-chart"></div>
+            <h2>Priority</h2>
             <div id="priorityChart" class="analytics-chart"></div>
+            <button class="text-action" id="registerResourceBtn" type="button">Register resource</button>
         </aside>
     </section>
 
-    <section class="ops-lower">
-        <div>
-            <div class="section-heading">
-                <div>
-                    <span class="panel-label">Recent operations</span>
-                    <h2>What changed</h2>
-                </div>
-            </div>
-            <div id="recentOperations"></div>
-        </div>
-        <div>
-            <div class="section-heading">
-                <div>
-                    <span class="panel-label">Commands</span>
-                    <h2>Quick operations</h2>
-                </div>
-            </div>
-            <div class="command-row">
-                <button class="secondary-btn" id="refreshDataBtn" type="button">Refresh</button>
-                <button class="secondary-btn" id="viewAllocationsBtn" type="button">View Allocations</button>
-                <button class="secondary-btn" id="settingsBtn" type="button">Organization</button>
+    <section class="desk-feed">
+        <div class="desk-head">
+            <h2>Movement</h2>
+            <div class="text-actions">
+                <button class="text-action" id="refreshDataBtn" type="button">Refresh</button>
+                <button class="text-action" id="viewAllocationsBtn" type="button">Allocations</button>
+                <button class="text-action" id="settingsBtn" type="button">Organization</button>
             </div>
         </div>
+        <div id="recentOperations"></div>
     </section>
 
     <details class="allocate-drawer">
@@ -441,7 +417,7 @@
         <div id="result" class="result-box hidden"></div>
     </details>
 
-    <section class="panel ops-inventory">
+    <section class="inventory-log">
         <div class="panel-header">
             <div>
                 <span class="panel-label">Inventory</span>
@@ -501,10 +477,10 @@
             </p>
 
             <nav class="admin-jump" aria-label="Management sections">
-                <a href="#adminResourceTypes">Resource types</a>
-                <a href="#adminRequestTypes">Request types</a>
-                <a href="#organizationMembers">Members</a>
-                <a href="#organizationPendingInvitations">Invitations</a>
+                <button type="button" data-desk="brief" class="is-on">Organization</button>
+                <button type="button" data-desk="types">Resource types</button>
+                <button type="button" data-desk="requests">Request types</button>
+                <button type="button" data-desk="team">Team</button>
             </nav>
 
         </div>
@@ -512,10 +488,11 @@
     </div>
 
 
-    <div class="stats-grid admin-stats-grid">
+    <div class="admin-pane" data-desk-panel="brief">
+    <div class="tally-strip">
 
 
-        <div class="stat-card">
+        <div class="tally">
 
             <span>
                 Total Resources
@@ -532,7 +509,7 @@
         </div>
 
 
-        <div class="stat-card">
+        <div class="tally">
 
             <span>
                 Available Resources
@@ -549,7 +526,7 @@
         </div>
 
 
-        <div class="stat-card">
+        <div class="tally">
 
             <span>
                 Total Requests
@@ -566,7 +543,7 @@
         </div>
 
 
-        <div class="stat-card">
+        <div class="tally">
 
             <span>
                 Active Allocations
@@ -584,9 +561,6 @@
 
 
     </div>
-
-
-    <div class="content-grid">
 
 
         <div class="panel">
@@ -639,8 +613,9 @@
             </div>
 
         </div>
+    </div>
 
-
+    <div class="admin-pane" data-desk-panel="types" hidden>
         <div class="panel">
 
             <div class="panel-header">
@@ -672,8 +647,9 @@
             <button class="primary-btn" id="saveResourceTypeBtn" type="button">Save resource type</button>
 
         </div>
+    </div>
 
-
+    <div class="admin-pane" data-desk-panel="requests" hidden>
         <div class="panel">
 
             <div class="panel-header">
@@ -707,11 +683,9 @@
             <button class="primary-btn" id="saveRequestTypeBtn" type="button">Save request type</button>
 
         </div>
-
     </div>
 
-
-    <div class="panel" id="organizationMembersPanel" hidden>
+    <div class="panel admin-pane" id="organizationMembersPanel" data-desk-panel="team" hidden>
 
         <div class="panel-header">
 
@@ -777,11 +751,11 @@
             </span>
 
             <h2>
-                Resources
+                Resource inventory
             </h2>
 
             <p>
-                Track what is ready, allocated, and visible across your locations.
+                Readiness, location, and visibility for resources already registered.
             </p>
 
         </div>
@@ -792,14 +766,21 @@
             id="resourcesRefreshBtn"
             type="button"
         >
-            ↻ Refresh Resources
+            Refresh inventory
         </button>
 
     </div>
 
 
 
-    <section class="panel">
+    <div class="inventory-workspace">
+    <aside class="resource-desk" id="resourceDesk" hidden>
+        <p class="panel-label">Selected resource</p>
+        <h3 id="resourceDeskName">Select a resource</h3>
+        <p id="resourceDeskMeta"></p>
+        <button class="text-action" id="resourceDeskClose" type="button">Close</button>
+    </aside>
+    <section class="panel ledger-panel">
 
 
         <div class="table-toolbar">
@@ -904,6 +885,7 @@
 
 
     </section>
+    </div>
 
 
 </section>
@@ -918,7 +900,7 @@
 
     <div class="section-hero">
         <div>
-            <span class="panel-label">REQUEST MANAGEMENT</span>
+            <span class="panel-label">Request queue</span>
 
             <h2>Requests</h2>
 
@@ -959,9 +941,9 @@
         <div class="panel-header">
 
             <div>
-                <span class="panel-label">LIVE DATA</span>
+                <span class="panel-label">Queue</span>
 
-                <h2>Request History</h2>
+                <h2>Open work</h2>
 
                 <p>
                     Open, pending, and allocated requests for the selected organization.
@@ -1238,24 +1220,9 @@
             id="notificationList"
         >
 
-            <div class="notification-item">
-
-                <div class="notification-icon">
-                    ✓
-                </div>
-
-                <div>
-
-                    <strong>
-                        ERAP is connected
-                    </strong>
-
-                    <p>
-                        Dashboard is connected to the AWS backend.
-                    </p>
-
-                </div>
-
+            <div class="empty-state">
+                <h3>No notifications</h3>
+                <p>Allocation and request messages from this session appear here.</p>
             </div>
 
         </div>
@@ -1288,11 +1255,11 @@
             </span>
 
             <h2>
-                System Settings
+                Platform
             </h2>
 
             <p>
-                Application and AWS configuration information.
+                Session and organization context for this operator.
             </p>
 
         </div>
@@ -1309,18 +1276,18 @@
 
 
             <h3>
-                AWS Connection
+                Session
             </h3>
 
 
             <div class="setting-row">
 
                 <span>
-                    Region
+                    Access
                 </span>
 
                 <strong>
-                    eu-north-1
+                    Signed-in operator
                 </strong>
 
             </div>
@@ -1329,11 +1296,11 @@
             <div class="setting-row">
 
                 <span>
-                    API
+                    Organization
                 </span>
 
                 <strong>
-                    API Gateway
+                    Selected in the context bar
                 </strong>
 
             </div>
@@ -1342,11 +1309,11 @@
             <div class="setting-row">
 
                 <span>
-                    Database
+                    Location
                 </span>
 
                 <strong>
-                    DynamoDB
+                    Selected in the context bar
                 </strong>
 
             </div>
@@ -1360,18 +1327,18 @@
 
 
             <h3>
-                Application Services
+                Coordination
             </h3>
 
 
             <div class="setting-row">
 
                 <span>
-                    Authentication
+                    Resources
                 </span>
 
                 <strong>
-                    Amazon Cognito
+                    Inventory and visibility
                 </strong>
 
             </div>
@@ -1380,11 +1347,11 @@
             <div class="setting-row">
 
                 <span>
-                    Notifications
+                    Requests
                 </span>
 
                 <strong>
-                    Amazon SNS
+                    Queue and priority
                 </strong>
 
             </div>
@@ -1393,11 +1360,11 @@
             <div class="setting-row">
 
                 <span>
-                    Monitoring
+                    Allocations
                 </span>
 
                 <strong>
-                    CloudWatch
+                    Match, hold, and release
                 </strong>
 
             </div>
@@ -1433,11 +1400,11 @@
             </span>
 
             <h2>
-                Help & FAQ
+                How to operate ERAP
             </h2>
 
             <p>
-                Learn how the ERAP platform works.
+                The paths that exist in this product.
             </p>
 
         </div>
@@ -1453,13 +1420,11 @@
         <details class="faq-item">
 
             <summary>
-                How does resource allocation work?
+                Getting started
             </summary>
 
             <p>
-                A request is sent through API Gateway to Lambda.
-                Lambda checks DynamoDB for a matching available resource
-                and processes the configured priority rules.
+                Sign in, select the organization, then select a location. Resources, requests, and allocations on the following screens belong to that organization.
             </p>
 
         </details>
@@ -1469,13 +1434,11 @@
         <details class="faq-item">
 
             <summary>
-                What happens after allocation?
+                Resource operations
             </summary>
 
             <p>
-                The allocation is recorded and a ResourceAllocated event
-                can be published through EventBridge and delivered through
-                SNS notifications.
+                Register a resource with a resource type, location, availability, and public or private visibility. Available resources can be matched. Allocated resources can be released.
             </p>
 
         </details>
@@ -1485,12 +1448,11 @@
         <details class="faq-item">
 
             <summary>
-                What does Priority 1 mean?
+                Request and allocation workflow
             </summary>
 
             <p>
-                Priority 1 represents the highest configured request
-                priority in this demonstration platform.
+                Create a request with a request type, location, and priority. Priority 1 is the highest. Allocation matches that request to an available resource. Release returns the resource to available.
             </p>
 
         </details>
@@ -1500,13 +1462,11 @@
         <details class="faq-item">
 
             <summary>
-                Is ERAP a real emergency system?
+                Team access
             </summary>
 
             <p>
-                No. ERAP is a cloud-computing demonstration project using
-                fictional/test data. It is not intended for real emergency
-                or medical decision-making.
+                Owners and admins invite people by verified email. Roles are OWNER, ADMIN, OPERATOR, and MEMBER. An invitation grants no access until it is accepted. Removing a member deactivates that membership.
             </p>
 
         </details>
@@ -1605,19 +1565,6 @@
             <div>
 
                 <span>
-                    Authentication
-                </span>
-
-                <strong>
-                    Amazon Cognito
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
                     Organization
                 </span>
 
@@ -1657,7 +1604,7 @@
             id="modalLogoutBtn"
             type="button"
         >
-            🚪 Logout
+            Sign out
         </button>
 
 
@@ -2478,6 +2425,13 @@
 
 
 <!-- MAIN CONTENT END -->
+
+<nav class="dock" aria-label="Operations">
+    <button class="nav-item" data-section="dashboard" type="button">Desk</button>
+    <button class="nav-item" data-section="resources" type="button">Stock</button>
+    <button class="nav-item" data-section="requests" type="button">Queue</button>
+    <button class="nav-item" data-section="allocations" type="button">Flow</button>
+</nav>
 
 </main>
 
