@@ -1,0 +1,48 @@
+{
+  "applied": false,
+  "region": "eu-north-1",
+  "note": "Phase C specification only. Do not create the Lambda, route, or secret until a later reviewed phase. The existing API and the nine deployed functions stay unchanged.",
+  "route": {
+    "restApiId": "4c6dni17l3",
+    "stage": "dev",
+    "method": "POST",
+    "path": "/billing/checkout",
+    "authorization": "COGNITO_USER_POOLS",
+    "authorizerId": "y0hzhr",
+    "function": "erap-billing",
+    "alias": "live"
+  },
+  "secret": {
+    "name": "erap/billing/razorpay/test",
+    "store": "AWS Secrets Manager",
+    "keys": ["key_id", "key_secret", "webhook_secret"],
+    "values": "not stored in git"
+  },
+  "runtime_iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "ReadMembershipForCheckout",
+        "Effect": "Allow",
+        "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Organizations",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationMembers",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationMembers/index/UserSubIndex"
+        ]
+      },
+      {
+        "Sid": "CheckoutReferenceWithoutDelete",
+        "Effect": "Allow",
+        "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions"
+      },
+      {
+        "Sid": "TestRazorpaySecret",
+        "Effect": "Allow",
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/test*"
+      }
+    ]
+  }
+}

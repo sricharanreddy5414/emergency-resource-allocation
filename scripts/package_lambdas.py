@@ -6,11 +6,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from lambda_manifest import PACKAGES, ROOT
+from lambda_manifest import ROOT, package_map
 
 
 def build_zip(function_name, destination):
-    mapping = PACKAGES[function_name]
+    mapping = package_map()[function_name]
     destination.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
         for arcname, relative in mapping.items():
@@ -22,7 +22,7 @@ def build_zip(function_name, destination):
 
 
 def check_zip(path, function_name):
-    expected = set(PACKAGES[function_name])
+    expected = set(package_map()[function_name])
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
         if names != expected:
@@ -40,7 +40,7 @@ def main():
     if args.check:
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            for name in PACKAGES:
+            for name in package_map():
                 path = build_zip(name, folder / f"{name}.zip")
                 check_zip(path, name)
                 print(f"ok {name} {path.stat().st_size} bytes")
@@ -48,7 +48,7 @@ def main():
     if not args.output:
         raise SystemExit("Pass --check or --output DIR")
     folder = Path(args.output)
-    for name in PACKAGES:
+    for name in package_map():
         path = build_zip(name, folder / f"{name}.zip")
         check_zip(path, name)
         print(path)

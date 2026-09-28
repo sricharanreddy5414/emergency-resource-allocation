@@ -86,5 +86,32 @@ TABLES = [
 ]
 
 
+# Packaged for a later deploy. Not in PACKAGES, so the existing nine functions
+# stay the only ones the deploy, alias, and route scripts touch.
+BILLING_PACKAGES = {
+    "erap-billing": {
+        "common.py": "src/organization/common.py",
+        "membership.py": "src/organization/membership.py",
+        "access.py": "src/shared/access.py",
+        "observability.py": "src/shared/observability.py",
+        "billing/__init__.py": "src/billing/__init__.py",
+        "billing/errors.py": "src/billing/errors.py",
+        "billing/models.py": "src/billing/models.py",
+        "billing/plans.py": "src/billing/plans.py",
+        "billing/transitions.py": "src/billing/transitions.py",
+        "billing/checkout.py": "src/billing/checkout.py",
+        "billing/provider/__init__.py": "src/billing/provider/__init__.py",
+        "billing/provider/razorpay.py": "src/billing/provider/razorpay.py",
+        "handler.py": "src/billing/checkout_handler.py",
+    },
+}
+
+
+def package_map():
+    mapping = dict(PACKAGES)
+    mapping.update(BILLING_PACKAGES)
+    return mapping
+
+
 def function_names():
     return list(PACKAGES)

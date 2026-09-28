@@ -193,6 +193,6 @@ def require_purchasable(plan_id):
     plan = get_plan(plan_id)
 
     if plan["purchasable"] is not True:
-        raise BillingError(409, "This plan is not available for purchase")
+        raise BillingError(409, "Plan is not currently available for purchase")
 
     return plan
