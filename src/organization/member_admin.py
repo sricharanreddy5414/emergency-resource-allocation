@@ -545,7 +545,14 @@ def _accept(event, body, actor_sub, audit_table):
     existing = _find(rows, actor_sub)
 
     if existing and member_status(existing) == "ACTIVE":
-        _claim(organization_id)
+        if existing.get("role") != pending.get("role"):
+            raise AccessError(409, "Membership changed. Retry.")
+
+        stored_email = str(existing.get("email") or "").strip().lower()
+
+        if stored_email and stored_email != email:
+            raise AccessError(404, "Invitation not found")
+
         _update(
             organization_id,
             subject,
@@ -557,6 +564,16 @@ def _accept(event, body, actor_sub, audit_table):
             },
             pending.get("role"),
             "PENDING",
+        )
+        _audit(
+            audit_table,
+            organization_id,
+            actor_sub,
+            pending.get("role"),
+            "MEMBER_ACTIVATED",
+            actor_sub,
+            "",
+            pending.get("role"),
         )
 
         return api_response(200, {"message": "Invitation accepted", "member": _public_member(existing)})

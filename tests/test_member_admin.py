@@ -448,11 +448,12 @@ def test_deactivate_and_reactivate_member(monkeypatch):
 
 
 def test_verified_user_accepts_invitation(monkeypatch):
-    _organizations, members, audits = seed(monkeypatch, [owner_row()])
+    organizations, members, audits = seed(monkeypatch, [owner_row()])
     handler.lambda_handler(
         event(body={"operation": "invite_member", "organization_id": ORG, "email": "member@example.com", "role": "MEMBER"}),
         None,
     )
+    organizations.items[ORG]["membership_epoch"] = 7
 
     accepted = handler.lambda_handler(
         event(
@@ -470,6 +471,119 @@ def test_verified_user_accepts_invitation(monkeypatch):
     assert active["status"] == "ACTIVE"
     assert pending["status"] == "INACTIVE"
     assert audits.items[-1]["action"] == "MEMBER_ACTIVATED"
+    assert len([row for row in members.rows if row["user_sub"] == MEMBER]) == 1
+    assert organizations.items[ORG]["membership_epoch"] == 8
+
+
+def _partial_accept_rows(email="member@example.com", role="ADMIN", active_email=None, active_role=None):
+    return [
+        owner_row(),
+        owner_row(
+            MEMBER,
+            role=active_role or role,
+            status="ACTIVE",
+            email=email if active_email is None else active_email,
+        ),
+        owner_row(
+            member_admin.invite_subject(email),
+            role=role,
+            status="PENDING",
+            email=email,
+        ),
+        owner_row(
+            member_admin.invite_subject(email),
+            organization_id=ORG_B,
+            role=role,
+            status="PENDING",
+            email=email,
+        ),
+    ]
+
+
+def _accept_partial(email="member@example.com"):
+    return event(
+        body={
+            "operation": "accept_invitation",
+            "organization_id": ORG,
+            "role": "OWNER",
+            "user_sub": OTHER,
+        },
+        subject=MEMBER,
+        email=email,
+    )
+
+
+def test_accept_reuses_existing_active_membership(monkeypatch):
+    email = "member@example.com"
+    organizations, members, audits = seed(monkeypatch, _partial_accept_rows(email))
+    organizations.items[ORG]["membership_epoch"] = 7
+    before = [row for row in members.rows if row["user_sub"] == MEMBER]
+
+    accepted = handler.lambda_handler(_accept_partial(email), None)
+    active = [row for row in members.rows if row["user_sub"] == MEMBER]
+    invitation = next(row for row in members.rows if row["organization_id"] == ORG and row["user_sub"].startswith("invite-"))
+    other_org = next(row for row in members.rows if row["organization_id"] == ORG_B)
+    activations = [item for item in audits.items if item["action"] == "MEMBER_ACTIVATED"]
+
+    assert accepted["statusCode"] == 200
+    assert body_of(accepted)["message"] == "Invitation accepted"
+    assert body_of(accepted)["member"]["role"] == "ADMIN"
+    assert body_of(accepted)["member"]["user_sub"] == MEMBER
+    assert len(active) == 1
+    assert active[0] is before[0]
+    assert active[0]["status"] == "ACTIVE"
+    assert active[0]["role"] == "ADMIN"
+    assert invitation["status"] == "INACTIVE"
+    assert other_org["status"] == "PENDING"
+    assert len(activations) == 1
+    assert activations[0]["entity_id"] == MEMBER
+    assert organizations.items[ORG]["membership_epoch"] == 7
+
+
+def test_accept_rejects_existing_membership_with_different_identity(monkeypatch):
+    email = "member@example.com"
+    organizations, members, audits = seed(
+        monkeypatch,
+        _partial_accept_rows(email, active_email="other@example.com"),
+    )
+    organizations.items[ORG]["membership_epoch"] = 7
+
+    mismatched_email = handler.lambda_handler(_accept_partial(email), None)
+    invitation = next(row for row in members.rows if row["organization_id"] == ORG and str(row["user_sub"]).startswith("invite-"))
+
+    assert mismatched_email["statusCode"] == 404
+    assert invitation["status"] == "PENDING"
+    assert audits.items == []
+    assert organizations.items[ORG]["membership_epoch"] == 7
+
+    organizations, members, audits = seed(
+        monkeypatch,
+        _partial_accept_rows(email, role="ADMIN", active_role="OPERATOR"),
+    )
+    organizations.items[ORG]["membership_epoch"] = 7
+
+    mismatched_role = handler.lambda_handler(_accept_partial(email), None)
+    invitation = next(row for row in members.rows if row["organization_id"] == ORG and str(row["user_sub"]).startswith("invite-"))
+
+    assert mismatched_role["statusCode"] == 409
+    assert invitation["status"] == "PENDING"
+    assert not any(item["action"] == "MEMBER_ACTIVATED" for item in audits.items)
+    assert len([row for row in members.rows if row["user_sub"] == MEMBER]) == 1
+
+
+def test_repeat_accept_after_invitation_is_inactive_does_not_duplicate_audit(monkeypatch):
+    email = "member@example.com"
+    organizations, members, audits = seed(monkeypatch, _partial_accept_rows(email))
+    organizations.items[ORG]["membership_epoch"] = 7
+
+    first = handler.lambda_handler(_accept_partial(email), None)
+    second = handler.lambda_handler(_accept_partial(email), None)
+
+    assert first["statusCode"] == 200
+    assert second["statusCode"] == 404
+    assert [item["action"] for item in audits.items] == ["MEMBER_ACTIVATED"]
+    assert len([row for row in members.rows if row["user_sub"] == MEMBER]) == 1
+    assert organizations.items[ORG]["membership_epoch"] == 7
 
 
 def test_unverified_email_cannot_accept(monkeypatch):
