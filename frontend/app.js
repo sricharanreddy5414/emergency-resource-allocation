@@ -58,6 +58,7 @@ const COGNITO_SCOPES =
 ========================================================= */
 
 let resources = [];
+let showAdminSection = function () {};
 let editingResourceId = "";
 
 let allocations = [];
@@ -966,10 +967,11 @@ function updateUserInterface() {
     }
 
 
-    if ($("adminNavItem")) {
+    const managementNav = $("managementNav");
 
-        $("adminNavItem").style.display =
-            currentUser.isAdmin || canManageCatalog() ? "" : "none";
+    if (managementNav) {
+
+        managementNav.hidden = !(currentUser.isAdmin || canManageCatalog());
 
     }
 
@@ -1543,6 +1545,8 @@ function initializeAdminDesk() {
         button.addEventListener("click", () => show(button.dataset.desk));
     });
 
+    showAdminSection = show;
+
     show("brief");
 
 }
@@ -1617,6 +1621,12 @@ function initializeNavigation() {
                             item.dataset.section
                         );
 
+                        if (item.dataset.desk) {
+
+                            showAdminSection(item.dataset.desk);
+
+                        }
+
                     }
                 );
 
@@ -1672,7 +1682,25 @@ function initializeMobileMenu() {
 
     });
 
+    $("navCloseBtn")?.addEventListener("click", () => setMenu(false));
+
+    $("openLocationFormBtn")?.addEventListener("click", () => {
+
+        $("locationModal")?.classList.remove("hidden");
+
+    });
+
     overlay?.addEventListener("click", () => setMenu(false));
+
+    document.addEventListener("keydown", event => {
+
+        if (event.key === "Escape") {
+
+            setMenu(false);
+
+        }
+
+    });
 
     sidebar.querySelectorAll(".nav-item").forEach(item => {
 
@@ -1921,7 +1949,7 @@ async function loadResources() {
     try {
 
         showToast(
-            "Loading AWS resources..."
+            "Loading resources..."
         );
 
 
@@ -4643,7 +4671,7 @@ async function loadAllocations() {
     table.innerHTML = `
         <tr>
             <td colspan="4">
-                Loading allocations from AWS...
+                Loading allocations...
             </td>
         </tr>
     `;
@@ -6218,24 +6246,24 @@ function renderCatalogAdmin() {
     if (resourceNode) {
 
         resourceNode.innerHTML = resourceTypes.map(item => `
-            <div>
+            <article class="config-row">
                 <strong>${escapeHtml(item.name)}</strong>
-                <span>${escapeHtml(item.status)}</span>
-                ${manageable ? `<button type="button" data-deactivate-resource-type="${escapeHtml(item.resource_type_id)}">Deactivate</button>` : ""}
-            </div>
-        `).join("") || "<p>No resource types yet.</p>";
+                <span>${escapeHtml([item.description, item.category, item.status].filter(Boolean).join(" · "))}</span>
+                ${manageable ? `<button type="button" class="text-action" data-deactivate-resource-type="${escapeHtml(item.resource_type_id)}">Deactivate</button>` : ""}
+            </article>
+        `).join("") || "<div class=\"empty-state\"><h3>No resource types</h3><p>Add a type before registering resources.</p></div>";
 
     }
 
     if (requestNode) {
 
         requestNode.innerHTML = requestTypes.map(item => `
-            <div>
+            <article class="config-row">
                 <strong>${escapeHtml(item.name)}</strong>
-                <span>${escapeHtml(item.status)}</span>
-                ${manageable ? `<button type="button" data-deactivate-request-type="${escapeHtml(item.request_type_id)}">Deactivate</button>` : ""}
-            </div>
-        `).join("") || "<p>No request types yet.</p>";
+                <span>${escapeHtml([item.description, item.category, item.status].filter(Boolean).join(" · "))}</span>
+                ${manageable ? `<button type="button" class="text-action" data-deactivate-request-type="${escapeHtml(item.request_type_id)}">Deactivate</button>` : ""}
+            </article>
+        `).join("") || "<div class=\"empty-state\"><h3>No request types</h3><p>Add a request type before creating requests.</p></div>";
 
     }
 
@@ -6646,6 +6674,41 @@ function setOperationalActionsEnabled(enabled) {
 }
 
 
+function renderLocationWorkspace() {
+
+    const node = $("locationWorkspace");
+
+    if (!node) {
+
+        return;
+
+    }
+
+    const rows = Array.isArray(currentUser.locations) ? currentUser.locations : [];
+
+    if (!rows.length) {
+
+        node.innerHTML = `
+            <div class="empty-state">
+                <h3>No locations yet</h3>
+                <p>Add a location before registering resources or creating requests.</p>
+            </div>
+        `;
+
+        return;
+
+    }
+
+    node.innerHTML = rows.map(location => `
+        <article class="config-row">
+            <strong>${escapeHtml(location.name || "Location")}</strong>
+            <span>${escapeHtml([location.city, location.state, location.status].filter(Boolean).join(" · "))}</span>
+        </article>
+    `).join("");
+
+}
+
+
 async function loadLocations() {
 
     const organizationId = selectedOrganizationId();
@@ -6728,6 +6791,8 @@ async function loadLocations() {
     }
 
     renderLocationSwitcher();
+
+    renderLocationWorkspace();
 
     if (currentUser.locations.length === 0) {
 

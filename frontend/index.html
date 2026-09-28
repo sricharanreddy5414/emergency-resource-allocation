@@ -109,20 +109,35 @@
             <span>Allocations</span>
         </button>
 
+        <div class="admin-only" id="managementNav" hidden>
         <p class="nav-label">Management</p>
 
         <button
-            class="nav-item admin-only"
+            class="nav-item"
             data-section="admin"
+            data-desk="brief"
             type="button"
             id="adminNavItem"
-            style="display: none;"
         >
-            <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="3"></circle><circle cx="17" cy="10" r="2"></circle><path d="M4 18c1-2.5 2.8-3.5 5-3.5s4 1 5 3.5M14 18c.4-1.4 1.4-2.2 3-2.5"></path></svg>
-            </span>
             <span>Organization</span>
         </button>
+
+        <button class="nav-item" data-section="admin" data-desk="locations" type="button">
+            <span>Locations</span>
+        </button>
+
+        <button class="nav-item" data-section="admin" data-desk="types" type="button">
+            <span>Resource types</span>
+        </button>
+
+        <button class="nav-item" data-section="admin" data-desk="requests" type="button">
+            <span>Request types</span>
+        </button>
+
+        <button class="nav-item" data-section="admin" data-desk="team" type="button">
+            <span>Team</span>
+        </button>
+        </div>
 
         <p class="nav-label">System</p>
 
@@ -165,6 +180,7 @@
 
     </div>
 
+    <button class="drawer-close" id="navCloseBtn" type="button" aria-label="Close menu">Close</button>
 
 </aside>
 
@@ -194,22 +210,15 @@
             id="mobileMenuBtn"
             type="button"
             aria-label="Open menu"
+            aria-expanded="false"
+            aria-controls="sidebar"
         >
             <span></span><span></span><span></span>
         </button>
 
+        <strong class="brand-mark">ERAP</strong>
 
-        <div class="where-block">
-
-            <p class="welcome">
-                ERAP
-            </p>
-
-            <h1 id="pageTitle">
-                Operations
-            </h1>
-
-        </div>
+        <h1 id="pageTitle" class="sr-only">Operations</h1>
 
 
     </div>
@@ -221,6 +230,8 @@
         <p class="context-line" id="operationalContext">
             Select an organization
         </p>
+
+        <strong id="opsState" class="ops-state">Awaiting organization</strong>
 
         <label class="context-field">
             Organization
@@ -326,8 +337,7 @@
 
     <header class="desk-mast">
         <div class="desk-kicker">
-            <span>ERAP / Operations</span>
-            <strong id="opsState">Awaiting organization</strong>
+            <span>Operations</span>
         </div>
         <h2 id="commandContext">No organization selected</h2>
         <div class="desk-situation" aria-label="Operational snapshot">
@@ -584,7 +594,7 @@
 
 
             <div id="adminResourceOverview">
-                Loading resource information...
+                <span class="skeleton"></span>
             </div>
 
         </div>
@@ -610,7 +620,7 @@
 
 
             <div id="adminRequestOverview">
-                Loading request information...
+                <span class="skeleton"></span>
             </div>
 
         </div>
@@ -683,6 +693,19 @@
             <select id="requestTypeResources" multiple></select>
             <button class="primary-btn" id="saveRequestTypeBtn" type="button">Save request type</button>
 
+        </div>
+    </div>
+
+    <div class="admin-pane" data-desk-panel="locations" hidden>
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <span class="panel-label">Places</span>
+                    <h3>Locations</h3>
+                </div>
+                <button class="text-action" id="openLocationFormBtn" type="button">Add location</button>
+            </div>
+            <div id="locationWorkspace"></div>
         </div>
     </div>
 

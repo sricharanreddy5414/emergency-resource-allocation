@@ -47,9 +47,23 @@ Transitions are about 180ms. `prefers-reduced-motion` removes animation and tran
 
 From 1100px, metric grids become two columns. From 780px, navigation collapses behind the menu button, the top bar stacks, and the profile name hides so the switchers remain usable.
 
-## Product shell
+## Navigation
 
-Navigation is a dark product bar across the top, with organization and location in that same band. The page background is a flat neutral. There is no coordinate grid. Overview is a situation line, an attention queue, readiness tallies, and movement from data already loaded. Resources are an inventory. Requests are a queue. Allocations are a flow. Organization is a sectioned workspace.
+The always-visible chrome is one command bar: menu, ERAP, organization, location, operational state, notifications, and the signed-in person. Destinations live in a drawer opened from the menu.
+
+Operations: Overview, Resources, Requests, Allocations.
+Management, for people who can configure the organization: Organization, Locations, Resource types, Request types, Team.
+System: Notifications, Help.
+
+The drawer closes on selection, overlay click, Close, or Escape. On screens under 780px a bottom dock repeats the four operations.
+
+## Layout
+
+The page background is a flat neutral. There is no coordinate grid. Overview is a situation, an attention queue, readiness tallies, and movement from data already loaded. Resources are an inventory with a selection panel. Requests are a queue. Allocations are a flow. Organization sections are separate workspaces.
+
+## Interaction
+
+Primary commands are filled. Secondary and inline actions are underlined text. Remove and release use the danger color. Creation panels open from the right. Menu and panel motion is about 200ms and is removed when reduced motion is requested.
 
 ## What the interface does not do
 
