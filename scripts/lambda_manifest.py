@@ -104,6 +104,19 @@ BILLING_PACKAGES = {
         "billing/provider/razorpay.py": "src/billing/provider/razorpay.py",
         "handler.py": "src/billing/checkout_handler.py",
     },
+    "erap-billing-webhook": {
+        "common.py": "src/organization/common.py",
+        "observability.py": "src/shared/observability.py",
+        "billing/__init__.py": "src/billing/__init__.py",
+        "billing/errors.py": "src/billing/errors.py",
+        "billing/models.py": "src/billing/models.py",
+        "billing/plans.py": "src/billing/plans.py",
+        "billing/transitions.py": "src/billing/transitions.py",
+        "billing/webhook.py": "src/billing/webhook.py",
+        "billing/provider/__init__.py": "src/billing/provider/__init__.py",
+        "billing/provider/razorpay.py": "src/billing/provider/razorpay.py",
+        "handler.py": "src/billing/webhook_handler.py",
+    },
 }
 
 

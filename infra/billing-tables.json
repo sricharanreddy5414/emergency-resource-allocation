@@ -1,7 +1,7 @@
 {
   "applied": false,
   "region": "eu-north-1",
-  "note": "Phase A specification only. Do not create these tables until a later reviewed phase. Existing tables are not modified.",
+  "note": "Specification only. Do not create these tables until a later reviewed phase. Existing tables are not modified. ProviderSubscriptionIndex is the webhook lookup and is not deployed.",
   "tables": [
     {
       "TableName": "OrganizationSubscriptions",
@@ -9,6 +9,24 @@
         {
           "AttributeName": "organization_id",
           "AttributeType": "S"
+        },
+        {
+          "AttributeName": "provider_subscription_id",
+          "AttributeType": "S"
+        }
+      ],
+      "GlobalSecondaryIndexes": [
+        {
+          "IndexName": "ProviderSubscriptionIndex",
+          "KeySchema": [
+            {
+              "AttributeName": "provider_subscription_id",
+              "KeyType": "HASH"
+            }
+          ],
+          "Projection": {
+            "ProjectionType": "ALL"
+          }
         }
       ],
       "KeySchema": [

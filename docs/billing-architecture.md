@@ -90,9 +90,11 @@ A missing `OrganizationSubscriptions` row means the same legacy access. `access_
 
 Razorpay is the intended first provider. This phase does not call Razorpay, store Razorpay secrets, or open checkout. The `provider` value `razorpay` is reserved on events. Checkout must keep using `require_purchasable`, which fails while prices are unset.
 
-## Future webhook architecture
+## Webhook architecture
 
-A later `POST /billing/webhook` will verify the provider signature, insert `provider_event_id` once, and call `change_subscription_status`. A duplicate event must not apply twice. The browser return URL will not be proof of payment. That route does not exist yet.
+Phase D implements `POST /billing/webhook` in code and tests. The route specification is in `infra/billing-checkout.json` with authorization `NONE`. Cognito is not used, because Razorpay calls the route. The route and the `erap-billing-webhook` function are not deployed. Live Razorpay is not enabled.
+
+See Phase D below. A browser redirect or a checkout response still does not activate a subscription.
 
 ## Future expiry architecture
 
@@ -121,14 +123,38 @@ Only an `OWNER` membership can call checkout. `ADMIN`, `OPERATOR`, and `MEMBER` 
 
 The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` and `YEARLY` stay `purchasable: false`, and both Razorpay plan ids are unset, so checkout returns 409 `Plan is not currently available for purchase` and does not call Razorpay.
 
-When a later configuration makes a plan purchasable and sets a Razorpay plan id plus `total_count`, the provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty. The test key id must start with `rzp_test_`. The secret id must be `erap/billing/razorpay/test`, holding `key_id` and `key_secret`. `webhook_secret` is not used. The secret value is not in git. A live key or any other secret id fails closed.
+When a later configuration makes a plan purchasable and sets a Razorpay plan id plus `total_count`, the provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty. The test key id must start with `rzp_test_`. The secret id must be `erap/billing/razorpay/test`, holding `key_id`, `key_secret`, and `webhook_secret`. Checkout uses the key pair. Phase D uses `webhook_secret` only to verify signatures. The secret value is not in git and is not created by this repository. A live key or any other secret id fails closed.
 
 Eligible stored states are `TRIALING`, `EXPIRED`, `CANCELLED`, and `GRANDFATHERED`. `ACTIVE` and `PAST_DUE` do not start another subscription. A `TRIALING` or `EXPIRED` row that already has `provider_subscription_id` is left unchanged. `CANCELLED` may start a new provider subscription. A missing row stays grandfathered and is not created here. The conditional update sets `provider`, `provider_subscription_id`, and `updated_at` only. It does not set `subscription_status` to `ACTIVE` and does not set the billing period. Razorpay does not document an idempotency key for this call, so ERAP does not invent one.
 
 The response may contain `provider`, `provider_subscription_id`, and `public_key_id`. It does not contain the key secret. Provider failures become `Billing provider rejected the request` or `Billing provider is unavailable`.
 
-Razorpay webhook verification is not implemented. Checkout success does not activate a subscription.
+Checkout success does not activate a subscription. Only a verified webhook can do that.
+
+## Phase D — Verified Razorpay webhooks
+
+This phase is code and tests only. `POST /billing/webhook` is not deployed. Live Razorpay is not enabled. The test secret is not created. No organization is charged, and pilot data is not modified.
+
+Razorpay authenticates the call with `X-Razorpay-Signature`. The signature is HMAC-SHA256 of the exact raw body, hex-encoded, compared with `hmac.compare_digest` against `webhook_secret` from `erap/billing/razorpay/test`. The body is not parsed and reserialized before the check. A missing or invalid signature returns 401, writes no `BillingEvents` row, and does not read `organization_id` from the payload. The response and logs do not contain the secret or the calculated signature.
+
+`X-Razorpay-Event-Id` is `provider_event_id`. A missing id returns 400 and is not invented. The first verified delivery writes the event with `attribute_not_exists(provider_event_id)` and status `RECEIVED`. A later delivery of a `PROCESSED` or `IGNORED` id returns 200 and does not change the subscription or `processed_at`.
+
+The organization comes from `OrganizationSubscriptions.provider_subscription_id` through `ProviderSubscriptionIndex`. That index is specified and not created. The webhook does not scan. `organization_id` in the payload, including Razorpay notes, is ignored. An unknown subscription id or an unknown event type is stored as `IGNORED` and returns 200, so Razorpay does not retry it. No organization or subscription is created.
+
+Supported events call `change_subscription_status` and do not carry their own transition table:
+
+- `subscription.activated` and `subscription.charged` move `TRIALING` or `PAST_DUE` to `ACTIVE` when that change is legal. A `CANCELLED` row stays cancelled when the event time is missing or not newer than `cancelled_at`.
+- `payment.failed`, `subscription.pending`, and `subscription.halted` move `ACTIVE` to `PAST_DUE`. They do not set `EXPIRED`.
+- `subscription.cancelled` moves `ACTIVE` to `CANCELLED` and sets `cancelled_at` from the provider. `cancel_at_period_end` changes only when the payload contains `cancel_at_cycle_end`. `PAST_DUE` to `CANCELLED` is not in the Phase A state machine, so that event is `IGNORED`.
+
+`current_period_start` and `current_period_end` change only when the payload contains those unix times. Payment state stays on the event: `PENDING`, `PAID`, `FAILED`, or `REFUNDED`. `REFUNDED` is not a subscription status.
+
+If the signature and event are valid but DynamoDB fails, the handler returns 500 and leaves the event `RECEIVED` when the row was written. It does not mark `PROCESSED`. Razorpay can retry. Logs contain `provider`, `provider_event_id`, `event_type`, `organization_id`, `provider_subscription_id`, and `processing_status` only.
+
+A later phase may repair a subscription by fetching it from Razorpay. This phase does not.
+
+`erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. Deploy, alias, and route scripts still skip it. Its specified IAM is get, update, and query on `OrganizationSubscriptions` and `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test secret. It has no delete, no scan, and no access to operational tables.
 
 ## What this phase does not implement
 
-Webhooks, EventBridge expiry, write enforcement, the billing screen, price activation, the grandfather backfill, creating the billing tables, creating the checkout route, and creating the Razorpay test secret.
+EventBridge expiry, write enforcement, the billing screen, price activation, the grandfather backfill, one trial per owner, refunds, plan changes, provider repair fetches, creating the billing tables, creating the checkout or webhook routes, creating the Razorpay test secret, and enabling live Razorpay.

@@ -1,7 +1,7 @@
 {
   "applied": false,
   "region": "eu-north-1",
-  "note": "Phase C specification only. Do not create the Lambda, route, or secret until a later reviewed phase. The existing API and the nine deployed functions stay unchanged.",
+  "note": "Specification only. Do not create the Lambda, route, or secret. The existing API and the nine deployed functions stay unchanged. The webhook route has no Cognito authorizer.",
   "route": {
     "restApiId": "4c6dni17l3",
     "stage": "dev",
@@ -39,6 +39,42 @@
       },
       {
         "Sid": "TestRazorpaySecret",
+        "Effect": "Allow",
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/test*"
+      }
+    ]
+  },
+  "webhook": {
+    "restApiId": "4c6dni17l3",
+    "stage": "dev",
+    "method": "POST",
+    "path": "/billing/webhook",
+    "authorization": "NONE",
+    "function": "erap-billing-webhook",
+    "alias": "live",
+    "authentication": "Razorpay HMAC-SHA256 of the raw body"
+  },
+  "webhook_iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "WebhookSubscriptionLookup",
+        "Effect": "Allow",
+        "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions/index/ProviderSubscriptionIndex"
+        ]
+      },
+      {
+        "Sid": "WebhookEventsWithoutDelete",
+        "Effect": "Allow",
+        "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/BillingEvents"
+      },
+      {
+        "Sid": "TestWebhookSecret",
         "Effect": "Allow",
         "Action": "secretsmanager:GetSecretValue",
         "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/test*"
