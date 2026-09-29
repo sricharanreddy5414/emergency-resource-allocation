@@ -34,6 +34,8 @@ SHARED = {
     "everyday_operations.py": "src/shared/everyday_operations.py",
     "lifecycle_operations.py": "src/shared/lifecycle_operations.py",
     "visibility.py": "src/shared/visibility.py",
+    "exchange_state.py": "src/shared/exchange_state.py",
+    "exchange_model.py": "src/shared/exchange_model.py",
     "matching.py": "src/shared/matching.py",
     "observability.py": "src/shared/observability.py",
     "billing/__init__.py": "src/billing/__init__.py",

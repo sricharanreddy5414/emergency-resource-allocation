@@ -1,0 +1,131 @@
+{
+  "applied": false,
+  "region": "eu-north-1",
+  "note": "Specification only for Phase 5B. Do not create ResourceExchanges until a later reviewed deploy. Existing tables and indexes are not modified. Sparse GSI keys (network_list_key) must be omitted when blank so DynamoDB does not reject empty index keys. runtime_iam below is prepared for a future erap-exchange role and must not be attached until that Lambda exists.",
+  "tables": [
+    {
+      "TableName": "ResourceExchanges",
+      "AttributeDefinitions": [
+        {
+          "AttributeName": "pk",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "sk",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "network_list_key",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "created_at",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "requester_organization_id",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "provider_organization_id",
+          "AttributeType": "S"
+        }
+      ],
+      "KeySchema": [
+        {
+          "AttributeName": "pk",
+          "KeyType": "HASH"
+        },
+        {
+          "AttributeName": "sk",
+          "KeyType": "RANGE"
+        }
+      ],
+      "GlobalSecondaryIndexes": [
+        {
+          "IndexName": "NetworkOpenRequestIndex",
+          "KeySchema": [
+            {
+              "AttributeName": "network_list_key",
+              "KeyType": "HASH"
+            },
+            {
+              "AttributeName": "created_at",
+              "KeyType": "RANGE"
+            }
+          ],
+          "Projection": {
+            "ProjectionType": "ALL"
+          }
+        },
+        {
+          "IndexName": "RequesterOrgIndex",
+          "KeySchema": [
+            {
+              "AttributeName": "requester_organization_id",
+              "KeyType": "HASH"
+            },
+            {
+              "AttributeName": "created_at",
+              "KeyType": "RANGE"
+            }
+          ],
+          "Projection": {
+            "ProjectionType": "ALL"
+          }
+        },
+        {
+          "IndexName": "ProviderOrgOfferIndex",
+          "KeySchema": [
+            {
+              "AttributeName": "provider_organization_id",
+              "KeyType": "HASH"
+            },
+            {
+              "AttributeName": "created_at",
+              "KeyType": "RANGE"
+            }
+          ],
+          "Projection": {
+            "ProjectionType": "ALL"
+          }
+        }
+      ],
+      "BillingMode": "PAY_PER_REQUEST",
+      "PointInTimeRecoverySpecification": {
+        "PointInTimeRecoveryEnabled": true
+      },
+      "DeletionProtectionEnabled": true
+    }
+  ],
+  "runtime_iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "ResourceExchangesItems",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:TransactWriteItems"
+        ],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceExchanges"
+        ]
+      },
+      {
+        "Sid": "ResourceExchangesIndexes",
+        "Effect": "Allow",
+        "Action": "dynamodb:Query",
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceExchanges/index/NetworkOpenRequestIndex",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceExchanges/index/RequesterOrgIndex",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceExchanges/index/ProviderOrgOfferIndex"
+        ]
+      }
+    ]
+  }
+}

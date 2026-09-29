@@ -254,7 +254,7 @@ def list_resources(event, organization_id):
     if location_id:
         require_location(locations_table(), organization_id, location_id)
 
-    if visibility and visibility not in {"PRIVATE", "PUBLIC"}:
+    if visibility and visibility not in {"PRIVATE", "PUBLIC", "NETWORK"}:
         return response(400, {"message": "Visibility is invalid"})
 
     if status and status not in {"AVAILABLE", "ALLOCATED"}:
@@ -389,9 +389,22 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
     item.update(state_fields)
 
     try:
-        item.update(publication_fields(body, location, item["Type"], resource_id, is_available(item.get("Available"))))
+        item.update(
+            publication_fields(
+                body,
+                location,
+                item["Type"],
+                resource_id,
+                is_available(item.get("Available")),
+                operational_status=item.get("operational_status"),
+            )
+        )
     except ValueError as error:
         return response(400, {"message": str(error)})
+
+    if item.get("visibility") in {"PRIVATE", "NETWORK"}:
+        for attribute in PRIVATE_INDEX_ATTRIBUTES:
+            item.pop(attribute, None)
 
     try:
         resources_table().put_item(
@@ -468,11 +481,20 @@ def update_resource(body, organization_id, actor_sub="", actor_role=""):
             updated[key] = value
 
     try:
-        updated.update(publication_fields(body, location, updated["Type"], resource_id, available))
+        updated.update(
+            publication_fields(
+                body,
+                location,
+                updated["Type"],
+                resource_id,
+                available,
+                operational_status=updated.get("operational_status") or current.get("operational_status"),
+            )
+        )
     except ValueError as error:
         return response(400, {"message": str(error)})
 
-    if updated["visibility"] == "PRIVATE":
+    if updated["visibility"] in {"PRIVATE", "NETWORK"}:
         for attribute in PRIVATE_INDEX_ATTRIBUTES:
             updated.pop(attribute, None)
 

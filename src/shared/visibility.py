@@ -1,6 +1,23 @@
-"""Explicit public projection. Private resources omit the public index keys."""
+"""Explicit visibility projection. PUBLIC alone feeds PublicDiscoveryIndex."""
 
 import re
+
+
+VISIBILITIES = frozenset({"PRIVATE", "PUBLIC", "NETWORK"})
+
+# Attributes written only for PUBLIC discovery. PRIVATE and NETWORK omit them.
+PRIVATE_INDEX_ATTRIBUTES = (
+    "visibility_key",
+    "discovery_key",
+    "public_type_name",
+    "public_name",
+    "public_description",
+    "public_contact",
+    "public_city",
+    "public_state",
+    "public_status",
+    "show_availability",
+)
 
 
 def token(value):
@@ -12,11 +29,31 @@ def discovery_key(type_name, city, resource_id):
     return f"{token(type_name)}#{token(city)}#{resource_id}"
 
 
-def publication_fields(body, location, type_name, resource_id, available):
-    visibility = str((body or {}).get("visibility") or "PRIVATE").strip().upper()
+def normalize_visibility(value):
+    visibility = str(value or "PRIVATE").strip().upper() or "PRIVATE"
 
-    if visibility not in {"PRIVATE", "PUBLIC"}:
+    if visibility not in VISIBILITIES:
         raise ValueError("Visibility is invalid")
+
+    return visibility
+
+
+def omits_public_discovery(visibility):
+    """NETWORK and PRIVATE must never populate PublicDiscoveryIndex."""
+    return normalize_visibility(visibility) in {"PRIVATE", "NETWORK"}
+
+
+def publication_fields(body, location, type_name, resource_id, available, operational_status=None):
+    visibility = normalize_visibility((body or {}).get("visibility"))
+
+    if visibility == "NETWORK":
+        status = str(operational_status or "").strip().upper()
+
+        if status == "RETIRED":
+            raise ValueError("Retired resources cannot use NETWORK visibility")
+
+        # NETWORK is exchange-eligible visibility only. Never set visibility_key.
+        return {"visibility": "NETWORK"}
 
     if visibility == "PRIVATE":
         return {"visibility": "PRIVATE"}
@@ -48,17 +85,3 @@ def publication_fields(body, location, type_name, resource_id, available):
         fields["public_status"] = "AVAILABLE" if available else "UNAVAILABLE"
 
     return fields
-
-
-PRIVATE_INDEX_ATTRIBUTES = (
-    "visibility_key",
-    "discovery_key",
-    "public_type_name",
-    "public_name",
-    "public_description",
-    "public_contact",
-    "public_city",
-    "public_state",
-    "public_status",
-    "show_availability",
-)
