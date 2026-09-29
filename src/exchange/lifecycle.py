@@ -117,6 +117,7 @@ def _hold_release_transact_items(
     allocation_id,
     now,
     actor_sub,
+    quantity_allocated=None,
 ):
     service = _svc()
     items = []
@@ -149,30 +150,35 @@ def _hold_release_transact_items(
             }
         )
     else:
-        items.append(
-            {
-                "Update": {
-                    "TableName": resources_name,
-                    "Key": service._serialize_map({"resource_id": resource_id}),
-                    "UpdateExpression": (
-                        "SET quantity_available = quantity_available + :qty, "
-                        "quantity_allocated = quantity_allocated - :qty, updated_at = :now"
-                    ),
-                    "ConditionExpression": (
-                        "organization_id = :provider AND tracking_mode = :quantity "
-                        "AND quantity_allocated >= :qty"
-                    ),
-                    "ExpressionAttributeValues": service._serialize_map(
-                        {
-                            ":qty": quantity,
-                            ":provider": provider_org,
-                            ":quantity": "QUANTITY",
-                            ":now": now,
-                        }
-                    ),
+        allocated = quantity_allocated
+        if allocated is None:
+            allocated = quantity
+        skip_resource_counters = int(allocated or 0) < int(quantity or 0)
+        if not skip_resource_counters:
+            items.append(
+                {
+                    "Update": {
+                        "TableName": resources_name,
+                        "Key": service._serialize_map({"resource_id": resource_id}),
+                        "UpdateExpression": (
+                            "SET quantity_available = quantity_available + :qty, "
+                            "quantity_allocated = quantity_allocated - :qty, updated_at = :now"
+                        ),
+                        "ConditionExpression": (
+                            "organization_id = :provider AND tracking_mode = :quantity "
+                            "AND quantity_allocated >= :qty"
+                        ),
+                        "ExpressionAttributeValues": service._serialize_map(
+                            {
+                                ":qty": quantity,
+                                ":provider": provider_org,
+                                ":quantity": "QUANTITY",
+                                ":now": now,
+                            }
+                        ),
+                    }
                 }
-            }
-        )
+            )
 
     items.append(
         {
@@ -467,6 +473,7 @@ def _cancel_with_hold_release(
                 allocation_id=allocation_id,
                 now=now,
                 actor_sub=actor_sub,
+                quantity_allocated=(resource or {}).get("quantity_allocated"),
             )
         )
 
