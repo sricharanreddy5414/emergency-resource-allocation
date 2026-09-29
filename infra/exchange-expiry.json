@@ -1,5 +1,5 @@
 {
-  "applied": false,
+  "applied": true,
   "region": "eu-north-1",
   "note": "Phase 7A Exchange expiry worker. Separate from billing expiry. Queries ExpiryDueIndex only (no Scan).",
   "function": {
