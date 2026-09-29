@@ -23,9 +23,10 @@ OFFER_STATUSES = frozenset(
     }
 )
 
-# Hold representation for later phases (Phase 5E). Not applied in Phase 5B.
+# Hold representation for Resource Exchange (Phase 5D/5E).
 ALLOCATION_TYPE_EXCHANGE = "EXCHANGE"
 EXCHANGE_ALLOCATION_STATUS_OPEN = "OPEN"
+EXCHANGE_ALLOCATION_STATUS_RELEASED = "RELEASED"
 
 
 class ExchangeStateError(ValueError):

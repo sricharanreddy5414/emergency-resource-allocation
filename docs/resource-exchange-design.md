@@ -638,17 +638,46 @@ Core accept `TransactWriteItems` is exactly **4 items**: META + accepted offer +
 
 After a successful hold (and on idempotent same-offer retry), `_supersede_competing_open_offers` conditionally sets every remaining OPEN sibling to `SUPERSEDED` (`status = OPEN` only; already non-OPEN left unchanged). Cleanup is re-entrant: if a follow-up update fails transiently, a later accept retry heals leftovers. Stale OPEN competitors cannot be accepted (request already ACCEPTED → 409).
 
-Deferred to later phases: cancel, reject, withdraw, transfer start, handover confirm, expiry.
+Deferred to later phases: cancel, reject, withdraw, expiry.
 
-### Later-phase routes (not implemented in 5D)
+### Phase 5E implemented routes (handover + ownership/location)
+
+| Method | Path | Actor | Purpose |
+|---|---|---|---|
+| POST | `/exchange/requests/{exchange_request_id}/transfer/start` | Provider OPERATE+ | `ACCEPTED → TRANSFER_PENDING` (no ownership/location change) |
+| POST | `/exchange/requests/{exchange_request_id}/handover/confirm` | Requester OPERATE+ | `TRANSFER_PENDING → COMPLETED` + ownership/location transfer |
+
+**ACCEPTANCE = HOLD. HANDOVER CONFIRM = OWNERSHIP/LOCATION TRANSFER. COMPLETION = EXCHANGE FINISHED.**
+
+**Authorization matrix (locked §17):**
+
+| Action | Actor org | Roles |
+|---|---|---|
+| Transfer start | Provider (accepted offer owner) | OWNER / ADMIN / OPERATOR |
+| Handover confirm | Requester (request owner) | OWNER / ADMIN / OPERATOR |
+| MEMBER | — | denied (403) |
+| Unrelated org | — | 404 |
+
+**Individual handover (Phase 5E):**
+
+1. Provider starts transfer (META only; hold remains OPEN EXCHANGE allocation; resource stays ALLOCATED under provider).
+2. Requester confirms with validated destination location (`destination_location_id` from META or body; must be ACTIVE and owned by requester).
+3. Atomic TransactWrite: META `COMPLETED` + resource ownership/location → requester + `AVAILABLE`/`Available=true` + visibility forced `PRIVATE` (public discovery attrs removed) + allocation `OPEN → RELEASED`.
+4. Accepted offer remains `ACCEPTED` (offer vocabulary has no COMPLETED; request COMPLETED is the terminal exchange state).
+5. History: `RESOURCE_EXCHANGE_TRANSFERRED`. Audit: `exchange.handover_confirmed`, `resource.ownership_transferred`.
+6. Idempotent: transfer start when already `TRANSFER_PENDING` → 200; confirm when already `COMPLETED` → 200; no duplicate ownership write.
+
+**Quantity handover decision (Phase 5E):**
+
+§12 documents complete accounting (`quantity_total` move + upsert requester pool), but open question #3 (upsert vs fail-if-missing) and safe cross-tenant pool resolution without Scan remain unresolved. **Phase 5E rejects quantity transfer/handover with 409** (“deferred pending safe requester pool resolution”). Provider counters and ownership are not mutated for QUANTITY in this phase.
+
+### Later-phase routes (not implemented in 5E)
 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/exchange/requests/{id}/cancel` | Cancel |
 | POST | `/exchange/offers/{id}/reject` | Reject |
 | POST | `/exchange/offers/{id}/withdraw` | Withdraw |
-| POST | `/exchange/requests/{id}/transfer/start` | Transfer start |
-| POST | `/exchange/requests/{id}/handover/confirm` | Handover + ownership |
 
 Errors: 401 / 403 (+ `BILLING_REQUIRED`) / 404 (hide cross-tenant) / 409 / 400.
 
@@ -741,11 +770,11 @@ No Management exchange-policy desk in V1. No shell redesign.
 |---|---|
 | **5B** | NETWORK visibility foundation + design-aligned types/tests; **no** exchange APIs yet |
 | **5C** | Exchange API foundation: request + offer create/list (**no** holds; table infra not applied) |
-| **5D** | Atomic accept + EXCHANGE Allocations holds + competing SUPERSEDED (**this phase**) |
-| **5E** | Transfer start + handover confirm + ownership/location (+ qty complete) |
+| **5D** | Atomic accept + EXCHANGE Allocations holds + competing SUPERSEDED |
+| **5E** | Transfer start + handover confirm + individual ownership/location (**this phase**; quantity handover deferred) |
 | **5F** | Frontend Exchange experience |
 | **5G** | Expiry sweeper + lazy expiry + hold release |
-| **5H** | Cancel / reject / withdraw + remaining lifecycle |
+| **5H** | Cancel / reject / withdraw + quantity handover resolution |
 | **5I** | Security/concurrency hardening vs emergency/everyday/lifecycle |
 | **5J** | Authenticated non-pilot live smoke |
 

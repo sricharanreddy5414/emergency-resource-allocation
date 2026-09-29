@@ -1,6 +1,6 @@
 """Idempotent API Gateway exposure script for Resource Exchange routes.
 
-Repository-only helper for a later reviewed deploy. Phase 5D does NOT run this
+Repository-only helper for a later reviewed deploy. Phase 5E does NOT run this
 against AWS and does NOT create the ResourceExchanges table.
 
 Routes (Cognito authorizer y0hzhr; OPTIONS Authorization NONE):
@@ -10,11 +10,13 @@ Routes (Cognito authorizer y0hzhr; OPTIONS Authorization NONE):
   POST/GET/OPTIONS  /exchange/requests/{exchange_request_id}/offers
   GET/OPTIONS       /exchange/requests/{exchange_request_id}/offers/{offer_id}
   POST/OPTIONS      /exchange/requests/{exchange_request_id}/offers/{offer_id}/accept
+  POST/OPTIONS      /exchange/requests/{exchange_request_id}/transfer/start
+  POST/OPTIONS      /exchange/requests/{exchange_request_id}/handover/confirm
   GET/OPTIONS       /exchange/offers
 
 Integration target: erap-exchange:live
 
-ACCEPTANCE = RESOURCE HOLD. ACCEPTANCE ≠ OWNERSHIP TRANSFER. ACCEPTANCE ≠ HANDOVER.
+ACCEPTANCE = HOLD. HANDOVER CONFIRM = OWNERSHIP/LOCATION TRANSFER.
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ def main():
             {
                 "status": "not_applied",
                 "note": (
-                    "Phase 5D ships accept route wiring in code/tests only. "
+                    "Phase 5E ships transfer/handover routes in code/tests only. "
                     "Do not run until ResourceExchanges exists and erap-exchange is deployed."
                 ),
                 "api_id": API_ID,
@@ -53,6 +55,8 @@ def main():
                     "/exchange/requests/{exchange_request_id}/offers",
                     "/exchange/requests/{exchange_request_id}/offers/{offer_id}",
                     "/exchange/requests/{exchange_request_id}/offers/{offer_id}/accept",
+                    "/exchange/requests/{exchange_request_id}/transfer/start",
+                    "/exchange/requests/{exchange_request_id}/handover/confirm",
                     "/exchange/offers",
                 ],
             },
@@ -63,10 +67,9 @@ def main():
 
 
 if __name__ == "__main__":
-    # Guard: refuse live mutation unless explicitly forced after review.
     if "--apply" in sys.argv:
         print(
-            "Refusing --apply in Phase 5D. Table creation and API exposure are deferred.",
+            "Refusing --apply in Phase 5E. Table creation and API exposure are deferred.",
             file=sys.stderr,
         )
         raise SystemExit(2)

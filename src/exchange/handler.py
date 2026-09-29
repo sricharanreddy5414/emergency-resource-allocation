@@ -1,4 +1,4 @@
-"""Authenticated Resource Exchange HTTP API (Phase 5C/5D).
+"""Authenticated Resource Exchange HTTP API (Phase 5C/5D/5E).
 
 Routes:
   POST   /exchange/requests
@@ -8,9 +8,12 @@ Routes:
   GET    /exchange/requests/{exchange_request_id}/offers
   GET    /exchange/requests/{exchange_request_id}/offers/{offer_id}
   POST   /exchange/requests/{exchange_request_id}/offers/{offer_id}/accept
+  POST   /exchange/requests/{exchange_request_id}/transfer/start
+  POST   /exchange/requests/{exchange_request_id}/handover/confirm
   GET    /exchange/offers?scope=mine
 
-OFFER CREATE does not hold. ACCEPT creates atomic EXCHANGE hold (no ownership transfer).
+OFFER CREATE does not hold. ACCEPT creates atomic EXCHANGE hold.
+TRANSFER START is provider-only. HANDOVER CONFIRM transfers ownership/location.
 """
 
 import json
@@ -82,6 +85,22 @@ def _match_accept(path):
     return (match.group(1), match.group(2)) if match else (None, None)
 
 
+def _match_transfer_start(path):
+    match = re.search(
+        r"/exchange/requests/(EXREQ-[A-Za-z0-9_-]+)/transfer/start$",
+        path,
+    )
+    return match.group(1) if match else None
+
+
+def _match_handover_confirm(path):
+    match = re.search(
+        r"/exchange/requests/(EXREQ-[A-Za-z0-9_-]+)/handover/confirm$",
+        path,
+    )
+    return match.group(1) if match else None
+
+
 def lambda_handler(event, context):
     begin_request(event)
     method = (event.get("httpMethod") or "GET").upper()
@@ -140,6 +159,37 @@ def lambda_handler(event, context):
             )
             return response(200, result)
 
+        transfer_id = _match_transfer_start(path)
+
+        if transfer_id and method == "POST":
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.start_transfer(
+                transfer_id,
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
+        handover_id = _match_handover_confirm(path)
+
+        if handover_id and method == "POST":
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.confirm_handover(
+                handover_id,
+                body or {},
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
         request_id, offer_id = _match_offer_item(path)
 
         if request_id and offer_id and method == "GET":
@@ -187,14 +237,12 @@ def lambda_handler(event, context):
         return response(error.status_code, access_body(error))
     except service.ExchangeOperationError as error:
         body = {"message": error.message}
-
         if error.code:
             body["code"] = error.code
-
         return response(error.status_code, body)
     except ClientError as error:
         print("Exchange error:", error.response["Error"]["Code"])
-        return response(500, {"message": "Failed to process exchange request"})
+        return response(500, {"message": "Unable to process exchange request"})
     except Exception as error:
-        print("Exchange error:", error.__class__.__name__)
-        return response(500, {"message": "Failed to process exchange request"})
+        print("Exchange error:", type(error).__name__)
+        return response(500, {"message": "Unable to process exchange request"})

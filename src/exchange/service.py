@@ -1,8 +1,8 @@
-"""Resource Exchange API operations (Phase 5C/5D).
+"""Resource Exchange API operations (Phase 5C/5D/5E).
 
 Phase 5C: create/list requests and offers (offer create does not hold).
 Phase 5D: atomic offer acceptance creates EXCHANGE allocation hold.
-No ownership/location transfer (Phase 5E).
+Phase 5E: provider starts transfer; requester confirms handover (ownership/location).
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from exchange_model import (
 from exchange_state import (
     ALLOCATION_TYPE_EXCHANGE,
     EXCHANGE_ALLOCATION_STATUS_OPEN,
+    EXCHANGE_ALLOCATION_STATUS_RELEASED,
 )
 from pages import decode_token, encode_token
 from resource_state import (
@@ -54,6 +55,7 @@ from resource_state import (
     normalize_tracking_mode,
     quantity_snapshot,
 )
+from visibility import PRIVATE_INDEX_ATTRIBUTES
 
 # Core accept transaction: META + accepted offer + resource + allocation = 4.
 # Competing SUPERSEDED updates run post-commit (conditional) so a sibling
@@ -226,6 +228,12 @@ def requester_view(meta):
         "destination_state": meta.get("destination_state"),
         "notes": meta.get("notes"),
         "expires_at": meta.get("expires_at") or None,
+        "accepted_offer_id": meta.get("accepted_offer_id"),
+        "accepted_resource_id": meta.get("accepted_resource_id"),
+        "accepted_provider_organization_id": meta.get("accepted_provider_organization_id"),
+        "completed_at": meta.get("completed_at"),
+        "confirming_actor_sub": meta.get("confirming_actor_sub"),
+        "transfer_started_at": meta.get("transfer_started_at"),
         "created_at": meta.get("created_at"),
         "updated_at": meta.get("updated_at"),
         "visibility": "NETWORK",
@@ -526,6 +534,12 @@ def get_exchange_request(exchange_request_id, organization_id, membership):
     if meta.get("requester_organization_id") == organization_id:
         assert_requester_organization(membership, meta)
         return requester_view(meta)
+
+    # Accepted-offer provider may view participant exchange after accept.
+    if meta.get("accepted_provider_organization_id") == organization_id:
+        status = str(meta.get("status", "")).upper()
+        if status in {"ACCEPTED", "TRANSFER_PENDING", "COMPLETED", "CANCELLED", "EXPIRED"}:
+            return requester_view(meta)
 
     if meta.get("status") == "OPEN" and meta.get(GSI_NETWORK_LIST_KEY) == NETWORK_OPEN_LIST_VALUE:
         projection = network_request_projection(meta, viewer_organization_id=organization_id)
@@ -1213,6 +1227,437 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
     )
 
     return _acceptance_response(_get_meta(request_id), _get_offer(request_id, oid), allocation)
+
+
+def _accepted_context(meta):
+    """Load accepted offer + OPEN/RELEASED allocation for an accepted exchange."""
+    request_id = meta["exchange_request_id"]
+    oid = str(meta.get("accepted_offer_id") or "").strip()
+    if not oid:
+        raise ExchangeOperationError(409, "Exchange request has no accepted offer")
+    offer = _get_offer(request_id, oid)
+    allocation_id = exchange_allocation_id(oid)
+    allocation = allocations_table().get_item(Key={"allocation_id": allocation_id}).get("Item")
+    if not allocation:
+        raise ExchangeOperationError(409, "Exchange allocation is missing")
+    return offer, allocation
+
+
+def _reject_quantity_handover(meta, offer, resource):
+    mode = normalize_tracking_mode(
+        (resource or {}).get("tracking_mode") or meta.get("tracking_mode")
+    )
+    if mode == "QUANTITY":
+        raise ExchangeOperationError(
+            409,
+            "Quantity exchange handover is deferred pending safe requester pool resolution",
+        )
+
+
+def start_transfer(exchange_request_id, organization_id, actor_sub, actor_role, membership):
+    """Provider marks ACCEPTED → TRANSFER_PENDING. No ownership/location change."""
+    if actor_role not in EXCHANGE_WRITE_ROLES:
+        raise AccessError(403, "You are not allowed to perform this action")
+
+    _require_active_organization(organization_id)
+    meta = _get_meta(exchange_request_id)
+    status = str(meta.get("status", "")).upper()
+
+    if status == "TRANSFER_PENDING":
+        if meta.get("accepted_provider_organization_id") != organization_id:
+            raise AccessError(404, "Record not found")
+        offer, allocation = _accepted_context(meta)
+        assert_provider_organization(membership, offer)
+        return {
+            "message": "Transfer already started",
+            "request": requester_view(meta),
+            "offer": provider_offer_view(offer),
+            "allocation": _allocation_view(allocation),
+            "ownership_transferred": False,
+            "location_transferred": False,
+        }
+
+    if status == "COMPLETED":
+        raise ExchangeOperationError(409, "Exchange request already completed")
+
+    if status != "ACCEPTED":
+        raise ExchangeOperationError(409, "Exchange request is not accepted")
+
+    if meta.get("accepted_provider_organization_id") != organization_id:
+        raise AccessError(404, "Record not found")
+
+    offer, allocation = _accepted_context(meta)
+    assert_provider_organization(membership, offer)
+
+    if str(offer.get("status", "")).upper() != "ACCEPTED":
+        raise ExchangeOperationError(409, "Accepted offer is not in ACCEPTED state")
+
+    if (
+        allocation.get("allocation_type") != ALLOCATION_TYPE_EXCHANGE
+        or str(allocation.get("status", "")).upper() != EXCHANGE_ALLOCATION_STATUS_OPEN
+    ):
+        raise ExchangeOperationError(409, "Exchange allocation is not open")
+
+    resource_id = str(offer.get("resource_id") or "").strip()
+    resource = resources_table().get_item(Key={"resource_id": resource_id}).get("Item")
+    if not resource or resource.get("organization_id") != organization_id:
+        raise ExchangeOperationError(409, "Offered resource is no longer eligible")
+
+    _reject_quantity_handover(meta, offer, resource)
+
+    now = _now_iso()
+    request_id = meta["exchange_request_id"]
+    exchanges_name = getattr(exchanges_table(), "table_name", None) or getattr(
+        exchanges_table(), "name", TABLE_NAME
+    )
+
+    try:
+        _transact_write(
+            [
+                {
+                    "Update": {
+                        "TableName": exchanges_name,
+                        "Key": _serialize_map({"pk": meta_pk(request_id), "sk": meta_sk()}),
+                        "UpdateExpression": (
+                            "SET #status = :pending, transfer_started_at = :now, "
+                            "transfer_started_by = :actor, updated_at = :now, updated_by = :actor"
+                        ),
+                        "ConditionExpression": "#status = :accepted",
+                        "ExpressionAttributeNames": {"#status": "status"},
+                        "ExpressionAttributeValues": _serialize_map(
+                            {
+                                ":pending": "TRANSFER_PENDING",
+                                ":accepted": "ACCEPTED",
+                                ":now": now,
+                                ":actor": actor_sub,
+                            }
+                        ),
+                    }
+                }
+            ]
+        )
+    except ClientError as error:
+        code = error.response["Error"]["Code"]
+        if code in {"TransactionCanceledException", "ConditionalCheckFailedException"}:
+            latest = _get_meta(request_id)
+            if str(latest.get("status", "")).upper() == "TRANSFER_PENDING":
+                offer, allocation = _accepted_context(latest)
+                return {
+                    "message": "Transfer already started",
+                    "request": requester_view(latest),
+                    "offer": provider_offer_view(offer),
+                    "allocation": _allocation_view(allocation),
+                    "ownership_transferred": False,
+                    "location_transferred": False,
+                }
+            raise ExchangeOperationError(409, "Exchange state conflict") from error
+        raise
+
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "exchange.transfer_started",
+            "exchange_request",
+            request_id,
+            location_id=resource.get("location_id") or "",
+            metadata={
+                "offer_id": offer["offer_id"],
+                "resource_id": resource_id,
+                "requester_organization_id": meta.get("requester_organization_id"),
+            },
+        ),
+    )
+
+    latest = _get_meta(request_id)
+    return {
+        "message": "Transfer started",
+        "request": requester_view(latest),
+        "offer": provider_offer_view(offer),
+        "allocation": _allocation_view(allocation),
+        "ownership_transferred": False,
+        "location_transferred": False,
+    }
+
+
+def confirm_handover(exchange_request_id, body, organization_id, actor_sub, actor_role, membership):
+    """Requester confirms handover: TRANSFER_PENDING → COMPLETED + ownership/location."""
+    if actor_role not in EXCHANGE_WRITE_ROLES:
+        raise AccessError(403, "You are not allowed to perform this action")
+
+    _require_active_organization(organization_id)
+    meta = _get_meta(exchange_request_id)
+    assert_requester_organization(membership, meta)
+    status = str(meta.get("status", "")).upper()
+
+    if status == "COMPLETED":
+        offer, allocation = _accepted_context(meta)
+        return _handover_response(meta, offer, allocation, message="Handover already completed")
+
+    if status != "TRANSFER_PENDING":
+        raise ExchangeOperationError(409, "Exchange request is not awaiting handover confirmation")
+
+    offer, allocation = _accepted_context(meta)
+
+    if str(offer.get("status", "")).upper() != "ACCEPTED":
+        raise ExchangeOperationError(409, "Accepted offer is not in ACCEPTED state")
+
+    if (
+        allocation.get("allocation_type") != ALLOCATION_TYPE_EXCHANGE
+        or str(allocation.get("status", "")).upper() != EXCHANGE_ALLOCATION_STATUS_OPEN
+        or allocation.get("exchange_request_id") != meta["exchange_request_id"]
+    ):
+        raise ExchangeOperationError(409, "Exchange allocation is not open")
+
+    provider_org = str(
+        meta.get("accepted_provider_organization_id")
+        or offer.get("provider_organization_id")
+        or ""
+    ).strip()
+    resource_id = str(meta.get("accepted_resource_id") or offer.get("resource_id") or "").strip()
+    resource = resources_table().get_item(Key={"resource_id": resource_id}).get("Item")
+
+    if not resource or resource.get("organization_id") != provider_org:
+        raise ExchangeOperationError(409, "Offered resource is no longer eligible")
+
+    if str(resource.get("operational_status") or "").upper() != "ALLOCATED":
+        raise ExchangeOperationError(409, "Resource is not exchange-held")
+
+    if available_flag(resource.get("Available")):
+        raise ExchangeOperationError(409, "Resource is not exchange-held")
+
+    _reject_quantity_handover(meta, offer, resource)
+
+    dest_id = str(
+        (body or {}).get("destination_location_id")
+        or meta.get("destination_location_id")
+        or ""
+    ).strip()
+    destination = require_location(locations_table(), organization_id, dest_id)
+
+    now = _now_iso()
+    request_id = meta["exchange_request_id"]
+    oid = offer["offer_id"]
+    allocation_id = allocation["allocation_id"]
+    previous_location_id = str(resource.get("location_id") or "")
+    previous_location_name = str(resource.get("Location") or "")
+    new_location_id = destination["location_id"]
+    new_location_name = str(destination.get("name") or "")
+
+    exchanges_name = getattr(exchanges_table(), "table_name", None) or getattr(
+        exchanges_table(), "name", TABLE_NAME
+    )
+    resources_name = getattr(resources_table(), "table_name", None) or getattr(
+        resources_table(), "name", "Resources"
+    )
+    allocations_name = getattr(allocations_table(), "table_name", None) or getattr(
+        allocations_table(), "name", "Allocations"
+    )
+
+    remove_public = ", ".join(PRIVATE_INDEX_ATTRIBUTES)
+    resource_update = (
+        "SET organization_id = :requester, location_id = :loc_id, #loc = :loc_name, "
+        "#a = :true, operational_status = :available, visibility = :private, "
+        "updated_at = :now "
+        f"REMOVE {remove_public}"
+    )
+
+    transact_items = [
+        {
+            "Update": {
+                "TableName": exchanges_name,
+                "Key": _serialize_map({"pk": meta_pk(request_id), "sk": meta_sk()}),
+                "UpdateExpression": (
+                    "SET #status = :completed, completed_at = :now, confirming_actor_sub = :actor, "
+                    "completed_destination_location_id = :loc_id, "
+                    "previous_owner_organization_id = :provider, "
+                    "previous_location_id = :prev_loc, "
+                    "updated_at = :now, updated_by = :actor"
+                ),
+                "ConditionExpression": "#status = :pending",
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": _serialize_map(
+                    {
+                        ":completed": "COMPLETED",
+                        ":pending": "TRANSFER_PENDING",
+                        ":now": now,
+                        ":actor": actor_sub,
+                        ":loc_id": new_location_id,
+                        ":provider": provider_org,
+                        ":prev_loc": previous_location_id,
+                    }
+                ),
+            }
+        },
+        {
+            "Update": {
+                "TableName": resources_name,
+                "Key": _serialize_map({"resource_id": resource_id}),
+                "UpdateExpression": resource_update,
+                "ConditionExpression": (
+                    "organization_id = :provider AND operational_status = :allocated "
+                    "AND #a = :false"
+                ),
+                "ExpressionAttributeNames": {
+                    "#a": "Available",
+                    "#loc": "Location",
+                },
+                "ExpressionAttributeValues": _serialize_map(
+                    {
+                        ":requester": organization_id,
+                        ":provider": provider_org,
+                        ":loc_id": new_location_id,
+                        ":loc_name": new_location_name,
+                        ":true": True,
+                        ":false": False,
+                        ":available": "AVAILABLE",
+                        ":allocated": "ALLOCATED",
+                        ":private": "PRIVATE",
+                        ":now": now,
+                    }
+                ),
+            }
+        },
+        {
+            "Update": {
+                "TableName": allocations_name,
+                "Key": _serialize_map({"allocation_id": allocation_id}),
+                "UpdateExpression": (
+                    "SET #status = :released, released_at = :now, updated_at = :now, "
+                    "completed_by = :actor"
+                ),
+                "ConditionExpression": (
+                    "attribute_exists(allocation_id) AND #status = :open "
+                    "AND allocation_type = :exchange"
+                ),
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": _serialize_map(
+                    {
+                        ":released": EXCHANGE_ALLOCATION_STATUS_RELEASED,
+                        ":open": EXCHANGE_ALLOCATION_STATUS_OPEN,
+                        ":exchange": ALLOCATION_TYPE_EXCHANGE,
+                        ":now": now,
+                        ":actor": actor_sub,
+                    }
+                ),
+            }
+        },
+    ]
+
+    try:
+        _transact_write(transact_items)
+    except ClientError as error:
+        code = error.response["Error"]["Code"]
+        if code in {"TransactionCanceledException", "ConditionalCheckFailedException"}:
+            latest = _get_meta(request_id)
+            if str(latest.get("status", "")).upper() == "COMPLETED":
+                offer_row, allocation_row = _accepted_context(latest)
+                return _handover_response(
+                    latest, offer_row, allocation_row, message="Handover already completed"
+                )
+            raise ExchangeOperationError(409, "Handover state conflict") from error
+        raise
+
+    history_item = {
+        "history_id": "HIST-EXCHANGE-XFER-" + oid + "-" + resource_id,
+        "resource_id": resource_id,
+        "organization_id": organization_id,
+        "location_id": new_location_id,
+        "resource_type": resource.get("Type") or meta.get("resource_type_name") or "",
+        "location": new_location_name,
+        "previous_status": "ALLOCATED",
+        "new_status": "AVAILABLE",
+        "changed_at": now,
+        "reason": "RESOURCE_EXCHANGE_TRANSFERRED",
+        "allocation_id": allocation_id,
+        "exchange_request_id": request_id,
+        "offer_id": oid,
+        "previous_organization_id": provider_org,
+        "new_organization_id": organization_id,
+        "previous_location_id": previous_location_id,
+        "new_location_id": new_location_id,
+    }
+    try:
+        history_table().put_item(
+            Item=history_item,
+            ConditionExpression="attribute_not_exists(history_id)",
+        )
+    except ClientError:
+        pass
+
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "exchange.handover_confirmed",
+            "exchange_request",
+            request_id,
+            location_id=new_location_id,
+            metadata={
+                "offer_id": oid,
+                "resource_id": resource_id,
+                "provider_organization_id": provider_org,
+                "requester_organization_id": organization_id,
+                "previous_location_id": previous_location_id,
+                "new_location_id": new_location_id,
+            },
+        ),
+    )
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "resource.ownership_transferred",
+            "resource",
+            resource_id,
+            location_id=new_location_id,
+            metadata={
+                "exchange_request_id": request_id,
+                "offer_id": oid,
+                "provider_organization_id": provider_org,
+                "previous_location_id": previous_location_id,
+                "new_location_id": new_location_id,
+            },
+        ),
+    )
+
+    latest = _get_meta(request_id)
+    allocation_row = allocations_table().get_item(Key={"allocation_id": allocation_id}).get("Item") or {
+        **allocation,
+        "status": EXCHANGE_ALLOCATION_STATUS_RELEASED,
+    }
+    return _handover_response(latest, offer, allocation_row, message="Handover completed")
+
+
+def _allocation_view(allocation):
+    return {
+        "allocation_id": allocation.get("allocation_id"),
+        "allocation_type": allocation.get("allocation_type"),
+        "status": allocation.get("status"),
+        "resource_id": allocation.get("resource_id"),
+        "quantity": allocation.get("quantity"),
+        "exchange_request_id": allocation.get("exchange_request_id"),
+        "offer_id": allocation.get("offer_id"),
+        "provider_organization_id": allocation.get("provider_organization_id"),
+        "requester_organization_id": allocation.get("requester_organization_id"),
+    }
+
+
+def _handover_response(meta, offer, allocation, *, message):
+    return {
+        "message": message,
+        "request": requester_view(meta),
+        "offer": requester_offer_view(offer),
+        "allocation": _allocation_view(allocation),
+        "ownership_transferred": str(meta.get("status", "")).upper() == "COMPLETED",
+        "location_transferred": str(meta.get("status", "")).upper() == "COMPLETED",
+    }
 
 
 def _acceptance_response(meta, offer, allocation):
