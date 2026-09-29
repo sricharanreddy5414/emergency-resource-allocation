@@ -21,7 +21,13 @@ from common import ALLOWED_ORIGIN
 from observability import begin_request, error_body, load_object, log_result
 from pages import decode_token, encode_token
 from everyday_operations import EverydayOperationError, dispatch_everyday
-from resource_state import ResourceStateError, initialize_new_resource_fields, lifecycle_fields_from_body
+from lifecycle_operations import LifecycleOperationError, dispatch_lifecycle
+from resource_state import (
+    ResourceStateError,
+    initialize_new_resource_fields,
+    lifecycle_fields_from_body,
+    metadata_fields_from_body,
+)
 from visibility import PRIVATE_INDEX_ATTRIBUTES, publication_fields
 
 
@@ -113,17 +119,43 @@ def everyday_route(body, path, organization_id, actor_sub, actor_role):
     }
 
     try:
-        result = dispatch_everyday(
-            "POST",
-            path,
-            body,
-            organization_id,
-            actor_sub,
-            actor_role,
-            load_resource,
-            tables,
-        )
+        if any(
+            path.endswith(suffix)
+            for suffix in (
+                "/maintenance/complete",
+                "/maintenance",
+                "/damage/recover",
+                "/damage",
+                "/retire",
+                "/in-use/return",
+                "/in-use",
+                "/assign",
+                "/unassign",
+            )
+        ):
+            result = dispatch_lifecycle(
+                path,
+                body,
+                organization_id,
+                actor_sub,
+                actor_role,
+                load_resource,
+                tables,
+            )
+        else:
+            result = dispatch_everyday(
+                "POST",
+                path,
+                body,
+                organization_id,
+                actor_sub,
+                actor_role,
+                load_resource,
+                tables,
+            )
     except EverydayOperationError as error:
+        return response(error.status_code, {"message": error.message})
+    except LifecycleOperationError as error:
         return response(error.status_code, {"message": error.message})
 
     return response(200, result)
@@ -168,6 +200,15 @@ def lambda_handler(event, context):
             or path.endswith("/reservation-release")
             or path.endswith("/everyday")
             or path.endswith("/everyday/return")
+            or path.endswith("/maintenance/complete")
+            or path.endswith("/maintenance")
+            or path.endswith("/damage/recover")
+            or path.endswith("/damage")
+            or path.endswith("/retire")
+            or path.endswith("/in-use/return")
+            or path.endswith("/in-use")
+            or path.endswith("/assign")
+            or path.endswith("/unassign")
         ):
             return everyday_route(body, path, organization_id, _user_sub, membership.get("role"))
 
@@ -193,6 +234,8 @@ def lambda_handler(event, context):
     except ResourceStateError as error:
         return response(400, {"message": str(error)})
     except EverydayOperationError as error:
+        return response(error.status_code, {"message": error.message})
+    except LifecycleOperationError as error:
         return response(error.status_code, {"message": error.message})
     except Exception as error:
         print("Resource error:", error.__class__.__name__)
@@ -412,6 +455,17 @@ def update_resource(body, organization_id, actor_sub="", actor_role=""):
             "attributes": attributes,
         }
     )
+
+    try:
+        meta = metadata_fields_from_body(body, current)
+    except ResourceStateError as error:
+        return response(400, {"message": str(error)})
+
+    for key, value in meta.items():
+        if value is None or value == "":
+            updated.pop(key, None)
+        else:
+            updated[key] = value
 
     try:
         updated.update(publication_fields(body, location, updated["Type"], resource_id, available))

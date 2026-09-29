@@ -27,6 +27,24 @@ const RESOURCE_EVERYDAY_ALLOCATE_API_URL =
     RESOURCES_API_URL + "/everyday";
 const RESOURCE_EVERYDAY_RETURN_API_URL =
     RESOURCES_API_URL + "/everyday/return";
+const RESOURCE_MAINTENANCE_API_URL =
+    RESOURCES_API_URL + "/maintenance";
+const RESOURCE_MAINTENANCE_COMPLETE_API_URL =
+    RESOURCES_API_URL + "/maintenance/complete";
+const RESOURCE_DAMAGE_API_URL =
+    RESOURCES_API_URL + "/damage";
+const RESOURCE_DAMAGE_RECOVER_API_URL =
+    RESOURCES_API_URL + "/damage/recover";
+const RESOURCE_RETIRE_API_URL =
+    RESOURCES_API_URL + "/retire";
+const RESOURCE_IN_USE_API_URL =
+    RESOURCES_API_URL + "/in-use";
+const RESOURCE_IN_USE_RETURN_API_URL =
+    RESOURCES_API_URL + "/in-use/return";
+const RESOURCE_ASSIGN_API_URL =
+    RESOURCES_API_URL + "/assign";
+const RESOURCE_UNASSIGN_API_URL =
+    RESOURCES_API_URL + "/unassign";
 
 const REQUESTS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/requests";
@@ -2715,7 +2733,28 @@ function normalizeResources() {
                     tracking_mode:
                         resource.tracking_mode ??
                         resource.trackingMode ??
-                        "INDIVIDUAL"
+                        "INDIVIDUAL",
+
+                    condition:
+                        resource.condition || "",
+
+                    serial_number:
+                        resource.serial_number || "",
+
+                    asset_tag:
+                        resource.asset_tag || "",
+
+                    department:
+                        resource.department || "",
+
+                    responsible_team:
+                        resource.responsible_team || "",
+
+                    assigned_to:
+                        resource.assigned_to || "",
+
+                    description:
+                        resource.description || ""
 
                 };
 
@@ -3168,6 +3207,12 @@ function resourceRowActions(resource) {
                 <button type="button" class="resource-everyday-return-btn" data-resource-id="${escapeHtml(resource.id)}">
                     Return qty
                 </button>
+                <button type="button" class="resource-maintenance-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Maintenance
+                </button>
+                <button type="button" class="resource-retire-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Retire
+                </button>
             `;
         } else if (operational === "AVAILABLE") {
             everyday = `
@@ -3176,6 +3221,18 @@ function resourceRowActions(resource) {
                 </button>
                 <button type="button" class="resource-everyday-allocate-btn" data-resource-id="${escapeHtml(resource.id)}">
                     Allocate
+                </button>
+                <button type="button" class="resource-maintenance-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Maintenance
+                </button>
+                <button type="button" class="resource-damage-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Damage
+                </button>
+                <button type="button" class="resource-retire-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Retire
+                </button>
+                <button type="button" class="resource-assign-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Assign
                 </button>
             `;
         } else if (operational === "RESERVED") {
@@ -3186,11 +3243,53 @@ function resourceRowActions(resource) {
                 <button type="button" class="resource-everyday-allocate-btn" data-resource-id="${escapeHtml(resource.id)}">
                     Allocate
                 </button>
+                <button type="button" class="resource-maintenance-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Maintenance
+                </button>
+                <button type="button" class="resource-damage-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Damage
+                </button>
             `;
         } else if (operational === "ALLOCATED") {
             everyday = `
                 <button type="button" class="resource-everyday-return-btn" data-resource-id="${escapeHtml(resource.id)}">
                     Return
+                </button>
+                <button type="button" class="resource-in-use-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Mark in use
+                </button>
+            `;
+        } else if (operational === "IN_USE") {
+            everyday = `
+                <button type="button" class="resource-in-use-return-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Return to available
+                </button>
+                <button type="button" class="resource-maintenance-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Maintenance
+                </button>
+                <button type="button" class="resource-damage-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Damage
+                </button>
+            `;
+        } else if (operational === "MAINTENANCE") {
+            everyday = `
+                <button type="button" class="resource-maintenance-complete-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Complete maintenance
+                </button>
+                <button type="button" class="resource-retire-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Retire
+                </button>
+            `;
+        } else if (operational === "DAMAGED") {
+            everyday = `
+                <button type="button" class="resource-damage-recover-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Recover
+                </button>
+                <button type="button" class="resource-maintenance-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Maintenance
+                </button>
+                <button type="button" class="resource-retire-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Retire
                 </button>
             `;
         }
@@ -3199,7 +3298,11 @@ function resourceRowActions(resource) {
     const emergencyRelease =
         canOperate &&
         !isResourceAvailable(resource) &&
-        operational !== "RESERVED"
+        operational !== "RESERVED" &&
+        operational !== "MAINTENANCE" &&
+        operational !== "DAMAGED" &&
+        operational !== "RETIRED" &&
+        operational !== "IN_USE"
             ? `
                 <button
                     type="button"
@@ -3822,6 +3925,55 @@ async function everydayAllocateQuantityResource(resourceId) {
     }
 
     await everydayAllocateResource(resourceId, quantity);
+}
+
+
+async function lifecycleResourceAction(url, resourceId, promptLabel) {
+
+    const body = { resource_id: resourceId };
+
+    if (promptLabel) {
+        const notes = window.prompt(promptLabel, "") || "";
+        if (notes.trim()) {
+            body.notes = notes.trim();
+        }
+    }
+
+    try {
+        showToast("Updating resource...");
+        await postEverydayResource(url, body);
+        showToast("Resource updated.");
+        await loadResources();
+    } catch (error) {
+        console.error("Lifecycle action failed:", error);
+        showToast(error.message || "Unable to update resource.");
+    }
+}
+
+
+async function assignResourceAction(resourceId) {
+
+    const assignedTo = window.prompt("Assigned to (member id or name)", "") || "";
+    const department = window.prompt("Department (optional)", "") || "";
+
+    if (!assignedTo.trim() && !department.trim()) {
+        showToast("Assignment target is required.");
+        return;
+    }
+
+    try {
+        showToast("Assigning resource...");
+        await postEverydayResource(RESOURCE_ASSIGN_API_URL, {
+            resource_id: resourceId,
+            assigned_to: assignedTo.trim(),
+            department: department.trim(),
+        });
+        showToast("Resource assigned.");
+        await loadResources();
+    } catch (error) {
+        console.error("Assign failed:", error);
+        showToast(error.message || "Unable to assign resource.");
+    }
 }
 
 
@@ -5546,7 +5698,11 @@ function everydayResourceDelegatedClick(event) {
     const target = event.target.closest(
         ".resource-reserve-btn, .resource-reservation-release-btn, " +
         ".resource-everyday-allocate-btn, .resource-everyday-return-btn, " +
-        ".resource-qty-reserve-btn, .resource-qty-allocate-btn"
+        ".resource-qty-reserve-btn, .resource-qty-allocate-btn, " +
+        ".resource-maintenance-btn, .resource-maintenance-complete-btn, " +
+        ".resource-damage-btn, .resource-damage-recover-btn, " +
+        ".resource-retire-btn, .resource-in-use-btn, .resource-in-use-return-btn, " +
+        ".resource-assign-btn"
     );
 
     if (!target) {
@@ -5586,6 +5742,49 @@ function everydayResourceDelegatedClick(event) {
 
     if (target.classList.contains("resource-qty-allocate-btn")) {
         everydayAllocateQuantityResource(resourceId);
+        return;
+    }
+
+    if (target.classList.contains("resource-maintenance-btn")) {
+        lifecycleResourceAction(RESOURCE_MAINTENANCE_API_URL, resourceId, "Maintenance notes (optional)");
+        return;
+    }
+
+    if (target.classList.contains("resource-maintenance-complete-btn")) {
+        lifecycleResourceAction(RESOURCE_MAINTENANCE_COMPLETE_API_URL, resourceId, "Completion notes (optional)");
+        return;
+    }
+
+    if (target.classList.contains("resource-damage-btn")) {
+        lifecycleResourceAction(RESOURCE_DAMAGE_API_URL, resourceId, "Damage reason (optional)");
+        return;
+    }
+
+    if (target.classList.contains("resource-damage-recover-btn")) {
+        lifecycleResourceAction(RESOURCE_DAMAGE_RECOVER_API_URL, resourceId, "Recovery notes (optional)");
+        return;
+    }
+
+    if (target.classList.contains("resource-retire-btn")) {
+        if (!window.confirm(`Retire resource ${resourceId}?`)) {
+            return;
+        }
+        lifecycleResourceAction(RESOURCE_RETIRE_API_URL, resourceId, "Retirement notes (optional)");
+        return;
+    }
+
+    if (target.classList.contains("resource-in-use-btn")) {
+        lifecycleResourceAction(RESOURCE_IN_USE_API_URL, resourceId, "");
+        return;
+    }
+
+    if (target.classList.contains("resource-in-use-return-btn")) {
+        lifecycleResourceAction(RESOURCE_IN_USE_RETURN_API_URL, resourceId, "");
+        return;
+    }
+
+    if (target.classList.contains("resource-assign-btn")) {
+        assignResourceAction(resourceId);
     }
 }
 

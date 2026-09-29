@@ -46,6 +46,15 @@ API `4c6dni17l3`, stage `dev`, region `eu-north-1`.
 | `POST /allocate/resources/reservation-release` | `get-resources` | Clear individual reservation |
 | `POST /allocate/resources/everyday` | `get-resources` | Everyday allocation (`allocation_type=EVERYDAY`, status `OPEN`) |
 | `POST /allocate/resources/everyday/return` | `get-resources` | Everyday return (status `RETURNED`) |
+| `POST /allocate/resources/maintenance` | `get-resources` | Start maintenance |
+| `POST /allocate/resources/maintenance/complete` | `get-resources` | Complete maintenance → AVAILABLE |
+| `POST /allocate/resources/damage` | `get-resources` | Mark damaged |
+| `POST /allocate/resources/damage/recover` | `get-resources` | Recover damage → AVAILABLE or MAINTENANCE |
+| `POST /allocate/resources/retire` | `get-resources` | Retire resource |
+| `POST /allocate/resources/in-use` | `get-resources` | ALLOCATED → IN_USE |
+| `POST /allocate/resources/in-use/return` | `get-resources` | IN_USE → AVAILABLE |
+| `POST /allocate/resources/assign` | `get-resources` | Assign department/user metadata |
+| `POST /allocate/resources/unassign` | `get-resources` | Clear assignment metadata |
 | `POST /allocate` | `emergency-resource-allocation` | Create or match an emergency request, then allocate one available resource |
 | `GET /allocate/allocations` | `emergency-resource-allocation` | List allocations for the organization |
 | `GET /requests` | `create-request` | Emergency requests |

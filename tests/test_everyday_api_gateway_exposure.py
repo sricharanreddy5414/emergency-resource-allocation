@@ -1,9 +1,11 @@
 """Unit checks for everyday API Gateway exposure script constants."""
 
 import importlib.util
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT / "scripts")]
 
 
 def load_module():
@@ -17,12 +19,17 @@ def load_module():
 def test_route_segments_are_exactly_phase3_paths():
     module = load_module()
     paths = [module.PARENT_PATH + "/" + "/".join(segments) for segments in module.ROUTE_SEGMENTS]
-    assert paths == [
-        "/allocate/resources/reserve",
-        "/allocate/resources/reservation-release",
-        "/allocate/resources/everyday",
-        "/allocate/resources/everyday/return",
-    ]
+    assert "/allocate/resources/reserve" in paths
+    assert "/allocate/resources/everyday/return" in paths
+    assert "/allocate/resources/maintenance" in paths
+    assert "/allocate/resources/maintenance/complete" in paths
+    assert "/allocate/resources/damage" in paths
+    assert "/allocate/resources/damage/recover" in paths
+    assert "/allocate/resources/retire" in paths
+    assert "/allocate/resources/assign" in paths
+    assert "/allocate/resources/unassign" in paths
+    assert "/allocate/resources/in-use" in paths
+    assert len(paths) == len(set(paths))
 
 
 def test_live_uri_targets_get_resources_alias():

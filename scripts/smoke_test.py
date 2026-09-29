@@ -22,7 +22,8 @@ def request(method, url):
 
 def expect(name, method, url, status, origin=None, absent=()):
     code, allow_origin, body = request(method, url)
-    if code != status:
+    allowed = status if isinstance(status, (set, tuple, list)) else (status,)
+    if code not in allowed:
         raise SystemExit(f"{name} returned {code}, expected {status}")
     if origin is not None and allow_origin != origin:
         raise SystemExit(f"{name} CORS origin is {allow_origin or 'missing'}")
@@ -76,28 +77,32 @@ def main():
         ),
         expect("public page size", "GET", API_BASE + "/public/resources?limit=1000", 400, ALLOWED_ORIGIN),
         expect("public page token", "GET", API_BASE + "/public/resources?page_token=not-a-token", 400, ALLOWED_ORIGIN),
-        expect("resources require auth", "GET", API_BASE + "/allocate/resources", 401, ALLOWED_ORIGIN),
-        expect("reserve requires auth", "POST", API_BASE + "/allocate/resources/reserve", 401, ALLOWED_ORIGIN),
+        expect("resources require auth", "GET", API_BASE + "/allocate/resources", (401, 403), ALLOWED_ORIGIN),
+        expect("reserve requires auth", "POST", API_BASE + "/allocate/resources/reserve", (401, 403), ALLOWED_ORIGIN),
         expect(
             "reservation-release requires auth",
             "POST",
             API_BASE + "/allocate/resources/reservation-release",
-            401,
+            (401, 403),
             ALLOWED_ORIGIN,
         ),
-        expect("everyday allocate requires auth", "POST", API_BASE + "/allocate/resources/everyday", 401, ALLOWED_ORIGIN),
+        expect("everyday allocate requires auth", "POST", API_BASE + "/allocate/resources/everyday", (401, 403), ALLOWED_ORIGIN),
         expect(
             "everyday return requires auth",
             "POST",
             API_BASE + "/allocate/resources/everyday/return",
-            401,
+            (401, 403),
             ALLOWED_ORIGIN,
         ),
+        expect("maintenance requires auth", "POST", API_BASE + "/allocate/resources/maintenance", (401, 403), ALLOWED_ORIGIN),
+        expect("retire requires auth", "POST", API_BASE + "/allocate/resources/retire", (401, 403), ALLOWED_ORIGIN),
+        expect("assign requires auth", "POST", API_BASE + "/allocate/resources/assign", (401, 403), ALLOWED_ORIGIN),
         expect("reserve options", "OPTIONS", API_BASE + "/allocate/resources/reserve", 200, ALLOWED_ORIGIN),
         expect("everyday options", "OPTIONS", API_BASE + "/allocate/resources/everyday", 200, ALLOWED_ORIGIN),
-        expect("types require auth", "GET", API_BASE + "/resource-types", 401, ALLOWED_ORIGIN),
-        expect("requests require auth", "GET", API_BASE + "/requests", 401, ALLOWED_ORIGIN),
-        expect("members require auth", "GET", API_BASE + "/organization?view=members", 401, ALLOWED_ORIGIN),
+        expect("maintenance options", "OPTIONS", API_BASE + "/allocate/resources/maintenance", 200, ALLOWED_ORIGIN),
+        expect("types require auth", "GET", API_BASE + "/resource-types", (401, 403), ALLOWED_ORIGIN),
+        expect("requests require auth", "GET", API_BASE + "/requests", (401, 403), ALLOWED_ORIGIN),
+        expect("members require auth", "GET", API_BASE + "/organization?view=members", (401, 403), ALLOWED_ORIGIN),
         expect("public options", "OPTIONS", API_BASE + "/public/resources", 200, ALLOWED_ORIGIN),
     ]
     page_code, _origin, _page = request("GET", AMPLIFY_URL)

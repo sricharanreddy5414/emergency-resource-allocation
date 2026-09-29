@@ -43,6 +43,18 @@ Wires Cognito-protected `POST` plus `OPTIONS` for the four everyday paths on API
 
 Smoke checks for unauthenticated `401` and `OPTIONS` `200` live in `scripts/smoke_test.py`.
 
+## Phase 4 implementation (advanced lifecycle)
+
+Code: `src/shared/resource_state.py` (transition map), `src/shared/lifecycle_operations.py`, handler routes under `/allocate/resources/...`.
+
+Operations: maintenance start/complete, damage/recover, retire, assign/unassign, in-use / return from in-use.
+
+Metadata (optional via PUT): description, condition, serial_number, asset_tag, department, responsible_team. PUT still blocks Available, operational_status, tracking_mode, quantities, and assigned_to.
+
+Quantity pools: whole-pool lifecycle only when reserved and allocated stock are zero; partial maintenance/damage deferred.
+
+Tests: `tests/test_resource_lifecycle.py`.
+
 ## Foundation implementation (Phase 1)
 
 Code lives in `src/shared/resource_state.py` and is packaged with `get-resources`.

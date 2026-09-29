@@ -6,6 +6,15 @@ Creates only these paths under /allocate/resources:
   POST/OPTIONS reservation-release
   POST/OPTIONS everyday
   POST/OPTIONS everyday/return
+  POST/OPTIONS maintenance
+  POST/OPTIONS maintenance/complete
+  POST/OPTIONS damage
+  POST/OPTIONS damage/recover
+  POST/OPTIONS retire
+  POST/OPTIONS in-use
+  POST/OPTIONS in-use/return
+  POST/OPTIONS assign
+  POST/OPTIONS unassign
 
 Integrations use get-resources:live and Cognito authorizer y0hzhr for POST.
 OPTIONS stay Authorization NONE, matching /allocate/resources/release.
@@ -32,6 +41,15 @@ ROUTE_SEGMENTS = (
     ("reservation-release",),
     ("everyday",),
     ("everyday", "return"),
+    ("maintenance",),
+    ("maintenance", "complete"),
+    ("damage",),
+    ("damage", "recover"),
+    ("retire",),
+    ("in-use",),
+    ("in-use", "return"),
+    ("assign",),
+    ("unassign",),
 )
 
 

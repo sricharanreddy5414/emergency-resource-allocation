@@ -14,11 +14,38 @@ RESOURCE_OPERATIONAL_STATUSES = frozenset(
 
 TRACKING_MODES = frozenset({"INDIVIDUAL", "QUANTITY"})
 
+RESOURCE_CONDITIONS = frozenset({"GOOD", "FAIR", "POOR", "CRITICAL"})
+
 QUANTITY_FIELD_NAMES = (
     "quantity_total",
     "quantity_available",
     "quantity_reserved",
     "quantity_allocated",
+)
+
+METADATA_FIELD_NAMES = (
+    "description",
+    "condition",
+    "serial_number",
+    "asset_tag",
+    "department",
+    "responsible_team",
+)
+
+# Explicit everyday lifecycle transitions. Emergency claim/release stay outside this map.
+ALLOWED_RESOURCE_TRANSITIONS = {
+    "AVAILABLE": frozenset({"RESERVED", "ALLOCATED", "MAINTENANCE", "DAMAGED", "RETIRED"}),
+    "RESERVED": frozenset({"AVAILABLE", "ALLOCATED", "MAINTENANCE", "DAMAGED"}),
+    "ALLOCATED": frozenset({"IN_USE", "AVAILABLE"}),
+    "IN_USE": frozenset({"AVAILABLE", "MAINTENANCE", "DAMAGED"}),
+    "MAINTENANCE": frozenset({"AVAILABLE", "RETIRED"}),
+    "DAMAGED": frozenset({"AVAILABLE", "MAINTENANCE", "RETIRED"}),
+    "RETIRED": frozenset(),
+}
+
+# Statuses that keep Available=false (not emergency-matchable).
+UNAVAILABLE_OPERATIONAL_STATUSES = frozenset(
+    {"RESERVED", "ALLOCATED", "IN_USE", "MAINTENANCE", "DAMAGED", "RETIRED"}
 )
 
 
@@ -186,6 +213,76 @@ def lifecycle_fields_from_body(body):
     if not isinstance(body, dict):
         return set()
 
-    blocked = {"Available", "operational_status", "tracking_mode", *QUANTITY_FIELD_NAMES}
+    blocked = {
+        "Available",
+        "operational_status",
+        "tracking_mode",
+        "assigned_to",
+        "reserved_by",
+        "reserved_at",
+        *QUANTITY_FIELD_NAMES,
+    }
 
     return {name for name in blocked if name in body}
+
+
+def validate_transition(current_status, target_status, operation=""):
+    """Raise ResourceStateError when the everyday transition is not allowed."""
+    del operation
+    current = normalize_operational_status(current_status)
+    target = normalize_operational_status(target_status)
+    allowed = ALLOWED_RESOURCE_TRANSITIONS.get(current, frozenset())
+
+    if target not in allowed:
+        raise ResourceStateError(f"Cannot transition from {current} to {target}")
+
+    return current, target
+
+
+def available_for_status(status):
+    """Emergency Available flag for a stored operational status."""
+    return normalize_operational_status(status) == "AVAILABLE"
+
+
+def normalize_condition(value):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+
+    condition = str(value).strip().upper()
+
+    if condition not in RESOURCE_CONDITIONS:
+        raise ResourceStateError("Condition is invalid")
+
+    return condition
+
+
+def metadata_fields_from_body(body, current=None):
+    """Optional metadata for PUT. Does not include lifecycle or assignment fields."""
+    if not isinstance(body, dict):
+        raise ResourceStateError("Resource is invalid")
+
+    current = current or {}
+    fields = {}
+
+    if "description" in body:
+        description = str(body.get("description") or "").strip()
+        if len(description) > 500:
+            raise ResourceStateError("Description is too long")
+        fields["description"] = description
+
+    if "condition" in body:
+        condition = normalize_condition(body.get("condition"))
+        if condition is None:
+            fields["condition"] = None
+        else:
+            fields["condition"] = condition
+
+    for name, limit in (("serial_number", 80), ("asset_tag", 80), ("department", 80), ("responsible_team", 80)):
+        if name not in body:
+            continue
+        value = str(body.get(name) or "").strip()
+        if len(value) > limit:
+            raise ResourceStateError(f"{name} is too long")
+        fields[name] = value
+
+    return fields
