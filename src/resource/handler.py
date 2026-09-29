@@ -20,6 +20,7 @@ from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 from observability import begin_request, error_body, load_object, log_result
 from pages import decode_token, encode_token
+from resource_state import ResourceStateError, initialize_new_resource_fields, lifecycle_fields_from_body
 from visibility import PRIVATE_INDEX_ATTRIBUTES, publication_fields
 
 
@@ -149,6 +150,8 @@ def lambda_handler(event, context):
     except json.JSONDecodeError:
         return response(400, {"message": "Invalid JSON body"})
     except ValueError as error:
+        return response(400, {"message": str(error)})
+    except ResourceStateError as error:
         return response(400, {"message": str(error)})
     except Exception as error:
         print("Resource error:", error.__class__.__name__)
@@ -282,6 +285,12 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
         available = available.lower() == "true"
 
     available = bool(available)
+
+    try:
+        state_fields = initialize_new_resource_fields(body, available=available)
+    except ResourceStateError as error:
+        return response(400, {"message": str(error)})
+
     item = {
         "resource_id": resource_id,
         "name": name or resource_type.get("name", ""),
@@ -293,9 +302,10 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
         "Available": available,
         "attributes": attributes,
     }
+    item.update(state_fields)
 
     try:
-        item.update(publication_fields(body, location, item["Type"], resource_id, available))
+        item.update(publication_fields(body, location, item["Type"], resource_id, is_available(item.get("Available"))))
     except ValueError as error:
         return response(400, {"message": str(error)})
 
@@ -329,6 +339,10 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
 
 def update_resource(body, organization_id, actor_sub="", actor_role=""):
     resource_id = str(body.get("resource_id") or "").strip()
+
+    if lifecycle_fields_from_body(body):
+        return response(400, {"message": "Resource state cannot be changed through update"})
+
     current = resources_table().get_item(Key={"resource_id": resource_id}).get("Item")
     require_owned(current, organization_id)
     location_id = str(body.get("location_id") or current.get("location_id") or "").strip()

@@ -30,6 +30,7 @@ SHARED = {
     "common.py": "src/organization/common.py",
     "membership.py": "src/organization/membership.py",
     "pages.py": "src/shared/pages.py",
+    "resource_state.py": "src/shared/resource_state.py",
     "visibility.py": "src/shared/visibility.py",
     "matching.py": "src/shared/matching.py",
     "observability.py": "src/shared/observability.py",
