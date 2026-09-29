@@ -1001,3 +1001,135 @@ td {
         scroll-behavior: auto !important;
     }
 }
+
+/* =========================================================
+   RESOURCE EXCHANGE
+========================================================= */
+
+.exchange-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 16px;
+}
+
+.exchange-tab {
+    border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+    background: transparent;
+    color: inherit;
+    padding: 8px 12px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+
+.exchange-tab.active {
+    background: var(--ink, #111);
+    color: #fff;
+    border-color: var(--ink, #111);
+}
+
+.exchange-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.exchange-list,
+.exchange-detail {
+    display: grid;
+    gap: 10px;
+}
+
+.exchange-card {
+    border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+    padding: 12px 14px;
+    display: grid;
+    gap: 8px;
+    text-align: left;
+    width: 100%;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.exchange-card.active {
+    border-color: var(--ink, #111);
+}
+
+.exchange-card-top,
+.exchange-card-meta,
+.exchange-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.exchange-card-meta,
+.exchange-muted {
+    font-size: 13px;
+    opacity: 0.78;
+}
+
+.exchange-form {
+    display: grid;
+    gap: 4px;
+    max-width: 520px;
+}
+
+.exchange-form-panel {
+    margin-top: 16px;
+}
+
+.exchange-offer-block,
+.exchange-action-block {
+    border-top: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+    padding-top: 12px;
+    margin-top: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.status-badge.exchange-open {
+    color: var(--ready);
+}
+
+.status-badge.exchange-accepted,
+.status-badge.exchange-held {
+    color: var(--hold);
+}
+
+.status-badge.exchange-pending {
+    color: var(--wait);
+}
+
+.status-badge.exchange-completed {
+    color: var(--ready);
+}
+
+.status-badge.exchange-terminal {
+    color: var(--hold);
+}
+
+@media (max-width: 1024px) {
+    .exchange-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .exchange-tabs {
+        margin-bottom: 12px;
+    }
+
+    .exchange-tab {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+}

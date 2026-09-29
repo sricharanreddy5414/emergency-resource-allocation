@@ -32,6 +32,18 @@ def main():
     html = index.read_text(encoding="utf-8")
     if "app.js" not in html or "style.css" not in html:
         raise SystemExit("index.html does not reference app.js and style.css")
+    if 'id="exchange"' not in html or 'data-section="exchange"' not in html:
+        raise SystemExit("Exchange destination missing from index.html")
+    js = app.read_text(encoding="utf-8")
+    for marker in (
+        "EXCHANGE_API_URL",
+        "loadExchangeWorkspace",
+        "initializeExchange",
+        "handover/confirm",
+        "transfer/start",
+    ):
+        if marker not in js:
+            raise SystemExit(f"Exchange frontend marker missing: {marker}")
     scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.DOTALL)
     if not scripts:
         raise SystemExit("index.html has no inline script to check")

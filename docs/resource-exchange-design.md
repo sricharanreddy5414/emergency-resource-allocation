@@ -756,11 +756,11 @@ Misleading “success” without durable META/Resource/Allocation consistency is
 
 Operations nav addition: **Exchange** with tabs:
 
-Network requests · My requests · My offers · Incoming offers · Active transfers
+Network requests · My requests · My offers
 
-Screens: create request; network list; offer composer (eligible NETWORK+AVAILABLE stock); accept/reject; transfer start; handover confirm; read-only timeline.
+Screens: create request; network list; offer composer (eligible AVAILABLE stock); accept; transfer start; handover confirm.
 
-No Management exchange-policy desk in V1. No shell redesign.
+Phase 5F implements this inside the existing Operations shell (`frontend/index.html`, `frontend/app.js`, `frontend/style.css`). Backend remains source of truth. Quantity handover remains deferred and surfaces the Phase 5E API message. No Management exchange-policy desk. No shell redesign.
 
 ---
 
@@ -771,8 +771,8 @@ No Management exchange-policy desk in V1. No shell redesign.
 | **5B** | NETWORK visibility foundation + design-aligned types/tests; **no** exchange APIs yet |
 | **5C** | Exchange API foundation: request + offer create/list (**no** holds; table infra not applied) |
 | **5D** | Atomic accept + EXCHANGE Allocations holds + competing SUPERSEDED |
-| **5E** | Transfer start + handover confirm + individual ownership/location (**this phase**; quantity handover deferred) |
-| **5F** | Frontend Exchange experience |
+| **5E** | Transfer start + handover confirm + individual ownership/location (quantity handover deferred) |
+| **5F** | Frontend Exchange experience (**this phase**; no live AWS deploy) |
 | **5G** | Expiry sweeper + lazy expiry + hold release |
 | **5H** | Cancel / reject / withdraw + quantity handover resolution |
 | **5I** | Security/concurrency hardening vs emergency/everyday/lifecycle |

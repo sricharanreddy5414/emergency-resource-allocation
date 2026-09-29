@@ -67,6 +67,9 @@ const RESOURCE_TYPES_API_URL =
 const REQUEST_TYPES_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/request-types";
 
+const EXCHANGE_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/exchange";
+
 
 /* =========================================================
    AMAZON COGNITO CONFIGURATION
@@ -1343,6 +1346,9 @@ const pageTitles = {
     allocations:
         "Allocations",
 
+    exchange:
+        "Exchange",
+
     notifications:
         "Notifications",
 
@@ -1539,6 +1545,12 @@ function navigateTo(sectionId) {
     ) {
 
         loadAllocations();
+
+    }
+
+    if (sectionId === "exchange") {
+
+        loadExchangeWorkspace();
 
     }
 
@@ -9278,6 +9290,759 @@ function billingEvents(eventList) {
 
 
 /* =========================================================
+   RESOURCE EXCHANGE
+========================================================= */
+
+let exchangeView = "network";
+let exchangeNetworkItems = [];
+let exchangeMineItems = [];
+let exchangeMyOffers = [];
+let exchangeSelectedId = "";
+let exchangeDetailRequest = null;
+let exchangeDetailOffers = [];
+let exchangeBusy = false;
+
+function exchangeIdempotencyKey(prefix) {
+    return prefix + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+}
+
+function exchangeStatusLabel(status) {
+    const value = String(status || "").toUpperCase();
+    if (value === "OPEN") return "Open";
+    if (value === "ACCEPTED") return "Accepted / Resource Held";
+    if (value === "TRANSFER_PENDING") return "Transfer Pending";
+    if (value === "COMPLETED") return "Completed";
+    if (value === "CANCELLED") return "Cancelled";
+    if (value === "EXPIRED") return "Expired";
+    if (value === "SUPERSEDED") return "Superseded";
+    if (value === "REJECTED") return "Rejected";
+    if (value === "WITHDRAWN") return "Withdrawn";
+    return value || "Unknown";
+}
+
+function exchangeStatusClass(status) {
+    const value = String(status || "").toUpperCase();
+    if (value === "OPEN") return "exchange-open";
+    if (value === "ACCEPTED") return "exchange-accepted";
+    if (value === "TRANSFER_PENDING") return "exchange-pending";
+    if (value === "COMPLETED") return "exchange-completed";
+    return "exchange-terminal";
+}
+
+function canWriteExchange() {
+    return canOperateResources();
+}
+
+function exchangeConflictMessage(payload, fallback) {
+    const message = apiFailureText(payload, fallback || "This exchange action could not be completed.");
+    const lower = String(message).toLowerCase();
+    if (lower.includes("quantity") && lower.includes("deferred")) {
+        return "Quantity-resource handover is not currently supported for this exchange.";
+    }
+    if (lower.includes("quantity") && lower.includes("available")) {
+        return "The requested quantity is no longer available. Refresh and choose another resource.";
+    }
+    if (lower.includes("offer") && (lower.includes("open") || lower.includes("available"))) {
+        return "The offer is no longer available.";
+    }
+    if (lower.includes("conflict") || lower.includes("already") || lower.includes("held") || lower.includes("allocated")) {
+        return "The resource was already committed by another operation. Refresh and review the current state.";
+    }
+    return message;
+}
+
+async function exchangeRequest(path, options = {}) {
+    const organizationId = selectedOrganizationId();
+    if (!organizationId) {
+        throw new Error("Select an organization first.");
+    }
+
+    const method = String(options.method || "GET").toUpperCase();
+    const params = new URLSearchParams(options.query || {});
+    params.set("organization_id", organizationId);
+
+    const url = EXCHANGE_API_URL + path + "?" + params.toString();
+    const headers = {
+        "Authorization": "Bearer " + (await waitForIdToken() || getIdToken() || "")
+    };
+
+    if (method !== "GET" && method !== "HEAD") {
+        headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(url, {
+        method: method,
+        headers: headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+    });
+
+    let payload = {};
+    try {
+        payload = unwrapApiPayload(await response.json());
+    } catch (_error) {
+        payload = {};
+    }
+
+    if (!response.ok) {
+        const error = new Error(exchangeConflictMessage(payload, "Unable to complete exchange request."));
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+    }
+
+    return payload;
+}
+
+function setExchangeBusy(button, busy, busyLabel, idleLabel) {
+    exchangeBusy = Boolean(busy);
+    if (!button) {
+        return;
+    }
+    button.disabled = exchangeBusy;
+    if (busyLabel || idleLabel) {
+        button.textContent = exchangeBusy ? busyLabel : idleLabel;
+    }
+}
+
+function renderExchangeTabs() {
+    document.querySelectorAll("[data-exchange-view]").forEach(button => {
+        const active = button.dataset.exchangeView === exchangeView;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+
+    const labels = {
+        network: ["Network", "Open network requests", "Visible to verified ERAP organizations. Not public internet discovery."],
+        mine: ["My requests", "My exchange requests", "Requests created by the selected organization."],
+        offers: ["My offers", "Offers I submitted", "Offers your organization made on network requests."]
+    };
+    const current = labels[exchangeView] || labels.network;
+    if ($("exchangeListLabel")) $("exchangeListLabel").textContent = current[0];
+    if ($("exchangeListTitle")) $("exchangeListTitle").textContent = current[1];
+    if ($("exchangeListHint")) $("exchangeListHint").textContent = current[2];
+}
+
+function exchangeRequestCard(item, selected) {
+    const status = item.status || "OPEN";
+    const title = item.resource_type_name || "Resource request";
+    const qty = item.quantity_requested != null ? item.quantity_requested : "";
+    const mode = item.tracking_mode || "";
+    const where = [item.destination_city, item.destination_state].filter(Boolean).join(", ");
+    const orgName = item.requester_organization_display_name || "";
+    return `
+        <button type="button" class="exchange-card ${selected ? "active" : ""}" data-exchange-select="${escapeHtml(item.exchange_request_id || "")}">
+            <div class="exchange-card-top">
+                <strong>${escapeHtml(title)}</strong>
+                <span class="status-badge ${exchangeStatusClass(status)}">${escapeHtml(exchangeStatusLabel(status))}</span>
+            </div>
+            <div class="exchange-card-meta">
+                <span>${escapeHtml(mode)}${qty !== "" ? " · qty " + escapeHtml(String(qty)) : ""}</span>
+                <span>${escapeHtml(where || item.destination_location_name || "")}</span>
+            </div>
+            ${orgName ? `<div class="exchange-muted">${escapeHtml(orgName)}</div>` : ""}
+        </button>
+    `;
+}
+
+function exchangeOfferCard(item) {
+    const status = item.status || "OPEN";
+    return `
+        <button type="button" class="exchange-card" data-exchange-select="${escapeHtml(item.exchange_request_id || "")}">
+            <div class="exchange-card-top">
+                <strong>${escapeHtml(item.resource_snapshot?.name || item.resource_id || "Offer")}</strong>
+                <span class="status-badge ${exchangeStatusClass(status)}">${escapeHtml(exchangeStatusLabel(status))}</span>
+            </div>
+            <div class="exchange-card-meta">
+                <span>Request ${escapeHtml(item.exchange_request_id || "")}</span>
+                <span>Qty ${escapeHtml(String(item.quantity_offered != null ? item.quantity_offered : 1))}</span>
+            </div>
+        </button>
+    `;
+}
+
+function renderExchangeList() {
+    const host = $("exchangeList");
+    if (!host) {
+        return;
+    }
+
+    if (!selectedOrganizationId()) {
+        host.innerHTML = `<div class="empty-state"><h3>Select an organization</h3><p>Exchange loads after an organization is selected.</p></div>`;
+        return;
+    }
+
+    if (exchangeView === "network") {
+        if (!exchangeNetworkItems.length) {
+            host.innerHTML = `<div class="empty-state"><h3>No open network requests</h3><p>No open resource exchange requests are currently available.</p></div>`;
+            return;
+        }
+        host.innerHTML = exchangeNetworkItems.map(item => exchangeRequestCard(item, item.exchange_request_id === exchangeSelectedId)).join("");
+        return;
+    }
+
+    if (exchangeView === "mine") {
+        if (!exchangeMineItems.length) {
+            host.innerHTML = `<div class="empty-state"><h3>No exchange requests yet</h3><p>You haven't created any exchange requests yet.</p></div>`;
+            return;
+        }
+        host.innerHTML = exchangeMineItems.map(item => exchangeRequestCard(item, item.exchange_request_id === exchangeSelectedId)).join("");
+        return;
+    }
+
+    if (!exchangeMyOffers.length) {
+        host.innerHTML = `<div class="empty-state"><h3>No offers yet</h3><p>You haven't offered a resource on any exchange request yet.</p></div>`;
+        return;
+    }
+    host.innerHTML = exchangeMyOffers.map(exchangeOfferCard).join("");
+}
+
+function eligibleOfferResources() {
+    return (resources || []).filter(resource => {
+        const status = String(resource.operational_status || (resource.Available === false ? "ALLOCATED" : "AVAILABLE")).toUpperCase();
+        if (isQuantityResource(resource)) {
+            return Number(resource.quantity_available || 0) > 0;
+        }
+        return status === "AVAILABLE" && resource.Available !== false;
+    });
+}
+
+function fillExchangeCreateForm() {
+    const typeSelect = $("exchangeResourceType");
+    const locationSelect = $("exchangeDestinationLocation");
+    if (typeSelect) {
+        const options = (resourceTypes || []).filter(item => String(item.status || "ACTIVE").toUpperCase() === "ACTIVE");
+        typeSelect.innerHTML = options.map(item =>
+            `<option value="${escapeHtml(item.resource_type_id)}">${escapeHtml(item.name || item.resource_type_id)}</option>`
+        ).join("") || `<option value="">No resource types</option>`;
+    }
+    if (locationSelect) {
+        fillLocationSelect(locationSelect);
+    }
+    const tracking = $("exchangeTrackingMode");
+    const qty = $("exchangeQuantityRequested");
+    if (tracking && qty) {
+        qty.value = tracking.value === "QUANTITY" ? Math.max(1, Number(qty.value) || 1) : "1";
+        qty.readOnly = tracking.value !== "QUANTITY";
+    }
+}
+
+function renderExchangeOfferComposer(request) {
+    if (!canWriteExchange()) {
+        return "";
+    }
+    if (String(request.status || "").toUpperCase() !== "OPEN") {
+        return "";
+    }
+    if (request.requester_organization_id && request.requester_organization_id === selectedOrganizationId()) {
+        return "";
+    }
+
+    const candidates = eligibleOfferResources();
+    const options = candidates.map(resource => {
+        const label = `${resource.name || resource.id} · ${resource.Type || ""} · ${resource.location_id || ""}`;
+        return `<option value="${escapeHtml(resource.id)}" data-location-id="${escapeHtml(resource.location_id || "")}" data-tracking="${escapeHtml(resource.tracking_mode || "INDIVIDUAL")}" data-available="${escapeHtml(String(resource.quantity_available != null ? resource.quantity_available : 1))}">${escapeHtml(label)}</option>`;
+    }).join("");
+
+    return `
+        <div class="exchange-action-block">
+            <h3>Offer a resource</h3>
+            <p class="exchange-muted">Creating an offer does NOT reserve or allocate this resource. The resource stays available until the requester accepts.</p>
+            <div class="form-group">
+                <label for="exchangeOfferResource">Eligible resource</label>
+                <select id="exchangeOfferResource">${options || `<option value="">No eligible resources</option>`}</select>
+            </div>
+            <div class="form-group">
+                <label for="exchangeOfferQuantity">Quantity offered</label>
+                <input id="exchangeOfferQuantity" type="number" min="1" step="1" value="1">
+            </div>
+            <div class="form-group">
+                <label for="exchangeOfferNotes">Notes (optional)</label>
+                <textarea id="exchangeOfferNotes" rows="2" maxlength="500"></textarea>
+            </div>
+            <button class="primary-btn" type="button" id="exchangeSubmitOfferBtn" ${candidates.length ? "" : "disabled"}>Submit Offer</button>
+        </div>
+    `;
+}
+
+function renderExchangeOffers(request) {
+    const isRequester = request.requester_organization_id === selectedOrganizationId();
+    if (!isRequester) {
+        return "";
+    }
+    if (!exchangeDetailOffers.length) {
+        return `<div class="exchange-offer-block"><h3>Offers</h3><div class="empty-state"><h3>No offers yet</h3><p>No offers have been submitted for this request yet.</p></div></div>`;
+    }
+
+    return `
+        <div class="exchange-offer-block">
+            <h3>Offers</h3>
+            ${exchangeDetailOffers.map(offer => {
+                const status = String(offer.status || "").toUpperCase();
+                const canAccept = canWriteExchange() && status === "OPEN" && String(request.status || "").toUpperCase() === "OPEN";
+                return `
+                    <div class="exchange-card">
+                        <div class="exchange-card-top">
+                            <strong>${escapeHtml(offer.resource_snapshot?.name || offer.resource_id || offer.offer_id || "Offer")}</strong>
+                            <span class="status-badge ${exchangeStatusClass(status)}">${escapeHtml(exchangeStatusLabel(status))}</span>
+                        </div>
+                        <div class="exchange-card-meta">
+                            <span>${escapeHtml(offer.provider_organization_id || "")}</span>
+                            <span>Qty ${escapeHtml(String(offer.quantity_offered != null ? offer.quantity_offered : 1))}</span>
+                        </div>
+                        ${offer.source_location_id ? `<div class="exchange-muted">Provider location ${escapeHtml(offer.source_location_id)}</div>` : ""}
+                        ${offer.notes ? `<div class="exchange-muted">${escapeHtml(offer.notes)}</div>` : ""}
+                        ${canAccept ? `<div class="exchange-actions"><button class="primary-btn" type="button" data-exchange-accept="${escapeHtml(offer.offer_id)}">Accept Offer</button></div>` : ""}
+                    </div>
+                `;
+            }).join("")}
+        </div>
+    `;
+}
+
+function renderExchangeLifecycleActions(request) {
+    const status = String(request.status || "").toUpperCase();
+    const org = selectedOrganizationId();
+    const isRequester = request.requester_organization_id === org;
+    const isProvider = request.accepted_provider_organization_id === org;
+    let actions = "";
+
+    if (canWriteExchange() && isProvider && status === "ACCEPTED") {
+        actions += `
+            <div class="exchange-action-block">
+                <h3>Start transfer</h3>
+                <p class="exchange-muted">Marks the held resource as ready for handover. Ownership is not transferred yet.</p>
+                <button class="primary-btn" type="button" id="exchangeStartTransferBtn">Start Transfer</button>
+            </div>
+        `;
+    }
+
+    if (canWriteExchange() && isRequester && status === "TRANSFER_PENDING") {
+        const locationOptions = (currentUser.locations || [])
+            .filter(item => String(item.status || "ACTIVE").toUpperCase() === "ACTIVE")
+            .map(item => `<option value="${escapeHtml(item.location_id)}" ${item.location_id === request.destination_location_id ? "selected" : ""}>${escapeHtml(item.name || item.location_id)}</option>`)
+            .join("");
+        actions += `
+            <div class="exchange-action-block">
+                <h3>Confirm handover</h3>
+                <p class="exchange-muted">Confirming handover transfers ownership of this resource to your organization and moves it to the selected destination location.</p>
+                <div class="form-group">
+                    <label for="exchangeHandoverLocation">Destination location</label>
+                    <select id="exchangeHandoverLocation">${locationOptions}</select>
+                </div>
+                <button class="primary-btn" type="button" id="exchangeConfirmHandoverBtn">Confirm Handover</button>
+            </div>
+        `;
+    }
+
+    if (status === "COMPLETED") {
+        actions += `
+            <div class="exchange-action-block">
+                <h3>Completed</h3>
+                <p class="exchange-muted">Ownership and location were transferred. The resource should appear under the requester organization as AVAILABLE / PRIVATE.</p>
+            </div>
+        `;
+    }
+
+    return actions;
+}
+
+function renderExchangeDetail() {
+    const host = $("exchangeDetail");
+    if (!host) {
+        return;
+    }
+
+    if (!exchangeDetailRequest) {
+        host.innerHTML = `<div class="empty-state"><h3>No request selected</h3><p>Choose an item from the list.</p></div>`;
+        if ($("exchangeDetailTitle")) $("exchangeDetailTitle").textContent = "Select a request";
+        if ($("exchangeDetailStatusLine")) $("exchangeDetailStatusLine").textContent = "Open a network or organization request to review offers and actions.";
+        return;
+    }
+
+    const request = exchangeDetailRequest;
+    const status = request.status || "OPEN";
+    if ($("exchangeDetailTitle")) {
+        $("exchangeDetailTitle").textContent = request.resource_type_name || request.exchange_request_id || "Exchange request";
+    }
+    if ($("exchangeDetailStatusLine")) {
+        $("exchangeDetailStatusLine").textContent = exchangeStatusLabel(status);
+    }
+
+    const fields = [
+        ["Status", exchangeStatusLabel(status)],
+        ["Request ID", request.exchange_request_id],
+        ["Resource type", request.resource_type_name],
+        ["Tracking", request.tracking_mode],
+        ["Quantity", request.quantity_requested],
+        ["Destination", request.destination_location_name || request.destination_location_id],
+        ["Accepted offer", request.accepted_offer_id],
+        ["Held resource", request.accepted_resource_id],
+        ["Provider organization", request.accepted_provider_organization_id],
+        ["Notes", request.notes]
+    ].filter(pair => pair[1] !== undefined && pair[1] !== null && pair[1] !== "");
+
+    host.innerHTML = `
+        <div class="exchange-card-top">
+            <span class="status-badge ${exchangeStatusClass(status)}">${escapeHtml(exchangeStatusLabel(status))}</span>
+        </div>
+        <div class="exchange-detail-fields">
+            ${fields.map(([label, value]) => `
+                <div class="form-group">
+                    <label>${escapeHtml(label)}</label>
+                    <div>${escapeHtml(String(value))}</div>
+                </div>
+            `).join("")}
+        </div>
+        ${renderExchangeOffers(request)}
+        ${renderExchangeOfferComposer(request)}
+        ${renderExchangeLifecycleActions(request)}
+    `;
+}
+
+async function loadExchangeWorkspace() {
+    renderExchangeTabs();
+    fillExchangeCreateForm();
+    if (!selectedOrganizationId()) {
+        exchangeNetworkItems = [];
+        exchangeMineItems = [];
+        exchangeMyOffers = [];
+        exchangeDetailRequest = null;
+        renderExchangeList();
+        renderExchangeDetail();
+        return;
+    }
+
+    if ($("exchangeCreateRequestBtn")) {
+        $("exchangeCreateRequestBtn").hidden = !canWriteExchange();
+    }
+
+    try {
+        if (!resourceTypes.length) {
+            await loadResourceTypes();
+        }
+        if (!resources.length) {
+            await loadResources();
+        }
+
+        const [network, mine, offers] = await Promise.all([
+            exchangeRequest("/requests", { query: { scope: "network" } }).catch(error => {
+                showToast(error.message || "Unable to load network requests.");
+                return { items: [] };
+            }),
+            exchangeRequest("/requests", { query: { scope: "mine" } }).catch(error => {
+                showToast(error.message || "Unable to load my exchange requests.");
+                return { items: [] };
+            }),
+            exchangeRequest("/offers", { query: { scope: "mine" } }).catch(error => {
+                showToast(error.message || "Unable to load my offers.");
+                return { items: [] };
+            })
+        ]);
+
+        exchangeNetworkItems = network.items || [];
+        exchangeMineItems = mine.items || [];
+        exchangeMyOffers = offers.items || [];
+        renderExchangeList();
+
+        if (exchangeSelectedId) {
+            await openExchangeRequest(exchangeSelectedId, { quiet: true });
+        } else {
+            renderExchangeDetail();
+        }
+    } catch (error) {
+        showToast(error.message || "Unable to load Exchange.");
+    }
+}
+
+async function openExchangeRequest(requestId, options = {}) {
+    if (!requestId) {
+        return;
+    }
+    exchangeSelectedId = requestId;
+    renderExchangeList();
+
+    try {
+        const detail = await exchangeRequest("/requests/" + encodeURIComponent(requestId));
+        exchangeDetailRequest = detail.request || detail;
+        try {
+            const offers = await exchangeRequest(
+                "/requests/" + encodeURIComponent(requestId) + "/offers"
+            );
+            exchangeDetailOffers = offers.items || [];
+        } catch (_error) {
+            exchangeDetailOffers = [];
+        }
+        renderExchangeDetail();
+    } catch (error) {
+        exchangeDetailRequest = null;
+        exchangeDetailOffers = [];
+        renderExchangeDetail();
+        if (!options.quiet) {
+            showToast(error.message || "Unable to open exchange request.");
+        }
+    }
+}
+
+async function createExchangeRequest(event) {
+    event.preventDefault();
+    if (exchangeBusy || !canWriteExchange()) {
+        showToast("You cannot create exchange requests with this role.");
+        return;
+    }
+
+    const tracking = ($("exchangeTrackingMode")?.value || "INDIVIDUAL").toUpperCase();
+    const quantity = Number($("exchangeQuantityRequested")?.value || 1);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+        showToast("Enter a whole-number quantity of at least 1.");
+        return;
+    }
+    if (tracking === "INDIVIDUAL" && quantity !== 1) {
+        showToast("Individual exchange requests require quantity 1.");
+        return;
+    }
+
+    const body = {
+        destination_location_id: $("exchangeDestinationLocation")?.value || "",
+        resource_type_id: $("exchangeResourceType")?.value || "",
+        tracking_mode: tracking,
+        quantity_requested: quantity,
+        notes: $("exchangeRequestNotes")?.value || "",
+        visibility: "NETWORK",
+        idempotency_key: exchangeIdempotencyKey("exreq")
+    };
+
+    const button = $("exchangeCreateSubmitBtn");
+    setExchangeBusy(button, true, "Creating...", "Create Request");
+    try {
+        await exchangeRequest("/requests", { method: "POST", body: body });
+        showToast("Exchange request created.");
+        if ($("exchangeCreatePanel")) $("exchangeCreatePanel").hidden = true;
+        if ($("exchangeCreateForm")) $("exchangeCreateForm").reset();
+        $("exchangeQuantityRequested").value = "1";
+        exchangeView = "mine";
+        await loadExchangeWorkspace();
+    } catch (error) {
+        showToast(error.message || "Unable to create exchange request.");
+        if (error.status === 409) {
+            await loadExchangeWorkspace();
+        }
+    } finally {
+        setExchangeBusy(button, false, "Creating...", "Create Request");
+    }
+}
+
+async function submitExchangeOffer() {
+    if (exchangeBusy || !exchangeDetailRequest || !canWriteExchange()) {
+        return;
+    }
+    const select = $("exchangeOfferResource");
+    const option = select?.selectedOptions?.[0];
+    const resourceId = select?.value || "";
+    if (!resourceId) {
+        showToast("Select an eligible resource to offer.");
+        return;
+    }
+    const tracking = String(option?.dataset?.tracking || "INDIVIDUAL").toUpperCase();
+    const quantity = Number($("exchangeOfferQuantity")?.value || 1);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+        showToast("Enter a whole-number offered quantity of at least 1.");
+        return;
+    }
+    if (tracking === "INDIVIDUAL" && quantity !== 1) {
+        showToast("Individual offers require quantity 1.");
+        return;
+    }
+
+    const button = $("exchangeSubmitOfferBtn");
+    setExchangeBusy(button, true, "Submitting Offer...", "Submit Offer");
+    try {
+        await exchangeRequest(
+            "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id) + "/offers",
+            {
+                method: "POST",
+                body: {
+                    resource_id: resourceId,
+                    provider_location_id: option?.dataset?.locationId || "",
+                    quantity_offered: quantity,
+                    notes: $("exchangeOfferNotes")?.value || "",
+                    idempotency_key: exchangeIdempotencyKey("exoff")
+                }
+            }
+        );
+        showToast("Offer submitted. The resource was not reserved.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
+    } catch (error) {
+        showToast(error.message || "Unable to submit offer.");
+        if (error.status === 409) {
+            await loadExchangeWorkspace();
+            await openExchangeRequest(exchangeSelectedId, { quiet: true });
+        }
+    } finally {
+        setExchangeBusy(button, false, "Submitting Offer...", "Submit Offer");
+    }
+}
+
+async function acceptExchangeOffer(offerId) {
+    if (exchangeBusy || !exchangeDetailRequest || !offerId || !canWriteExchange()) {
+        return;
+    }
+    if (!window.confirm("Accepting this offer will commit the offered resource to this exchange. Ownership is not transferred yet.")) {
+        return;
+    }
+
+    const button = document.querySelector(`[data-exchange-accept="${offerId}"]`);
+    setExchangeBusy(button, true, "Accepting...", "Accept Offer");
+    try {
+        await exchangeRequest(
+            "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id)
+                + "/offers/" + encodeURIComponent(offerId) + "/accept",
+            { method: "POST", body: {} }
+        );
+        showToast("Offer accepted. The resource is held for this exchange.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
+        await loadResources();
+    } catch (error) {
+        showToast(error.message || "Unable to accept offer.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeSelectedId, { quiet: true });
+    } finally {
+        setExchangeBusy(button, false, "Accepting...", "Accept Offer");
+    }
+}
+
+async function startExchangeTransfer() {
+    if (exchangeBusy || !exchangeDetailRequest || !canWriteExchange()) {
+        return;
+    }
+    const button = $("exchangeStartTransferBtn");
+    setExchangeBusy(button, true, "Starting Transfer...", "Start Transfer");
+    try {
+        await exchangeRequest(
+            "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id) + "/transfer/start",
+            { method: "POST", body: {} }
+        );
+        showToast("The provider has marked the resource as ready for handover.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
+    } catch (error) {
+        showToast(error.message || "Unable to start transfer.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeSelectedId, { quiet: true });
+    } finally {
+        setExchangeBusy(button, false, "Starting Transfer...", "Start Transfer");
+    }
+}
+
+async function confirmExchangeHandover() {
+    if (exchangeBusy || !exchangeDetailRequest || !canWriteExchange()) {
+        return;
+    }
+    if (!window.confirm("Confirming handover transfers ownership of this resource to your organization and moves it to the selected destination location.")) {
+        return;
+    }
+
+    const button = $("exchangeConfirmHandoverBtn");
+    setExchangeBusy(button, true, "Confirming Handover...", "Confirm Handover");
+    try {
+        await exchangeRequest(
+            "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id) + "/handover/confirm",
+            {
+                method: "POST",
+                body: {
+                    destination_location_id: $("exchangeHandoverLocation")?.value || exchangeDetailRequest.destination_location_id || ""
+                }
+            }
+        );
+        showToast("Handover completed. The resource is now owned by your organization.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
+        await loadResources();
+        await loadAllocations();
+    } catch (error) {
+        showToast(error.message || "Unable to confirm handover.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeSelectedId, { quiet: true });
+    } finally {
+        setExchangeBusy(button, false, "Confirming Handover...", "Confirm Handover");
+    }
+}
+
+function initializeExchange() {
+    document.querySelectorAll("[data-exchange-view]").forEach(button => {
+        button.addEventListener("click", () => {
+            exchangeView = button.dataset.exchangeView || "network";
+            exchangeSelectedId = "";
+            exchangeDetailRequest = null;
+            exchangeDetailOffers = [];
+            renderExchangeTabs();
+            renderExchangeList();
+            renderExchangeDetail();
+        });
+    });
+
+    $("exchangeRefreshBtn")?.addEventListener("click", () => {
+        loadExchangeWorkspace();
+    });
+
+    $("exchangeCreateRequestBtn")?.addEventListener("click", () => {
+        if (!canWriteExchange()) {
+            showToast("You cannot create exchange requests with this role.");
+            return;
+        }
+        fillExchangeCreateForm();
+        if ($("exchangeCreatePanel")) {
+            $("exchangeCreatePanel").hidden = false;
+            $("exchangeCreatePanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    });
+
+    $("exchangeCreateCancelBtn")?.addEventListener("click", () => {
+        if ($("exchangeCreatePanel")) $("exchangeCreatePanel").hidden = true;
+    });
+
+    $("exchangeCreateForm")?.addEventListener("submit", createExchangeRequest);
+
+    $("exchangeTrackingMode")?.addEventListener("change", () => {
+        const qty = $("exchangeQuantityRequested");
+        const tracking = $("exchangeTrackingMode")?.value || "INDIVIDUAL";
+        if (!qty) return;
+        if (tracking === "INDIVIDUAL") {
+            qty.value = "1";
+            qty.readOnly = true;
+        } else {
+            qty.readOnly = false;
+        }
+    });
+
+    document.addEventListener("click", event => {
+        const selectId = event.target?.closest?.("[data-exchange-select]")?.dataset?.exchangeSelect;
+        if (selectId) {
+            openExchangeRequest(selectId);
+            return;
+        }
+        const acceptId = event.target?.closest?.("[data-exchange-accept]")?.dataset?.exchangeAccept;
+        if (acceptId) {
+            acceptExchangeOffer(acceptId);
+            return;
+        }
+        if (event.target?.id === "exchangeSubmitOfferBtn") {
+            submitExchangeOffer();
+            return;
+        }
+        if (event.target?.id === "exchangeStartTransferBtn") {
+            startExchangeTransfer();
+            return;
+        }
+        if (event.target?.id === "exchangeConfirmHandoverBtn") {
+            confirmExchangeHandover();
+        }
+    });
+}
+
+
+/* =========================================================
    APPLICATION INITIALIZATION
 ========================================================= */
 
@@ -9328,6 +10093,8 @@ async function initializeApp() {
     initializeNotifications();
 
     initializeBilling();
+
+    initializeExchange();
 
 
     document.addEventListener(

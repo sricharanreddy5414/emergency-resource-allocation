@@ -109,6 +109,17 @@
             <span>Allocations</span>
         </button>
 
+        <button
+            class="nav-item"
+            data-section="exchange"
+            type="button"
+        >
+            <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 7h10v4H7zM7 13h10v4H7z"></path><path d="M17 9h3v6h-3M4 9h3v6H4"></path></svg>
+            </span>
+            <span>Exchange</span>
+        </button>
+
         <div class="admin-only" id="managementNav" hidden>
         <p class="nav-label">Management</p>
 
@@ -1054,6 +1065,106 @@
 
 
 <!-- =====================================================
+     EXCHANGE PAGE
+====================================================== -->
+
+<section class="page-section" id="exchange">
+
+    <div class="section-hero">
+        <div>
+            <span class="panel-label">Resource Exchange Network</span>
+            <h2>Exchange</h2>
+            <p>
+                Request resources from verified ERAP organizations, offer eligible stock, accept holds, and confirm handover. Offer creation does not reserve a resource.
+            </p>
+        </div>
+        <div class="hero-actions">
+            <button class="secondary-btn" id="exchangeRefreshBtn" type="button">↻ Refresh</button>
+            <button class="primary-btn" id="exchangeCreateRequestBtn" type="button">＋ Network Request</button>
+        </div>
+    </div>
+
+    <div class="exchange-tabs" role="tablist" aria-label="Exchange views">
+        <button class="exchange-tab active" type="button" data-exchange-view="network" role="tab" aria-selected="true">Network Requests</button>
+        <button class="exchange-tab" type="button" data-exchange-view="mine" role="tab" aria-selected="false">My Requests</button>
+        <button class="exchange-tab" type="button" data-exchange-view="offers" role="tab" aria-selected="false">My Offers</button>
+    </div>
+
+    <div class="exchange-layout">
+        <section class="panel exchange-list-panel">
+            <div class="panel-header">
+                <div>
+                    <span class="panel-label" id="exchangeListLabel">Network</span>
+                    <h2 id="exchangeListTitle">Open network requests</h2>
+                    <p id="exchangeListHint">Visible to verified ERAP organizations. Not public internet discovery.</p>
+                </div>
+            </div>
+            <div id="exchangeList" class="exchange-list">
+                <div class="empty-state">
+                    <h3>Select an organization</h3>
+                    <p>Exchange loads after an organization is selected.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel exchange-detail-panel" id="exchangeDetailPanel">
+            <div class="panel-header">
+                <div>
+                    <span class="panel-label">Detail</span>
+                    <h2 id="exchangeDetailTitle">Select a request</h2>
+                    <p id="exchangeDetailStatusLine">Open a network or organization request to review offers and actions.</p>
+                </div>
+            </div>
+            <div id="exchangeDetail" class="exchange-detail">
+                <div class="empty-state">
+                    <h3>No request selected</h3>
+                    <p>Choose an item from the list.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <section class="panel exchange-form-panel" id="exchangeCreatePanel" hidden>
+        <div class="panel-header">
+            <div>
+                <span class="panel-label">Create</span>
+                <h2>Network exchange request</h2>
+                <p>This request will be visible to verified ERAP organizations through the Resource Exchange Network. It is not public internet discovery.</p>
+            </div>
+            <button class="secondary-btn" type="button" id="exchangeCreateCancelBtn">Close</button>
+        </div>
+        <form id="exchangeCreateForm" class="exchange-form">
+            <div class="form-group">
+                <label for="exchangeResourceType">Resource type</label>
+                <select id="exchangeResourceType" required></select>
+            </div>
+            <div class="form-group">
+                <label for="exchangeDestinationLocation">Destination location</label>
+                <select id="exchangeDestinationLocation" required></select>
+            </div>
+            <div class="form-group">
+                <label for="exchangeTrackingMode">Tracking mode</label>
+                <select id="exchangeTrackingMode">
+                    <option value="INDIVIDUAL">Individual</option>
+                    <option value="QUANTITY">Quantity</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="exchangeQuantityRequested">Quantity requested</label>
+                <input id="exchangeQuantityRequested" type="number" min="1" step="1" value="1" required>
+            </div>
+            <div class="form-group">
+                <label for="exchangeRequestNotes">Notes (optional)</label>
+                <textarea id="exchangeRequestNotes" rows="3" maxlength="500"></textarea>
+            </div>
+            <button class="primary-btn" type="submit" id="exchangeCreateSubmitBtn">Create Request</button>
+        </form>
+    </section>
+
+</section>
+
+
+<!-- =====================================================
      ALLOCATIONS PAGE
 ====================================================== -->
 
@@ -1535,6 +1646,20 @@
 
             <p>
                 Create a request with a request type, location, and priority. Priority 1 is the highest. Allocation matches that request to an available resource. Release returns the resource to available.
+            </p>
+
+        </details>
+
+
+
+        <details class="faq-item">
+
+            <summary>
+                Resource Exchange Network
+            </summary>
+
+            <p>
+                Exchange lets verified organizations request and offer resources across organizations. Creating an offer does not hold a resource. Accepting an offer holds it. Ownership and location change only after the requester confirms handover. Quantity-resource handover is not supported yet.
             </p>
 
         </details>
@@ -2485,6 +2610,7 @@
     <button class="nav-item" data-section="resources" type="button">Stock</button>
     <button class="nav-item" data-section="requests" type="button">Queue</button>
     <button class="nav-item" data-section="allocations" type="button">Flow</button>
+    <button class="nav-item" data-section="exchange" type="button">Xchg</button>
 </nav>
 
 </main>
