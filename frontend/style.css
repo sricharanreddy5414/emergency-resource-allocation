@@ -1036,6 +1036,29 @@ td {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
     gap: 16px;
     align-items: start;
+    width: 100%;
+    max-width: 100%;
+}
+
+.exchange-layout > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+#exchange .panel-header,
+#exchange .exchange-card-top,
+#exchange .exchange-card-meta,
+#exchange .exchange-detail-fields,
+#exchange .form-group,
+#exchange select,
+#exchange input,
+#exchange textarea {
+    max-width: 100%;
+    min-width: 0;
+}
+
+#exchange select {
+    width: 100%;
 }
 
 .exchange-list,
@@ -1119,7 +1142,7 @@ td {
 
 @media (max-width: 1024px) {
     .exchange-layout {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 
