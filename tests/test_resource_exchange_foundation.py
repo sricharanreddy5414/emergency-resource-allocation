@@ -290,6 +290,7 @@ def test_gsi_index_names_match_design():
     assert exchange_model.INDEX_NETWORK_OPEN == "NetworkOpenRequestIndex"
     assert exchange_model.INDEX_REQUESTER_ORG == "RequesterOrgIndex"
     assert exchange_model.INDEX_PROVIDER_OFFER == "ProviderOrgOfferIndex"
+    assert exchange_model.INDEX_EXPIRY_DUE == "ExpiryDueIndex"
     assert exchange_model.TABLE_NAME == "ResourceExchanges"
 
 
@@ -299,7 +300,7 @@ def test_exchange_write_roles_do_not_elevate_member():
     assert exchange_model.EXCHANGE_WRITE_ROLES == {"OPERATOR", "ADMIN", "OWNER"}
 
 
-def test_infra_spec_lists_exactly_three_gsis():
+def test_infra_spec_lists_exchange_gsis():
     import json
 
     spec = json.loads((ROOT / "infra" / "resource-exchanges-table.json").read_text(encoding="utf-8"))
@@ -311,6 +312,7 @@ def test_infra_spec_lists_exactly_three_gsis():
         "NetworkOpenRequestIndex",
         "RequesterOrgIndex",
         "ProviderOrgOfferIndex",
+        "ExpiryDueIndex",
     ]
     assert table["BillingMode"] == "PAY_PER_REQUEST"
     assert table["DeletionProtectionEnabled"] is True

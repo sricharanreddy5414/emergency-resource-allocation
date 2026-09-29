@@ -172,7 +172,7 @@ def _active_resource_type(organization_id, resource_type_id):
     return item
 
 
-def _get_meta(exchange_request_id):
+def _get_meta(exchange_request_id, *, apply_expiry=True):
     request_id = str(exchange_request_id or "").strip()
 
     if not request_id:
@@ -185,6 +185,11 @@ def _get_meta(exchange_request_id):
 
     if not item or item.get("entity_type") != "EXCHANGE_REQUEST":
         raise AccessError(404, "Record not found")
+
+    if apply_expiry:
+        from lifecycle import apply_lazy_expiry
+
+        item = apply_lazy_expiry(item) or item
 
     return item
 
@@ -228,6 +233,7 @@ def requester_view(meta):
         "destination_state": meta.get("destination_state"),
         "notes": meta.get("notes"),
         "expires_at": meta.get("expires_at") or None,
+        "handover_expires_at": meta.get("handover_expires_at") or None,
         "accepted_offer_id": meta.get("accepted_offer_id"),
         "accepted_resource_id": meta.get("accepted_resource_id"),
         "accepted_provider_organization_id": meta.get("accepted_provider_organization_id"),
@@ -362,7 +368,12 @@ def create_exchange_request(body, organization_id, actor_sub, actor_role):
     if len(notes) > 300:
         raise ExchangeOperationError(400, "notes is too long")
 
-    expires_at = str((body or {}).get("expires_at") or "").strip()
+    client_expires_at = str((body or {}).get("expires_at") or "").strip()
+    expires_at = client_expires_at
+    if not expires_at:
+        from lifecycle import default_request_expires_at
+
+        expires_at = default_request_expires_at()
     idempotency_key = str((body or {}).get("idempotency_key") or "").strip()
 
     fingerprint_payload = {
@@ -371,7 +382,7 @@ def create_exchange_request(body, organization_id, actor_sub, actor_role):
         "tracking_mode": tracking_mode,
         "quantity_requested": quantity,
         "notes": notes,
-        "expires_at": expires_at,
+        "expires_at": client_expires_at,
         "visibility": "NETWORK",
     }
     fingerprint = _fingerprint(fingerprint_payload)
@@ -631,6 +642,13 @@ def create_offer(exchange_request_id, body, organization_id, actor_sub, actor_ro
     if len(notes) > 300:
         raise ExchangeOperationError(400, "notes is too long")
 
+    offer_expires = str((body or {}).get("expires_at") or "").strip()
+    request_expires = str(meta.get("expires_at") or "").strip()
+    if not offer_expires:
+        offer_expires = request_expires
+    elif request_expires and offer_expires > request_expires:
+        raise ExchangeOperationError(400, "Offer expiry cannot exceed request expiry")
+
     idempotency_key = str((body or {}).get("idempotency_key") or "").strip()
     fingerprint_payload = {
         "exchange_request_id": meta["exchange_request_id"],
@@ -638,6 +656,7 @@ def create_offer(exchange_request_id, body, organization_id, actor_sub, actor_ro
         "quantity_offered": quantity,
         "source_location_id": location["location_id"],
         "notes": notes,
+        "expires_at": offer_expires,
     }
     fingerprint = _fingerprint(fingerprint_payload)
 
@@ -671,6 +690,7 @@ def create_offer(exchange_request_id, body, organization_id, actor_sub, actor_ro
         quantity_offered=quantity,
         source_location_id=location["location_id"],
         resource_snapshot=snapshot,
+        expires_at=offer_expires,
         idempotency_key=idempotency_key,
         status="OPEN",
     )
@@ -913,7 +933,10 @@ def _supersede_competing_open_offers(request_id, accepted_offer_id, now=None):
             try:
                 exchanges_table().update_item(
                     Key={"pk": meta_pk(request_id), "sk": offer_sk(other["offer_id"])},
-                    UpdateExpression="SET #status = :superseded, updated_at = :now",
+                    UpdateExpression=(
+                        "SET #status = :superseded, updated_at = :now "
+                        "REMOVE expiry_due_key, expiry_due_at"
+                    ),
                     ConditionExpression="#status = :open",
                     ExpressionAttributeNames={"#status": "status"},
                     ExpressionAttributeValues={
@@ -1001,6 +1024,9 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
             raise ExchangeOperationError(409, "Offered quantity is no longer available")
 
     now = _now_iso()
+    from lifecycle import default_handover_expires_at
+
+    handover_due = default_handover_expires_at()
     oid = offer["offer_id"]
     allocation_id = exchange_allocation_id(oid)
     request_id = meta["exchange_request_id"]
@@ -1042,6 +1068,8 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
                     "SET #status = :accepted, accepted_offer_id = :offer_id, "
                     "accepted_resource_id = :resource_id, "
                     "accepted_provider_organization_id = :provider, "
+                    "handover_expires_at = :handover_due, "
+                    "expiry_due_key = :due_key, expiry_due_at = :handover_due, "
                     "updated_at = :now, updated_by = :actor "
                     "REMOVE network_list_key"
                 ),
@@ -1054,6 +1082,8 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
                         ":offer_id": oid,
                         ":resource_id": resource_id,
                         ":provider": provider_org,
+                        ":handover_due": handover_due,
+                        ":due_key": "DUE",
                         ":now": now,
                         ":actor": actor_sub,
                     }
@@ -1064,7 +1094,10 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
             "Update": {
                 "TableName": exchanges_name,
                 "Key": _serialize_map({"pk": meta_pk(request_id), "sk": offer_sk(oid)}),
-                "UpdateExpression": "SET #status = :accepted, updated_at = :now, updated_by = :actor",
+                "UpdateExpression": (
+                    "SET #status = :accepted, updated_at = :now, updated_by = :actor "
+                    "REMOVE expiry_due_key, expiry_due_at"
+                ),
                 "ConditionExpression": "#status = :open",
                 "ExpressionAttributeNames": {"#status": "status"},
                 "ExpressionAttributeValues": _serialize_map(
@@ -1684,3 +1717,12 @@ def _acceptance_response(meta, offer, allocation):
 def _transact_write(transact_items):
     """Execute TransactWriteItems. Tests may monkeypatch this helper."""
     _dynamodb_client().transact_write_items(TransactItems=transact_items)
+
+
+# Phase 7A lifecycle recovery surface (cancel / reject / withdraw / expire).
+from lifecycle import (  # noqa: E402
+    cancel_exchange_request,
+    reject_offer,
+    run_expiry,
+    withdraw_offer,
+)

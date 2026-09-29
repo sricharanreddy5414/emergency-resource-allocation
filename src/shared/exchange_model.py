@@ -32,6 +32,16 @@ GSI_CREATED_AT = "created_at"
 INDEX_NETWORK_OPEN = "NetworkOpenRequestIndex"
 INDEX_REQUESTER_ORG = "RequesterOrgIndex"
 INDEX_PROVIDER_OFFER = "ProviderOrgOfferIndex"
+INDEX_EXPIRY_DUE = "ExpiryDueIndex"
+
+# Sparse expiry due-index (Phase 7A). Single partition; SK is ISO due timestamp.
+GSI_EXPIRY_DUE_KEY = "expiry_due_key"
+GSI_EXPIRY_DUE_AT = "expiry_due_at"
+EXPIRY_DUE_PARTITION = "DUE"
+
+# Default TTLs when clients omit expiry (server-authoritative).
+DEFAULT_REQUEST_TTL_DAYS = 7
+DEFAULT_HANDOVER_TTL_HOURS = 72
 
 EXCHANGE_READ_ROLES = READ_ROLES
 EXCHANGE_WRITE_ROLES = OPERATE_ROLES
@@ -108,13 +118,35 @@ def omit_blank_index_keys(item):
 
     cleaned = dict(item)
 
-    for name in (GSI_NETWORK_LIST_KEY, GSI_REQUESTER_ORG, GSI_PROVIDER_ORG, GSI_CREATED_AT):
+    for name in (
+        GSI_NETWORK_LIST_KEY,
+        GSI_REQUESTER_ORG,
+        GSI_PROVIDER_ORG,
+        GSI_CREATED_AT,
+        GSI_EXPIRY_DUE_KEY,
+        GSI_EXPIRY_DUE_AT,
+    ):
         value = cleaned.get(name)
 
         if value is None or (isinstance(value, str) and not value.strip()):
             cleaned.pop(name, None)
 
     return cleaned
+
+
+def apply_expiry_due_index(item, due_at):
+    """Sparse ExpiryDueIndex participation. Blank due_at removes the item from the index."""
+    updated = dict(item)
+    due = str(due_at or "").strip()
+
+    if due:
+        updated[GSI_EXPIRY_DUE_KEY] = EXPIRY_DUE_PARTITION
+        updated[GSI_EXPIRY_DUE_AT] = due
+    else:
+        updated.pop(GSI_EXPIRY_DUE_KEY, None)
+        updated.pop(GSI_EXPIRY_DUE_AT, None)
+
+    return omit_blank_index_keys(updated)
 
 
 def apply_network_open_index(meta_item, status):
@@ -200,7 +232,12 @@ def build_meta_item(
         "allocation_type_hint": ALLOCATION_TYPE_EXCHANGE,
     }
 
-    return apply_network_open_index(item, item["status"])
+    item = apply_network_open_index(item, item["status"])
+    if item["status"] == "OPEN":
+        item = apply_expiry_due_index(item, item.get("expires_at"))
+    else:
+        item = apply_expiry_due_index(item, "")
+    return item
 
 
 def build_offer_item(
@@ -272,6 +309,11 @@ def build_offer_item(
     # Offers never carry network_list_key (request browse index is META-only).
     item.pop(GSI_NETWORK_LIST_KEY, None)
 
+    if item["status"] == "OPEN":
+        item = apply_expiry_due_index(item, item.get("expires_at"))
+    else:
+        item = apply_expiry_due_index(item, "")
+
     return omit_blank_index_keys(item)
 
 
@@ -293,6 +335,10 @@ def build_idempotency_item(
         "TRANSFER_START",
         "HANDOVER_CONFIRM",
         "CANCEL",
+        "CANCEL_REQUEST",
+        "REJECT_OFFER",
+        "WITHDRAW_OFFER",
+        "EXPIRE",
     }:
         raise ValueError("idempotency operation is invalid")
 

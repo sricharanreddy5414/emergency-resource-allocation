@@ -1,0 +1,72 @@
+{
+  "applied": false,
+  "region": "eu-north-1",
+  "note": "Phase 7A Exchange expiry worker. Separate from billing expiry. Queries ExpiryDueIndex only (no Scan).",
+  "function": {
+    "name": "erap-exchange-expiry",
+    "handler": "handler.lambda_handler",
+    "alias": "live",
+    "timeout_seconds": 60
+  },
+  "index": {
+    "table": "ResourceExchanges",
+    "name": "ExpiryDueIndex",
+    "partition_key": "expiry_due_key",
+    "sort_key": "expiry_due_at",
+    "purpose": "Sparse DUE partition. Worker queries expiry_due_at <= now so outages do not drop older due rows."
+  },
+  "schedule": {
+    "service": "EventBridge Scheduler",
+    "name": "erap-exchange-expiry-hourly",
+    "schedule_expression": "cron(15 * * * ? *)",
+    "timezone": "UTC",
+    "intended_state_after_deploy": "ENABLED",
+    "target": "erap-exchange-expiry",
+    "alias": "live"
+  },
+  "iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "QueryDueExchanges",
+        "Effect": "Allow",
+        "Action": "dynamodb:Query",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceExchanges/index/ExpiryDueIndex"
+      },
+      {
+        "Sid": "ExchangeLifecycleMutations",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Query",
+          "dynamodb:TransactWriteItems"
+        ],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceExchanges",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Resources",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Allocations"
+        ]
+      },
+      {
+        "Sid": "HistoryAndAudit",
+        "Effect": "Allow",
+        "Action": ["dynamodb:PutItem"],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceStatusHistory",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/AuditEvents"
+        ]
+      },
+      {
+        "Sid": "CloudWatchLogs",
+        "Effect": "Allow",
+        "Action": [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        "Resource": "arn:aws:logs:eu-north-1:481838970142:*"
+      }
+    ]
+  }
+}

@@ -638,7 +638,28 @@ Core accept `TransactWriteItems` is exactly **4 items**: META + accepted offer +
 
 After a successful hold (and on idempotent same-offer retry), `_supersede_competing_open_offers` conditionally sets every remaining OPEN sibling to `SUPERSEDED` (`status = OPEN` only; already non-OPEN left unchanged). Cleanup is re-entrant: if a follow-up update fails transiently, a later accept retry heals leftovers. Stale OPEN competitors cannot be accepted (request already ACCEPTED → 409).
 
-Deferred to later phases: cancel, reject, withdraw, expiry.
+Deferred to later phases after 7A: quantity ownership transfer, QR, notifications.
+
+### Phase 7A implemented routes (lifecycle recovery)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/exchange/requests/{id}/cancel` | Requester cancel OPEN/ACCEPTED/TRANSFER_PENDING |
+| POST | `/exchange/requests/{id}/offers/{offer_id}/reject` | Requester reject OPEN offer |
+| POST | `/exchange/requests/{id}/offers/{offer_id}/withdraw` | Provider withdraw OPEN offer |
+| (worker) | `erap-exchange-expiry` | Hourly ExpiryDueIndex sweeper + lazy expiry on read/write |
+
+**Phase 7A semantics:**
+
+- OPEN cancel: META → CANCELLED; OPEN offers → CANCELLED; no resource mutation.
+- ACCEPTED / TRANSFER_PENDING cancel (requester): META → CANCELLED; accepted offer → CANCELLED; EXCHANGE OPEN allocation → RELEASED; individual resource → AVAILABLE under provider (quantity reverses allocated→available). No ownership/location transfer.
+- COMPLETED cancel: 409 immutable.
+- Reject: OPEN offer → REJECTED; request stays OPEN; no hold.
+- Withdraw: OPEN offer → WITHDRAWN; accepted offers cannot be withdrawn (409).
+- Defaults: request `expires_at` = now+7d when omitted; accept sets `handover_expires_at` = now+72h.
+- Sparse `ExpiryDueIndex` (`expiry_due_key`=`DUE`, `expiry_due_at`) drives the sweeper; DynamoDB TTL is not used for business state.
+- Competing SUPERSEDED offers are never resurrected by cancel/expiry.
+- Emergency `ALLOCATED` and everyday `EVERYDAY` allocations are never mutated by Exchange recovery.
 
 ### Phase 5E implemented routes (handover + ownership/location)
 
@@ -671,13 +692,12 @@ Deferred to later phases: cancel, reject, withdraw, expiry.
 
 §12 documents complete accounting (`quantity_total` move + upsert requester pool), but open question #3 (upsert vs fail-if-missing) and safe cross-tenant pool resolution without Scan remain unresolved. **Phase 5E rejects quantity transfer/handover with 409** (“deferred pending safe requester pool resolution”). Provider counters and ownership are not mutated for QUANTITY in this phase.
 
-### Later-phase routes (not implemented in 5E)
+### Later-phase routes (beyond 7A)
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/exchange/requests/{id}/cancel` | Cancel |
-| POST | `/exchange/offers/{id}/reject` | Reject |
-| POST | `/exchange/offers/{id}/withdraw` | Withdraw |
+| — | quantity handover | Deferred pending safe requester pool resolution |
+| — | QR / notifications | Future phases |
 
 Errors: 401 / 403 (+ `BILLING_REQUIRED`) / 404 (hide cross-tenant) / 409 / 400.
 

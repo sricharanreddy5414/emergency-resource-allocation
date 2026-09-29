@@ -36,10 +36,19 @@ LIVE_URI = (
 ROUTES = (
     (("requests",), ("POST", "GET")),
     (("requests", "{exchange_request_id}"), ("GET",)),
+    (("requests", "{exchange_request_id}", "cancel"), ("POST",)),
     (("requests", "{exchange_request_id}", "offers"), ("POST", "GET")),
     (("requests", "{exchange_request_id}", "offers", "{offer_id}"), ("GET",)),
     (
         ("requests", "{exchange_request_id}", "offers", "{offer_id}", "accept"),
+        ("POST",),
+    ),
+    (
+        ("requests", "{exchange_request_id}", "offers", "{offer_id}", "reject"),
+        ("POST",),
+    ),
+    (
+        ("requests", "{exchange_request_id}", "offers", "{offer_id}", "withdraw"),
         ("POST",),
     ),
     (("requests", "{exchange_request_id}", "transfer", "start"), ("POST",)),

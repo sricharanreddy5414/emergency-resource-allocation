@@ -1,19 +1,22 @@
-"""Authenticated Resource Exchange HTTP API (Phase 5C/5D/5E).
+"""Authenticated Resource Exchange HTTP API (Phase 5C/5D/5E/7A).
 
 Routes:
   POST   /exchange/requests
   GET    /exchange/requests?scope=mine|network
   GET    /exchange/requests/{exchange_request_id}
+  POST   /exchange/requests/{exchange_request_id}/cancel
   POST   /exchange/requests/{exchange_request_id}/offers
   GET    /exchange/requests/{exchange_request_id}/offers
   GET    /exchange/requests/{exchange_request_id}/offers/{offer_id}
   POST   /exchange/requests/{exchange_request_id}/offers/{offer_id}/accept
+  POST   /exchange/requests/{exchange_request_id}/offers/{offer_id}/reject
+  POST   /exchange/requests/{exchange_request_id}/offers/{offer_id}/withdraw
   POST   /exchange/requests/{exchange_request_id}/transfer/start
   POST   /exchange/requests/{exchange_request_id}/handover/confirm
   GET    /exchange/offers?scope=mine
 
 OFFER CREATE does not hold. ACCEPT creates atomic EXCHANGE hold.
-TRANSFER START is provider-only. HANDOVER CONFIRM transfers ownership/location.
+CANCEL / REJECT / WITHDRAW / EXPIRY are Phase 7A lifecycle recovery.
 """
 
 import json
@@ -101,6 +104,30 @@ def _match_handover_confirm(path):
     return match.group(1) if match else None
 
 
+def _match_cancel(path):
+    match = re.search(
+        r"/exchange/requests/(EXREQ-[A-Za-z0-9_-]+)/cancel$",
+        path,
+    )
+    return match.group(1) if match else None
+
+
+def _match_reject(path):
+    match = re.search(
+        r"/exchange/requests/(EXREQ-[A-Za-z0-9_-]+)/offers/(EXOFF-[A-Za-z0-9_-]+)/reject$",
+        path,
+    )
+    return (match.group(1), match.group(2)) if match else (None, None)
+
+
+def _match_withdraw(path):
+    match = re.search(
+        r"/exchange/requests/(EXREQ-[A-Za-z0-9_-]+)/offers/(EXOFF-[A-Za-z0-9_-]+)/withdraw$",
+        path,
+    )
+    return (match.group(1), match.group(2)) if match else (None, None)
+
+
 def lambda_handler(event, context):
     begin_request(event)
     method = (event.get("httpMethod") or "GET").upper()
@@ -152,6 +179,53 @@ def lambda_handler(event, context):
             result = service.accept_offer(
                 accept_request_id,
                 accept_offer_id,
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
+        reject_request_id, reject_offer_id = _match_reject(path)
+
+        if reject_request_id and reject_offer_id and method == "POST":
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.reject_offer(
+                reject_request_id,
+                reject_offer_id,
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
+        withdraw_request_id, withdraw_offer_id = _match_withdraw(path)
+
+        if withdraw_request_id and withdraw_offer_id and method == "POST":
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.withdraw_offer(
+                withdraw_request_id,
+                withdraw_offer_id,
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
+        cancel_id = _match_cancel(path)
+
+        if cancel_id and method == "POST":
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.cancel_exchange_request(
+                cancel_id,
                 membership["organization_id"],
                 actor_sub,
                 membership.get("role"),

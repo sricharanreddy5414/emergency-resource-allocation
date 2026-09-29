@@ -111,6 +111,7 @@ POLICY = {
                 f"arn:aws:dynamodb:{REGION}:{ACCOUNT}:table/ResourceExchanges/index/NetworkOpenRequestIndex",
                 f"arn:aws:dynamodb:{REGION}:{ACCOUNT}:table/ResourceExchanges/index/RequesterOrgIndex",
                 f"arn:aws:dynamodb:{REGION}:{ACCOUNT}:table/ResourceExchanges/index/ProviderOrgOfferIndex",
+                f"arn:aws:dynamodb:{REGION}:{ACCOUNT}:table/ResourceExchanges/index/ExpiryDueIndex",
             ],
         },
         {

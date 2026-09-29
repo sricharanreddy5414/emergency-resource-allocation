@@ -9565,20 +9565,29 @@ function renderExchangeOfferComposer(request) {
 }
 
 function renderExchangeOffers(request) {
-    const isRequester = request.requester_organization_id === selectedOrganizationId();
-    if (!isRequester) {
+    const org = selectedOrganizationId();
+    const isRequester = request.requester_organization_id === org;
+    const visibleOffers = isRequester
+        ? exchangeDetailOffers
+        : exchangeDetailOffers.filter(offer => offer.provider_organization_id === org);
+    if (!isRequester && !visibleOffers.length) {
         return "";
     }
-    if (!exchangeDetailOffers.length) {
+    if (!visibleOffers.length) {
         return `<div class="exchange-offer-block"><h3>Offers</h3><div class="empty-state"><h3>No offers yet</h3><p>No offers have been submitted for this request yet.</p></div></div>`;
     }
 
+    const requestOpen = String(request.status || "").toUpperCase() === "OPEN";
     return `
         <div class="exchange-offer-block">
             <h3>Offers</h3>
-            ${exchangeDetailOffers.map(offer => {
+            ${visibleOffers.map(offer => {
                 const status = String(offer.status || "").toUpperCase();
-                const canAccept = canWriteExchange() && status === "OPEN" && String(request.status || "").toUpperCase() === "OPEN";
+                const canAccept = canWriteExchange() && isRequester && status === "OPEN" && requestOpen;
+                const canReject = canWriteExchange() && isRequester && status === "OPEN" && requestOpen
+                    && offer.provider_organization_id !== org;
+                const canWithdraw = canWriteExchange() && status === "OPEN"
+                    && offer.provider_organization_id === org;
                 return `
                     <div class="exchange-card">
                         <div class="exchange-card-top">
@@ -9590,8 +9599,13 @@ function renderExchangeOffers(request) {
                             <span>Qty ${escapeHtml(String(offer.quantity_offered != null ? offer.quantity_offered : 1))}</span>
                         </div>
                         ${offer.source_location_id ? `<div class="exchange-muted">Provider location ${escapeHtml(offer.source_location_id)}</div>` : ""}
+                        ${offer.expires_at ? `<div class="exchange-muted">Expires ${escapeHtml(String(offer.expires_at))}</div>` : ""}
                         ${offer.notes ? `<div class="exchange-muted">${escapeHtml(offer.notes)}</div>` : ""}
-                        ${canAccept ? `<div class="exchange-actions"><button class="primary-btn" type="button" data-exchange-accept="${escapeHtml(offer.offer_id)}">Accept Offer</button></div>` : ""}
+                        <div class="exchange-actions">
+                            ${canAccept ? `<button class="primary-btn" type="button" data-exchange-accept="${escapeHtml(offer.offer_id)}">Accept Offer</button>` : ""}
+                            ${canReject ? `<button class="secondary-btn" type="button" data-exchange-reject="${escapeHtml(offer.offer_id)}">Reject Offer</button>` : ""}
+                            ${canWithdraw ? `<button class="secondary-btn" type="button" data-exchange-withdraw="${escapeHtml(offer.offer_id)}">Withdraw Offer</button>` : ""}
+                        </div>
                     </div>
                 `;
             }).join("")}
@@ -9605,6 +9619,28 @@ function renderExchangeLifecycleActions(request) {
     const isRequester = request.requester_organization_id === org;
     const isProvider = request.accepted_provider_organization_id === org;
     let actions = "";
+
+    if (canWriteExchange() && isRequester && (status === "OPEN" || status === "ACCEPTED" || status === "TRANSFER_PENDING")) {
+        actions += `
+            <div class="exchange-action-block">
+                <h3>Cancel request</h3>
+                <p class="exchange-muted">Cancels this exchange. If a resource is held, the hold is released and ownership is not transferred.</p>
+                <button class="secondary-btn" type="button" id="exchangeCancelRequestBtn">Cancel Request</button>
+            </div>
+        `;
+    }
+
+    if (request.expires_at || request.handover_expires_at) {
+        actions += `
+            <div class="exchange-action-block">
+                <h3>Expiry</h3>
+                <p class="exchange-muted">
+                    ${request.expires_at ? `Request expires ${escapeHtml(String(request.expires_at))}. ` : ""}
+                    ${request.handover_expires_at ? `Handover due ${escapeHtml(String(request.handover_expires_at))}.` : ""}
+                </p>
+            </div>
+        `;
+    }
 
     if (canWriteExchange() && isProvider && status === "ACCEPTED") {
         actions += `
@@ -9639,6 +9675,15 @@ function renderExchangeLifecycleActions(request) {
             <div class="exchange-action-block">
                 <h3>Completed</h3>
                 <p class="exchange-muted">Ownership and location were transferred. The resource should appear under the requester organization as AVAILABLE / PRIVATE.</p>
+            </div>
+        `;
+    }
+
+    if (status === "CANCELLED" || status === "EXPIRED") {
+        actions += `
+            <div class="exchange-action-block">
+                <h3>${escapeHtml(exchangeStatusLabel(status))}</h3>
+                <p class="exchange-muted">This exchange is closed. No further lifecycle actions are available.</p>
             </div>
         `;
     }
@@ -9678,6 +9723,8 @@ function renderExchangeDetail() {
         ["Accepted offer", request.accepted_offer_id],
         ["Held resource", request.accepted_resource_id],
         ["Provider organization", request.accepted_provider_organization_id],
+        ["Request expires", request.expires_at],
+        ["Handover due", request.handover_expires_at],
         ["Notes", request.notes]
     ].filter(pair => pair[1] !== undefined && pair[1] !== null && pair[1] !== "");
 
@@ -9912,6 +9959,87 @@ async function acceptExchangeOffer(offerId) {
     }
 }
 
+async function rejectExchangeOffer(offerId) {
+    if (exchangeBusy || !exchangeDetailRequest || !offerId || !canWriteExchange()) {
+        return;
+    }
+    if (!window.confirm("Reject this offer? The request will stay open for other offers.")) {
+        return;
+    }
+    const button = document.querySelector(`[data-exchange-reject="${offerId}"]`);
+    setExchangeBusy(button, true, "Rejecting...", "Reject Offer");
+    try {
+        await exchangeRequest(
+            "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id)
+                + "/offers/" + encodeURIComponent(offerId) + "/reject",
+            { method: "POST", body: {} }
+        );
+        showToast("Offer rejected.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
+    } catch (error) {
+        showToast(error.message || "Unable to reject offer.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeSelectedId, { quiet: true });
+    } finally {
+        setExchangeBusy(button, false, "Rejecting...", "Reject Offer");
+    }
+}
+
+async function withdrawExchangeOffer(offerId) {
+    if (exchangeBusy || !exchangeDetailRequest || !offerId || !canWriteExchange()) {
+        return;
+    }
+    if (!window.confirm("Withdraw this offer? Accepted offers cannot be withdrawn.")) {
+        return;
+    }
+    const button = document.querySelector(`[data-exchange-withdraw="${offerId}"]`);
+    setExchangeBusy(button, true, "Withdrawing...", "Withdraw Offer");
+    try {
+        await exchangeRequest(
+            "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id)
+                + "/offers/" + encodeURIComponent(offerId) + "/withdraw",
+            { method: "POST", body: {} }
+        );
+        showToast("Offer withdrawn.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
+    } catch (error) {
+        showToast(error.message || "Unable to withdraw offer.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeSelectedId, { quiet: true });
+    } finally {
+        setExchangeBusy(button, false, "Withdrawing...", "Withdraw Offer");
+    }
+}
+
+async function cancelExchangeRequest() {
+    if (exchangeBusy || !exchangeDetailRequest || !canWriteExchange()) {
+        return;
+    }
+    if (!window.confirm("Cancel this exchange request? If a resource is held, the hold will be released and ownership will not transfer.")) {
+        return;
+    }
+    const button = $("exchangeCancelRequestBtn");
+    setExchangeBusy(button, true, "Cancelling...", "Cancel Request");
+    try {
+        await exchangeRequest(
+            "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id) + "/cancel",
+            { method: "POST", body: {} }
+        );
+        showToast("Exchange request cancelled.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
+        await loadResources();
+    } catch (error) {
+        showToast(error.message || "Unable to cancel request.");
+        await loadExchangeWorkspace();
+        await openExchangeRequest(exchangeSelectedId, { quiet: true });
+    } finally {
+        setExchangeBusy(button, false, "Cancelling...", "Cancel Request");
+    }
+}
+
 async function startExchangeTransfer() {
     if (exchangeBusy || !exchangeDetailRequest || !canWriteExchange()) {
         return;
@@ -10027,8 +10155,22 @@ function initializeExchange() {
             acceptExchangeOffer(acceptId);
             return;
         }
+        const rejectId = event.target?.closest?.("[data-exchange-reject]")?.dataset?.exchangeReject;
+        if (rejectId) {
+            rejectExchangeOffer(rejectId);
+            return;
+        }
+        const withdrawId = event.target?.closest?.("[data-exchange-withdraw]")?.dataset?.exchangeWithdraw;
+        if (withdrawId) {
+            withdrawExchangeOffer(withdrawId);
+            return;
+        }
         if (event.target?.id === "exchangeSubmitOfferBtn") {
             submitExchangeOffer();
+            return;
+        }
+        if (event.target?.id === "exchangeCancelRequestBtn") {
+            cancelExchangeRequest();
             return;
         }
         if (event.target?.id === "exchangeStartTransferBtn") {

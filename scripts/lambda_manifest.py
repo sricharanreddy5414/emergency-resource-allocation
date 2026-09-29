@@ -104,6 +104,13 @@ EXCHANGE_PACKAGES = {
         **SHARED,
         "handler.py": "src/exchange/handler.py",
         "service.py": "src/exchange/service.py",
+        "lifecycle.py": "src/exchange/lifecycle.py",
+    },
+    "erap-exchange-expiry": {
+        **SHARED,
+        "handler.py": "src/exchange/expiry_handler.py",
+        "service.py": "src/exchange/service.py",
+        "lifecycle.py": "src/exchange/lifecycle.py",
     },
 }
 
