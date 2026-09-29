@@ -198,6 +198,7 @@ Do not replace `Available`, do not rename `Type` or `Location`, and do not chang
 - Public discovery fields stay limited to the current public projection.
 - Pilot organization `ORG-D13B30D99127` is not migrated, rewritten, or used as test data.
 - No new table until an access pattern cannot be served by `Resources`, `Allocations`, `ResourceStatusHistory`, or `AuditEvents`.
+- User-facing notifications (unread inbox, mark-read) cannot be served by `AuditEvents`; Phase 8A locks a dedicated `Notifications` design in `docs/notification-architecture.md` (not deployed in 8A).
 
 ## 10. AWS resources that already exist and must be preserved
 
