@@ -154,13 +154,15 @@ def _transition_resource(
 
     parts = ["operational_status = :target", "Available = :available", "updated_at = :now"]
     remove = list(extra_remove or [])
+    names = {}
 
     if notes:
         parts.append("lifecycle_notes = :notes")
         values[":notes"] = notes
 
     if condition is not None:
-        parts.append("condition = :condition")
+        parts.append("#condition = :condition")
+        names["#condition"] = "condition"
         values[":condition"] = condition
 
     for key, value in (extra_set or {}).items():
@@ -177,13 +179,17 @@ def _transition_resource(
     if remove:
         update += " REMOVE " + ", ".join(remove)
 
+    update_kwargs = {
+        "Key": {"resource_id": resource_id},
+        "UpdateExpression": update,
+        "ConditionExpression": _status_condition(current),
+        "ExpressionAttributeValues": values,
+    }
+    if names:
+        update_kwargs["ExpressionAttributeNames"] = names
+
     try:
-        tables["resources"].update_item(
-            Key={"resource_id": resource_id},
-            UpdateExpression=update,
-            ConditionExpression=_status_condition(current),
-            ExpressionAttributeValues=values,
-        )
+        tables["resources"].update_item(**update_kwargs)
     except ClientError as error:
         _conflict_from_client(error)
 
@@ -342,12 +348,15 @@ def mark_in_use(body, organization_id, actor_sub, actor_role, resource, tables):
 
 
 def return_to_available(body, organization_id, actor_sub, actor_role, resource, tables):
-    """IN_USE → AVAILABLE without an everyday allocation return."""
+    """IN_USE → AVAILABLE. Closes an open everyday allocation when present."""
     current = effective_operational_status(resource)
     if current != "IN_USE":
         raise LifecycleOperationError(409, "Resource is not in use")
-    _require_no_active_holds(tables, organization_id, resource["resource_id"], allow_everyday=False)
-    return _transition_resource(
+    emergency, everyday = _active_allocations(tables, organization_id, resource["resource_id"])
+    if emergency:
+        raise LifecycleOperationError(409, "Resource has an active emergency allocation")
+
+    result = _transition_resource(
         resource,
         organization_id,
         actor_sub,
@@ -358,6 +367,31 @@ def return_to_available(body, organization_id, actor_sub, actor_role, resource, 
         audit_action="resource.in_use_return",
         notes=_notes(body),
     )
+
+    for allocation in everyday:
+        allocation_id = str(allocation.get("allocation_id") or "").strip()
+        if not allocation_id:
+            continue
+        try:
+            tables["allocations"].update_item(
+                Key={"allocation_id": allocation_id},
+                UpdateExpression=(
+                    "SET #status = :returned, returned_at = :now, returned_by = :actor, updated_at = :now"
+                ),
+                ConditionExpression="#status = :open AND organization_id = :organization_id",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":returned": "RETURNED",
+                    ":open": "OPEN",
+                    ":now": _now(),
+                    ":actor": actor_sub,
+                    ":organization_id": organization_id,
+                },
+            )
+        except ClientError:
+            pass
+
+    return result
 
 
 def assign_resource(body, organization_id, actor_sub, actor_role, resource, tables):

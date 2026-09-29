@@ -51,6 +51,7 @@ class Table:
         self.items = {item["resource_id"]: copy.deepcopy(item) for item in (items or [])}
         self.allocation_items = {}
         self.history = []
+        self.last_update = None
         self.meta = type("Meta", (), {"client": self})()
 
     def get_item(self, Key):
@@ -61,11 +62,25 @@ class Table:
         return {"Item": copy.deepcopy(item)} if item else {}
 
     def update_item(self, **kwargs):
-        key = kwargs["Key"]["resource_id"]
-        item = self.items[key]
+        self.last_update = kwargs
+        key = kwargs["Key"]
         expr = kwargs.get("UpdateExpression", "")
         values = kwargs.get("ExpressionAttributeValues", {})
         condition = kwargs.get("ConditionExpression", "")
+        names = kwargs.get("ExpressionAttributeNames") or {}
+
+        if "allocation_id" in key:
+            alloc = self.allocation_items[key["allocation_id"]]
+            if ":open" in values and alloc.get("status") != values.get(":open"):
+                raise _conditional_failed()
+            if names.get("#status") == "status" or "#status" in expr:
+                alloc["status"] = values.get(":returned", "RETURNED")
+                alloc["returned_at"] = values.get(":now")
+                alloc["returned_by"] = values.get(":actor")
+                alloc["updated_at"] = values.get(":now")
+            return
+
+        item = self.items[key["resource_id"]]
 
         if item.get("organization_id") != values.get(":organization_id"):
             raise _conditional_failed()
@@ -88,12 +103,14 @@ class Table:
                 if not chunk or "=" not in chunk:
                     continue
                 left, right = [part.strip() for part in chunk.split("=", 1)]
+                attr = names.get(left, left)
                 if right.startswith(":"):
-                    item[left] = values[right]
+                    item[attr] = values[right]
 
         if "REMOVE" in expr:
             for name in expr.split("REMOVE", 1)[1].split(","):
-                item.pop(name.strip(), None)
+                attr = names.get(name.strip(), name.strip())
+                item.pop(attr, None)
 
     def put_item(self, Item, ConditionExpression=None):
         if Item.get("history_id"):
@@ -122,6 +139,7 @@ def store(resource, allocations=None):
         {"name": "Allocations", "allocation_items": table.allocation_items, "meta": table.meta},
     )()
     allocations_table.get_item = lambda Key: table.get_item(Key)
+    allocations_table.update_item = table.update_item
     return {
         "resources": table,
         "allocations": allocations_table,
@@ -204,12 +222,50 @@ def test_maintenance_and_complete():
     assert any(entry["reason"] == "RESOURCE_MAINTENANCE_STARTED" for entry in tables["history"].history)
 
 
+def test_maintenance_complete_with_condition_uses_attribute_names():
+    tables = store(individual(status="MAINTENANCE", available=False))
+    lifecycle.complete_maintenance(
+        {"condition": "GOOD"},
+        ORG,
+        USER,
+        "OPERATOR",
+        tables["resources"].items["R1"],
+        tables,
+    )
+    resource = tables["resources"].items["R1"]
+    assert resource["operational_status"] == "AVAILABLE"
+    assert resource["condition"] == "GOOD"
+    assert "#condition" not in resource
+    update = tables["resources"].last_update
+    assert "#condition = :condition" in update["UpdateExpression"]
+    assert update["ExpressionAttributeNames"]["#condition"] == "condition"
+    assert update["ExpressionAttributeValues"][":condition"] == "GOOD"
+
+
 def test_damage_and_recover():
     tables = store(individual())
     lifecycle.mark_damaged({"reason": "crack"}, ORG, USER, "OPERATOR", tables["resources"].items["R1"], tables)
     assert tables["resources"].items["R1"]["operational_status"] == "DAMAGED"
     lifecycle.recover_damage({}, ORG, USER, "OPERATOR", tables["resources"].items["R1"], tables)
     assert tables["resources"].items["R1"]["operational_status"] == "AVAILABLE"
+
+
+def test_damage_recover_with_condition_uses_attribute_names():
+    tables = store(individual(status="DAMAGED", available=False))
+    lifecycle.recover_damage(
+        {"target_status": "AVAILABLE", "condition": "FAIR"},
+        ORG,
+        USER,
+        "OPERATOR",
+        tables["resources"].items["R1"],
+        tables,
+    )
+    resource = tables["resources"].items["R1"]
+    assert resource["operational_status"] == "AVAILABLE"
+    assert resource["condition"] == "FAIR"
+    update = tables["resources"].last_update
+    assert "#condition = :condition" in update["UpdateExpression"]
+    assert update["ExpressionAttributeNames"]["#condition"] == "condition"
 
 
 def test_retire_blocks_active_everyday():
@@ -279,6 +335,51 @@ def test_in_use_and_return():
     assert tables["resources"].items["R1"]["operational_status"] == "IN_USE"
     lifecycle.return_to_available({}, ORG, USER, "OPERATOR", tables["resources"].items["R1"], tables)
     assert tables["resources"].items["R1"]["operational_status"] == "AVAILABLE"
+
+
+def test_in_use_return_closes_open_everyday():
+    tables = store(
+        individual(status="IN_USE", available=False),
+        allocations=[
+            {
+                "allocation_id": "EVERYDAY-R1-OPEN1",
+                "resource_id": "R1",
+                "organization_id": ORG,
+                "allocation_type": "EVERYDAY",
+                "status": "OPEN",
+            },
+            {
+                "allocation_id": "ALLOC-EMERGENCY-1",
+                "resource_id": "R1",
+                "organization_id": ORG,
+                "status": "RELEASED",
+                "request_id": "Q1",
+            },
+        ],
+    )
+    lifecycle.return_to_available({}, ORG, USER, "OPERATOR", tables["resources"].items["R1"], tables)
+    assert tables["resources"].items["R1"]["operational_status"] == "AVAILABLE"
+    assert tables["allocations"].allocation_items["EVERYDAY-R1-OPEN1"]["status"] == "RETURNED"
+    assert tables["allocations"].allocation_items["ALLOC-EMERGENCY-1"]["status"] == "RELEASED"
+
+
+def test_in_use_return_blocks_active_emergency():
+    tables = store(
+        individual(status="IN_USE", available=False),
+        allocations=[
+            {
+                "allocation_id": "ALLOC-1",
+                "resource_id": "R1",
+                "organization_id": ORG,
+                "status": "ALLOCATED",
+                "request_id": "Q1",
+            }
+        ],
+    )
+    with pytest.raises(lifecycle.LifecycleOperationError) as error:
+        lifecycle.return_to_available({}, ORG, USER, "OPERATOR", tables["resources"].items["R1"], tables)
+    assert error.value.status_code == 409
+    assert tables["allocations"].allocation_items["ALLOC-1"]["status"] == "ALLOCATED"
 
 
 def test_concurrent_maintenance():

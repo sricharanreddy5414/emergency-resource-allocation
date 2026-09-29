@@ -81,12 +81,24 @@ class ConditionalTable:
             raise _conditional_failed()
 
     def update_item(self, **kwargs):
-        key = kwargs["Key"]["resource_id"]
-        item = self.items[key]
+        key = kwargs["Key"]
         expr = kwargs.get("UpdateExpression", "")
         values = kwargs.get("ExpressionAttributeValues", {})
         condition = kwargs.get("ConditionExpression", "")
         names = kwargs.get("ExpressionAttributeNames") or {}
+
+        if "allocation_id" in key:
+            alloc = self.allocation_items[key["allocation_id"]]
+            if ":open" in values and alloc.get("status") != values.get(":open"):
+                raise _conditional_failed()
+            if names.get("#status") == "status" or "#status" in expr:
+                alloc["status"] = values.get(":returned", "RETURNED")
+                alloc["returned_at"] = values.get(":now")
+                alloc["returned_by"] = values.get(":actor")
+                alloc["updated_at"] = values.get(":now")
+            return
+
+        item = self.items[key["resource_id"]]
         self._check_org(item, values, condition)
 
         if ("Available = :true" in condition or "#a = :true" in condition) and not item.get("Available"):
@@ -95,8 +107,21 @@ class ConditionalTable:
         if "operational_status = :reserved" in condition and item.get("operational_status") != "RESERVED":
             raise _conditional_failed()
 
-        if "operational_status = :allocated" in condition and item.get("operational_status") != "ALLOCATED":
-            raise _conditional_failed()
+        if "operational_status = :allocated" in condition and "operational_status = :in_use" not in condition:
+            if item.get("operational_status") != "ALLOCATED":
+                raise _conditional_failed()
+
+        if "operational_status = :allocated OR operational_status = :in_use" in condition.replace("(", "").replace(")", ""):
+            if item.get("operational_status") not in {"ALLOCATED", "IN_USE"}:
+                # keep original parentheses form check below
+                pass
+
+        if "(operational_status = :allocated OR operational_status = :in_use)" in condition:
+            if item.get("operational_status") not in {"ALLOCATED", "IN_USE"}:
+                raise _conditional_failed()
+        elif "operational_status = :allocated" in condition and item.get("operational_status") != "ALLOCATED":
+            if "Available = :true" not in condition:
+                raise _conditional_failed()
 
         if (
             "operational_status = :available" in condition
@@ -157,6 +182,14 @@ class ConditionalTable:
             item["quantity_available"] += qty
             return
 
+        if "quantity_available = quantity_available + :qty" in expr and "quantity_allocated = quantity_allocated - :qty" in expr:
+            qty = values[":qty"]
+            if item.get("quantity_allocated", 0) < qty:
+                raise _conditional_failed()
+            item["quantity_allocated"] -= qty
+            item["quantity_available"] += qty
+            return
+
         if "#a = :false" in expr or (names.get("#a") == "Available" and ":false" in values):
             item["Available"] = False
             if values.get(":op_allocated"):
@@ -167,6 +200,9 @@ class ConditionalTable:
             self.history.append(copy.deepcopy(Item))
             return
         if "allocation_id" in Item:
+            if self.fail_next_allocation_put:
+                self.fail_next_allocation_put = False
+                raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
             if ConditionExpression and Item["allocation_id"] in self.allocation_items:
                 raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
             self.allocation_items[Item["allocation_id"]] = copy.deepcopy(Item)
@@ -231,6 +267,8 @@ def store(resource):
     table = ConditionalTable("Resources", [resource])
     allocations = type("Alloc", (), {"name": "Allocations", "allocation_items": table.allocation_items, "meta": table.meta})()
     allocations.get_item = lambda Key: table.get_item(Key)
+    allocations.put_item = table.put_item
+    allocations.update_item = table.update_item
     audit = AuditCapture()
     return {
         "resources": table,
