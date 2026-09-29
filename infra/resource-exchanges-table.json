@@ -1,7 +1,7 @@
 {
-  "applied": false,
+  "applied": true,
   "region": "eu-north-1",
-  "note": "Specification only for Phase 5B. Do not create ResourceExchanges until a later reviewed deploy. Existing tables and indexes are not modified. Sparse GSI keys (network_list_key) must be omitted when blank so DynamoDB does not reject empty index keys. runtime_iam below is prepared for a future erap-exchange role and must not be attached until that Lambda exists.",
+  "note": "ResourceExchanges created in eu-north-1 for Phase 5G. Do not redesign PK/SK or add GSIs. runtime_iam reflects least-privilege for erap-exchange (DeleteItem omitted; application never deletes rows).",
   "tables": [
     {
       "TableName": "ResourceExchanges",
@@ -108,7 +108,6 @@
           "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
           "dynamodb:Query",
           "dynamodb:TransactWriteItems"
         ],

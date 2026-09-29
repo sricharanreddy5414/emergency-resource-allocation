@@ -93,6 +93,7 @@ TABLES = [
     "ResourceTypes",
     "RequestTypes",
     "AuditEvents",
+    "ResourceExchanges",
 ]
 
 

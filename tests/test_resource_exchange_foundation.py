@@ -303,7 +303,7 @@ def test_infra_spec_lists_exactly_three_gsis():
     import json
 
     spec = json.loads((ROOT / "infra" / "resource-exchanges-table.json").read_text(encoding="utf-8"))
-    assert spec["applied"] is False
+    assert spec["applied"] is True
     table = spec["tables"][0]
     assert table["TableName"] == "ResourceExchanges"
     names = [gsi["IndexName"] for gsi in table["GlobalSecondaryIndexes"]]
@@ -315,3 +315,12 @@ def test_infra_spec_lists_exactly_three_gsis():
     assert table["BillingMode"] == "PAY_PER_REQUEST"
     assert table["DeletionProtectionEnabled"] is True
     assert table["PointInTimeRecoverySpecification"]["PointInTimeRecoveryEnabled"] is True
+    actions = set()
+    for statement in (spec.get("runtime_iam") or {}).get("Statement") or []:
+        action = statement.get("Action")
+        if isinstance(action, str):
+            actions.add(action)
+        else:
+            actions.update(action or [])
+    assert "dynamodb:DeleteItem" not in actions
+    assert "dynamodb:Scan" not in actions
