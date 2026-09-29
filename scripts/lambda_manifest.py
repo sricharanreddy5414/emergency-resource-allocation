@@ -94,6 +94,7 @@ TABLES = [
     "RequestTypes",
     "AuditEvents",
     "ResourceExchanges",
+    "Notifications",
 ]
 
 
@@ -102,6 +103,8 @@ TABLES = [
 EXCHANGE_PACKAGES = {
     "erap-exchange": {
         **SHARED,
+        "notifications.py": "src/shared/notifications.py",
+        "exchange_notify.py": "src/shared/exchange_notify.py",
         "handler.py": "src/exchange/handler.py",
         "service.py": "src/exchange/service.py",
         "lifecycle.py": "src/exchange/lifecycle.py",
@@ -109,10 +112,28 @@ EXCHANGE_PACKAGES = {
     },
     "erap-exchange-expiry": {
         **SHARED,
+        "notifications.py": "src/shared/notifications.py",
+        "exchange_notify.py": "src/shared/exchange_notify.py",
         "handler.py": "src/exchange/expiry_handler.py",
         "service.py": "src/exchange/service.py",
         "lifecycle.py": "src/exchange/lifecycle.py",
         "quantity_handover.py": "src/exchange/quantity_handover.py",
+    },
+}
+
+NOTIFICATION_PACKAGES = {
+    "erap-notifications": {
+        "access.py": "src/shared/access.py",
+        "attributes.py": "src/shared/attributes.py",
+        "common.py": "src/organization/common.py",
+        "membership.py": "src/organization/membership.py",
+        "pages.py": "src/shared/pages.py",
+        "observability.py": "src/shared/observability.py",
+        "notifications.py": "src/shared/notifications.py",
+        "billing/__init__.py": "src/billing/__init__.py",
+        "billing/entitlements.py": "src/billing/entitlements.py",
+        "service.py": "src/notification_api/service.py",
+        "handler.py": "src/notification_api/handler.py",
     },
 }
 
@@ -165,6 +186,7 @@ def package_map():
     mapping = dict(PACKAGES)
     mapping.update(BILLING_PACKAGES)
     mapping.update(EXCHANGE_PACKAGES)
+    mapping.update(NOTIFICATION_PACKAGES)
     return mapping
 
 

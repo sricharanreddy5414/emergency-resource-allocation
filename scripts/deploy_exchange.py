@@ -50,7 +50,7 @@ POLICY = {
         {
             "Sid": "OrganizationMembersRead",
             "Effect": "Allow",
-            "Action": ["dynamodb:GetItem"],
+            "Action": ["dynamodb:GetItem", "dynamodb:Query"],
             "Resource": [f"arn:aws:dynamodb:{REGION}:{ACCOUNT}:table/OrganizationMembers"],
         },
         {
@@ -131,6 +131,16 @@ POLICY = {
             "Effect": "Allow",
             "Action": ["dynamodb:PutItem"],
             "Resource": [f"arn:aws:dynamodb:{REGION}:{ACCOUNT}:table/AuditEvents"],
+        },
+        {
+            "Sid": "NotificationsEmit",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:PutItem",
+                "dynamodb:GetItem",
+                "dynamodb:UpdateItem",
+            ],
+            "Resource": [f"arn:aws:dynamodb:{REGION}:{ACCOUNT}:table/Notifications"],
         },
         {
             "Sid": "ResourceStatusHistoryWrite",

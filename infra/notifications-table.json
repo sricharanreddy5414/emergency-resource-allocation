@@ -1,0 +1,95 @@
+{
+  "applied": true,
+  "region": "eu-north-1",
+  "note": "Notifications created in eu-north-1 for Phase 8B. Do not redesign PK/SK or add GSIs. runtime_iam reflects least-privilege (DeleteItem and Scan omitted).",
+  "tables": [
+    {
+      "TableName": "Notifications",
+      "AttributeDefinitions": [
+        {
+          "AttributeName": "pk",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "sk",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "unread_key",
+          "AttributeType": "S"
+        },
+        {
+          "AttributeName": "created_at",
+          "AttributeType": "S"
+        }
+      ],
+      "KeySchema": [
+        {
+          "AttributeName": "pk",
+          "KeyType": "HASH"
+        },
+        {
+          "AttributeName": "sk",
+          "KeyType": "RANGE"
+        }
+      ],
+      "GlobalSecondaryIndexes": [
+        {
+          "IndexName": "UnreadByUserIndex",
+          "KeySchema": [
+            {
+              "AttributeName": "unread_key",
+              "KeyType": "HASH"
+            },
+            {
+              "AttributeName": "created_at",
+              "KeyType": "RANGE"
+            }
+          ],
+          "Projection": {
+            "ProjectionType": "ALL"
+          }
+        }
+      ],
+      "BillingMode": "PAY_PER_REQUEST",
+      "PointInTimeRecoverySpecification": {
+        "PointInTimeRecoveryEnabled": true
+      },
+      "DeletionProtectionEnabled": true,
+      "TimeToLiveSpecification": {
+        "AttributeName": "expires_at",
+        "Enabled": true
+      }
+    }
+  ],
+  "runtime_iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "NotificationsEmit",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
+        ],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Notifications"
+        ]
+      },
+      {
+        "Sid": "NotificationsReadApi",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem"
+        ],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Notifications",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Notifications/index/UnreadByUserIndex"
+        ]
+      }
+    ]
+  }
+}

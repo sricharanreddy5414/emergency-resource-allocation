@@ -458,6 +458,20 @@ def confirm_quantity_handover(
     )
 
     latest = service._get_meta(request_id)
+    try:
+        from exchange_notify import notify_handover_completed
+
+        notify_handover_completed(
+            latest,
+            offer,
+            actor_sub,
+            tracking_mode="QUANTITY",
+            quantity=quantity,
+            destination_mode="CREATE" if destination_created else "MERGE",
+            destination_resource_id=destination_resource_id,
+        )
+    except Exception:
+        pass
     allocation_row = service.allocations_table().get_item(Key={"allocation_id": allocation_id}).get(
         "Item"
     ) or {

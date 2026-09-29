@@ -58,6 +58,27 @@
         ]
       },
       {
+        "Sid": "NotificationsEmit",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
+        ],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Notifications"
+        ]
+      },
+      {
+        "Sid": "OrganizationMembersRecipientQuery",
+        "Effect": "Allow",
+        "Action": ["dynamodb:Query", "dynamodb:GetItem"],
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationMembers",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/Organizations"
+        ]
+      },
+      {
         "Sid": "CloudWatchLogs",
         "Effect": "Allow",
         "Action": [

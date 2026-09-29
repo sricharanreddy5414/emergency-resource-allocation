@@ -740,6 +740,12 @@ def create_offer(exchange_request_id, body, organization_id, actor_sub, actor_ro
             },
         ),
     )
+    try:
+        from exchange_notify import notify_offer_received
+
+        notify_offer_received(meta, offer, actor_sub)
+    except Exception:
+        pass
     return provider_offer_view(offer)
 
 
@@ -912,7 +918,7 @@ def _list_open_offers(exchange_request_id):
     ]
 
 
-def _supersede_competing_open_offers(request_id, accepted_offer_id, now=None):
+def _supersede_competing_open_offers(request_id, accepted_offer_id, now=None, *, meta=None, actor_sub=""):
     """Conditionally SUPERSEDE every remaining OPEN sibling offer.
 
     Runs outside the core accept transaction so:
@@ -922,6 +928,7 @@ def _supersede_competing_open_offers(request_id, accepted_offer_id, now=None):
     """
     stamp = now or _now_iso()
     accepted = str(accepted_offer_id or "").strip()
+    request_meta = meta or _get_meta(request_id)
 
     for _ in range(MAX_SUPERSEDE_CLEANUP_ROUNDS):
         competing = [
@@ -948,6 +955,12 @@ def _supersede_competing_open_offers(request_id, accepted_offer_id, now=None):
                         ":now": stamp,
                     },
                 )
+                try:
+                    from exchange_notify import notify_offer_superseded
+
+                    notify_offer_superseded(request_meta, other, actor_sub)
+                except Exception:
+                    pass
             except ClientError:
                 # ConditionalCheckFailed (already non-OPEN) or transient — continue.
                 continue
@@ -979,7 +992,15 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
             allocation_id = exchange_allocation_id(offer["offer_id"])
             allocation = allocations_table().get_item(Key={"allocation_id": allocation_id}).get("Item") or {}
             # Heal any competing OPEN leftovers from a prior interrupted cleanup.
-            _supersede_competing_open_offers(exchange_request_id, oid)
+            _supersede_competing_open_offers(
+                exchange_request_id, oid, meta=meta, actor_sub=actor_sub
+            )
+            try:
+                from exchange_notify import notify_offer_accepted
+
+                notify_offer_accepted(meta, offer, actor_sub)
+            except Exception:
+                pass
             return _acceptance_response(meta, offer, allocation)
         raise ExchangeOperationError(409, "Exchange request already accepted")
 
@@ -1187,12 +1208,22 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
                 allocation_row = allocations_table().get_item(
                     Key={"allocation_id": allocation_id}
                 ).get("Item") or allocation
-                _supersede_competing_open_offers(request_id, oid, now)
+                _supersede_competing_open_offers(
+                    request_id, oid, now, meta=latest, actor_sub=actor_sub
+                )
+                try:
+                    from exchange_notify import notify_offer_accepted
+
+                    notify_offer_accepted(latest, _get_offer(request_id, oid), actor_sub)
+                except Exception:
+                    pass
                 return _acceptance_response(latest, _get_offer(request_id, oid), allocation_row)
             raise ExchangeOperationError(409, "Resource state conflict") from error
         raise
 
-    _supersede_competing_open_offers(request_id, oid, now)
+    _supersede_competing_open_offers(
+        request_id, oid, now, meta=_get_meta(request_id), actor_sub=actor_sub
+    )
 
     history_reason_item = {
         "history_id": "HIST-EXCHANGE-" + oid + "-" + resource_id,
@@ -1262,7 +1293,16 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
         ),
     )
 
-    return _acceptance_response(_get_meta(request_id), _get_offer(request_id, oid), allocation)
+    latest_meta = _get_meta(request_id)
+    latest_offer = _get_offer(request_id, oid)
+    try:
+        from exchange_notify import notify_offer_accepted
+
+        notify_offer_accepted(latest_meta, latest_offer, actor_sub)
+    except Exception:
+        pass
+
+    return _acceptance_response(latest_meta, latest_offer, allocation)
 
 
 def _accepted_context(meta):
@@ -1299,6 +1339,12 @@ def start_transfer(exchange_request_id, organization_id, actor_sub, actor_role, 
             raise AccessError(404, "Record not found")
         offer, allocation = _accepted_context(meta)
         assert_provider_organization(membership, offer)
+        try:
+            from exchange_notify import notify_transfer_started
+
+            notify_transfer_started(meta, offer, actor_sub)
+        except Exception:
+            pass
         return {
             "message": "Transfer already started",
             "request": requester_view(meta),
@@ -1414,6 +1460,12 @@ def start_transfer(exchange_request_id, organization_id, actor_sub, actor_role, 
     )
 
     latest = _get_meta(request_id)
+    try:
+        from exchange_notify import notify_transfer_started
+
+        notify_transfer_started(latest, offer, actor_sub)
+    except Exception:
+        pass
     return {
         "message": "Transfer started",
         "request": requester_view(latest),
@@ -1436,6 +1488,19 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
 
     if status == "COMPLETED":
         offer, allocation = _accepted_context(meta)
+        try:
+            from exchange_notify import notify_handover_completed
+
+            mode = str(meta.get("tracking_mode") or "").upper()
+            extra = {"tracking_mode": mode or "INDIVIDUAL"}
+            if mode == "QUANTITY":
+                dest = (allocation or {}).get("destination_resource_id") or ""
+                extra["destination_resource_id"] = dest
+                extra["destination_mode"] = "MERGE" if dest else "CREATE"
+                extra["quantity"] = (allocation or {}).get("quantity")
+            notify_handover_completed(meta, offer, actor_sub, **extra)
+        except Exception:
+            pass
         return _handover_response(meta, offer, allocation, message="Handover already completed")
 
     if status != "TRANSFER_PENDING":
@@ -1684,6 +1749,17 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
     )
 
     latest = _get_meta(request_id)
+    try:
+        from exchange_notify import notify_handover_completed
+
+        notify_handover_completed(
+            latest,
+            offer,
+            actor_sub,
+            tracking_mode="INDIVIDUAL",
+        )
+    except Exception:
+        pass
     allocation_row = allocations_table().get_item(Key={"allocation_id": allocation_id}).get("Item") or {
         **allocation,
         "status": EXCHANGE_ALLOCATION_STATUS_RELEASED,

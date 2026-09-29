@@ -338,6 +338,12 @@ def cancel_exchange_request(exchange_request_id, organization_id, actor_sub, act
                 metadata={"previous_status": "OPEN"},
             ),
         )
+        try:
+            from exchange_notify import notify_request_cancelled
+
+            notify_request_cancelled(meta, actor_sub, previous_status="OPEN")
+        except Exception:
+            pass
         return {
             "message": "Exchange request cancelled",
             "request": service.requester_view(service._get_meta(request_id)),
@@ -547,6 +553,21 @@ def _cancel_with_hold_release(
     )
 
     latest = service._get_meta(request_id)
+    try:
+        if audit_action == "exchange.request_cancelled":
+            from exchange_notify import notify_request_cancelled
+
+            notify_request_cancelled(
+                {**meta, **latest}, actor_sub, previous_status=expected_status
+            )
+        elif audit_action == "exchange.expired":
+            from exchange_notify import notify_request_expired
+
+            notify_request_expired(
+                {**meta, **latest}, actor_sub, previous_status=expected_status
+            )
+    except Exception:
+        pass
     offer_row, allocation_row = service._accepted_context(latest)
     return {
         "message": message,
@@ -633,6 +654,12 @@ def reject_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
             },
         ),
     )
+    try:
+        from exchange_notify import notify_offer_rejected
+
+        notify_offer_rejected(meta, offer, actor_sub)
+    except Exception:
+        pass
     return {
         "message": "Offer rejected",
         "offer": service.requester_offer_view(service._get_offer(request_id, oid)),
@@ -720,6 +747,12 @@ def withdraw_offer(exchange_request_id, offer_id, organization_id, actor_sub, ac
             },
         ),
     )
+    try:
+        from exchange_notify import notify_offer_withdrawn
+
+        notify_offer_withdrawn(meta, offer, actor_sub)
+    except Exception:
+        pass
     return {
         "message": "Offer withdrawn",
         "offer": service.provider_offer_view(service._get_offer(request_id, oid)),
@@ -792,6 +825,12 @@ def expire_open_request(meta, *, now=None, actor_sub="system:exchange-expiry", a
             metadata={"previous_status": "OPEN"},
         ),
     )
+    try:
+        from exchange_notify import notify_request_expired
+
+        notify_request_expired(meta, actor_sub, previous_status="OPEN")
+    except Exception:
+        pass
     return {"outcome": "expired", "request_id": request_id}
 
 
