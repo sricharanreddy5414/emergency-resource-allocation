@@ -155,19 +155,43 @@ def _from_item(item):
     return {key: _python(value) for key, value in item.items()}
 
 
-def _get(table_name, organization_id):
+def _get(table_name, organization_id, projection=None, names=None):
+    command = [
+        "dynamodb",
+        "get-item",
+        "--table-name",
+        table_name,
+        "--consistent-read",
+        "--key",
+        json.dumps({"organization_id": {"S": organization_id}}),
+    ]
+
+    if projection:
+        command.extend(["--projection-expression", projection])
+
+    if names:
+        command.extend(["--expression-attribute-names", json.dumps(names)])
+
+    payload = aws(command)
+    return _from_item((payload or {}).get("Item"))
+
+
+def _subscription_present(organization_id):
+    """Presence only. An existing row is never decoded or rewritten."""
     payload = aws(
         [
             "dynamodb",
             "get-item",
             "--table-name",
-            table_name,
+            SUBSCRIPTIONS_TABLE,
             "--consistent-read",
             "--key",
             json.dumps({"organization_id": {"S": organization_id}}),
+            "--projection-expression",
+            "organization_id",
         ]
     )
-    return _from_item((payload or {}).get("Item"))
+    return (payload or {}).get("Item") or None
 
 
 def _put(item):
@@ -226,12 +250,19 @@ def main(argv=None):
         return 2
 
     try:
+        organization_get = lambda organization_id: _get(
+            ORGANIZATIONS_TABLE,
+            organization_id,
+            "organization_id, #status",
+            {"#status": "status"},
+        )
+
         if args.dry_run:
             result = execute(
                 args.organization_id,
                 False,
-                lambda organization_id: _get(ORGANIZATIONS_TABLE, organization_id),
-                lambda organization_id: _get(SUBSCRIPTIONS_TABLE, organization_id),
+                organization_get,
+                _subscription_present,
                 _put,
                 datetime.now(timezone.utc),
             )
@@ -239,8 +270,8 @@ def main(argv=None):
             result = execute(
                 args.organization_id,
                 True,
-                lambda organization_id: _get(ORGANIZATIONS_TABLE, organization_id),
-                lambda organization_id: _get(SUBSCRIPTIONS_TABLE, organization_id),
+                organization_get,
+                _subscription_present,
                 _put,
                 datetime.now(timezone.utc),
             )
