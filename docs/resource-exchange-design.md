@@ -610,12 +610,39 @@ Dedicated Lambda `erap-exchange`, Cognito authorizer. Additive routes only.
 - Audit: `exchange.request_created`, `exchange.offer_created`.
 - `scripts/expose_exchange_routes.py` and table infra remain **not applied** (no AWS mutation in 5C).
 
-### Later-phase routes (not implemented in 5C)
+### Phase 5D implemented route (atomic accept + hold)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/exchange/requests/{exchange_request_id}/offers/{offer_id}/accept` | Atomic accept + EXCHANGE hold |
+
+**ACCEPTANCE = RESOURCE HOLD. ACCEPTANCE ≠ OWNERSHIP TRANSFER. ACCEPTANCE ≠ HANDOVER.**
+
+**Phase 5D semantics:**
+
+- Only the **requester** org (OWNER/ADMIN/OPERATOR + billing write gate) may accept.
+- Provider / unrelated org cannot accept (404/403 per existing isolation).
+- Preconditions: request OPEN, offer OPEN and belongs to request, resource still eligible (re-checked; offer create never held stock).
+- **INDIVIDUAL:** `Available true→false`, `AVAILABLE→ALLOCATED` under `EMERGENCY_CLAIM_CONDITION` (same race boundary as emergency allocate).
+- **QUANTITY:** `quantity_available -= n`, `quantity_allocated += n` with `quantity_available >= n`; `quantity_total` unchanged. No full-pool ALLOCATED for partial qty.
+- Allocation: existing Allocations table; `allocation_id = EXCHANGE-{offer_id}`; `allocation_type = EXCHANGE`; `status = OPEN`; refs request/offer/provider/requester/resource/qty/location.
+- Request `OPEN→ACCEPTED`; accepted offer `OPEN→ACCEPTED`; other OPEN offers on the request `OPEN→SUPERSEDED` (no resource writes for superseded).
+- Ownership, `location_id`, visibility, PublicDiscoveryIndex: **unchanged**.
+- Audit: `exchange.offer_accepted` (requester) + `resource.exchange_allocated` (provider). History: `RESOURCE_EXCHANGE_ALLOCATED`.
+- Idempotent retry: same offer already ACCEPTED → 200 existing state; different offer → 409.
+- Concurrent accept / emergency / everyday / reserve: loser gets **409**; no partial mutation.
+
+**Transaction-size strategy (DynamoDB TransactWriteItems ≤ 100 items):**
+
+Accept transaction always includes: META + accepted offer + resource + allocation Put (± up to **40** competing SUPERSEDED updates in-transaction). Remaining OPEN siblings are superseded with conditional follow-up updates (`status = OPEN` only). Documented max in-transaction supersede: `MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION = 40`. Critical hold consistency never depends on the follow-up path.
+
+Deferred to later phases: cancel, reject, withdraw, transfer start, handover confirm, expiry.
+
+### Later-phase routes (not implemented in 5D)
 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/exchange/requests/{id}/cancel` | Cancel |
-| POST | `/exchange/offers/{id}/accept` | Atomic accept + hold |
 | POST | `/exchange/offers/{id}/reject` | Reject |
 | POST | `/exchange/offers/{id}/withdraw` | Withdraw |
 | POST | `/exchange/requests/{id}/transfer/start` | Transfer start |
@@ -711,12 +738,12 @@ No Management exchange-policy desk in V1. No shell redesign.
 | Phase | Scope |
 |---|---|
 | **5B** | NETWORK visibility foundation + design-aligned types/tests; **no** exchange APIs yet |
-| **5C** | `ResourceExchanges` table + GSIs (infra) + request APIs |
-| **5D** | Offer APIs (create/list/withdraw/reject) — still **no** holds |
-| **5E** | Atomic accept + EXCHANGE Allocations holds + competing SUPERSEDED |
-| **5F** | Transfer start + handover confirm + ownership/location (+ qty complete) |
+| **5C** | Exchange API foundation: request + offer create/list (**no** holds; table infra not applied) |
+| **5D** | Atomic accept + EXCHANGE Allocations holds + competing SUPERSEDED (**this phase**) |
+| **5E** | Transfer start + handover confirm + ownership/location (+ qty complete) |
+| **5F** | Frontend Exchange experience |
 | **5G** | Expiry sweeper + lazy expiry + hold release |
-| **5H** | Frontend Exchange experience |
+| **5H** | Cancel / reject / withdraw + remaining lifecycle |
 | **5I** | Security/concurrency hardening vs emergency/everyday/lifecycle |
 | **5J** | Authenticated non-pilot live smoke |
 

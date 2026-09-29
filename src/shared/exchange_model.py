@@ -366,11 +366,14 @@ def assert_provider_organization(membership, offer):
     return membership
 
 
-def exchange_allocation_id(exchange_request_id):
-    """Reserved id shape for Phase 5E holds. Not written in Phase 5B."""
-    request_id = str(exchange_request_id or "").strip()
+def exchange_allocation_id(offer_id):
+    """Deterministic EXCHANGE allocation id for an accepted offer."""
+    oid = str(offer_id or "").strip()
 
-    if not request_id.startswith("EXREQ-"):
-        request_id = "EXREQ-" + request_id
+    if not oid:
+        raise ValueError("offer_id is required")
 
-    return "EXCHANGE-" + request_id
+    if not oid.startswith("EXOFF-"):
+        oid = "EXOFF-" + oid
+
+    return "EXCHANGE-" + oid

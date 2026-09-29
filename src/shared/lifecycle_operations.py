@@ -79,9 +79,11 @@ def _active_allocations(tables, organization_id, resource_id):
         if item.get("organization_id") != organization_id:
             continue
         status = str(item.get("status", "")).upper()
+        allocation_type = str(item.get("allocation_type", "")).upper()
         if status == "ALLOCATED":
             emergency.append(item)
-        elif status == "OPEN" and str(item.get("allocation_type", "")).upper() == "EVERYDAY":
+        elif status == "OPEN" and allocation_type in {"EVERYDAY", "EXCHANGE"}:
+            # EXCHANGE OPEN holds block lifecycle/everyday like everyday OPEN holds.
             everyday.append(item)
     return emergency, everyday
 
@@ -91,7 +93,8 @@ def _require_no_active_holds(tables, organization_id, resource_id, *, allow_ever
     if emergency:
         raise LifecycleOperationError(409, "Resource has an active emergency allocation")
     if everyday and not allow_everyday:
-        raise LifecycleOperationError(409, "Resource has an open everyday allocation")
+        # Message covers everyday and exchange OPEN holds.
+        raise LifecycleOperationError(409, "Resource has an open allocation hold")
 
 
 def _require_quantity_pool_idle(resource):

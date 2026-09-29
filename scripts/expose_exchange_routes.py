@@ -1,6 +1,6 @@
 """Idempotent API Gateway exposure script for Resource Exchange routes.
 
-Repository-only helper for a later reviewed deploy. Phase 5C does NOT run this
+Repository-only helper for a later reviewed deploy. Phase 5D does NOT run this
 against AWS and does NOT create the ResourceExchanges table.
 
 Routes (Cognito authorizer y0hzhr; OPTIONS Authorization NONE):
@@ -9,9 +9,12 @@ Routes (Cognito authorizer y0hzhr; OPTIONS Authorization NONE):
   GET/OPTIONS       /exchange/requests/{exchange_request_id}
   POST/GET/OPTIONS  /exchange/requests/{exchange_request_id}/offers
   GET/OPTIONS       /exchange/requests/{exchange_request_id}/offers/{offer_id}
+  POST/OPTIONS      /exchange/requests/{exchange_request_id}/offers/{offer_id}/accept
   GET/OPTIONS       /exchange/offers
 
 Integration target: erap-exchange:live
+
+ACCEPTANCE = RESOURCE HOLD. ACCEPTANCE ≠ OWNERSHIP TRANSFER. ACCEPTANCE ≠ HANDOVER.
 """
 
 from __future__ import annotations
@@ -36,7 +39,7 @@ def main():
             {
                 "status": "not_applied",
                 "note": (
-                    "Phase 5C ships this script for a later reviewed exposure. "
+                    "Phase 5D ships accept route wiring in code/tests only. "
                     "Do not run until ResourceExchanges exists and erap-exchange is deployed."
                 ),
                 "api_id": API_ID,
@@ -49,6 +52,7 @@ def main():
                     "/exchange/requests/{exchange_request_id}",
                     "/exchange/requests/{exchange_request_id}/offers",
                     "/exchange/requests/{exchange_request_id}/offers/{offer_id}",
+                    "/exchange/requests/{exchange_request_id}/offers/{offer_id}/accept",
                     "/exchange/offers",
                 ],
             },
@@ -61,7 +65,10 @@ def main():
 if __name__ == "__main__":
     # Guard: refuse live mutation unless explicitly forced after review.
     if "--apply" in sys.argv:
-        print("Refusing --apply in Phase 5C. Table creation and API exposure are deferred.", file=sys.stderr)
+        print(
+            "Refusing --apply in Phase 5D. Table creation and API exposure are deferred.",
+            file=sys.stderr,
+        )
         raise SystemExit(2)
 
     raise SystemExit(main())

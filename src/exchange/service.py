@@ -1,7 +1,8 @@
-"""Resource Exchange API operations (Phase 5C).
+"""Resource Exchange API operations (Phase 5C/5D).
 
-Creates/lists requests and offers only. No accept, hold, transfer, or handover.
-OFFER CREATE does not mutate Resources or Allocations.
+Phase 5C: create/list requests and offers (offer create does not hold).
+Phase 5D: atomic offer acceptance creates EXCHANGE allocation hold.
+No ownership/location transfer (Phase 5E).
 """
 
 from __future__ import annotations
@@ -9,8 +10,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
+from boto3.dynamodb.types import TypeSerializer
 
 from access import AccessError, require_location, require_owned
 from audit import build_audit_event, record_audit
@@ -30,6 +33,7 @@ from exchange_model import (
     build_idempotency_item,
     build_meta_item,
     build_offer_item,
+    exchange_allocation_id,
     meta_pk,
     meta_sk,
     network_request_projection,
@@ -37,13 +41,24 @@ from exchange_model import (
     new_offer_id,
     offer_sk,
 )
+from exchange_state import (
+    ALLOCATION_TYPE_EXCHANGE,
+    EXCHANGE_ALLOCATION_STATUS_OPEN,
+)
 from pages import decode_token, encode_token
 from resource_state import (
+    EMERGENCY_CLAIM_CONDITION,
+    ResourceStateError,
     available_flag,
     effective_operational_status,
     normalize_tracking_mode,
     quantity_snapshot,
 )
+
+# Core accept transaction: META + accepted offer + resource + allocation = 4.
+# Remaining TransactWrite capacity used for SUPERSEDED updates (DynamoDB max 100).
+MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION = 40
+
 
 
 class ExchangeOperationError(Exception):
@@ -100,6 +115,28 @@ def audit_table():
     return boto3.resource("dynamodb").Table(
         os.environ.get("AUDIT_TABLE", "AuditEvents")
     )
+
+
+def allocations_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table(
+        os.environ.get("ALLOCATIONS_TABLE", "Allocations")
+    )
+
+
+def history_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table(
+        os.environ.get("HISTORY_TABLE", "ResourceStatusHistory")
+    )
+
+
+def _dynamodb_client():
+    import boto3
+
+    return boto3.client("dynamodb", region_name=os.environ.get("AWS_REGION", "eu-north-1"))
 
 
 def _fingerprint(payload):
@@ -267,7 +304,10 @@ def resource_eligible_to_offer(resource):
     if mode == "INDIVIDUAL":
         return available_flag(resource.get("Available"))
 
-    snapshot = quantity_snapshot(resource)
+    try:
+        snapshot = quantity_snapshot(resource)
+    except ResourceStateError:
+        return False
     return snapshot is not None and snapshot["quantity_available"] > 0
 
 
@@ -801,3 +841,392 @@ def _put_idempotency(organization_id, idempotency_key, operation, result_ref):
         raise
 
     return item
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _serialize_map(values):
+    serializer = TypeSerializer()
+    encoded = {}
+
+    for key, value in values.items():
+        if value is None:
+            continue
+        encoded[key] = serializer.serialize(value)
+
+    return encoded
+
+
+def _list_open_offers(exchange_request_id):
+    from boto3.dynamodb.conditions import Key
+
+    result = exchanges_table().query(
+        KeyConditionExpression=Key("pk").eq(meta_pk(exchange_request_id))
+        & Key("sk").begins_with("OFFER#"),
+    )
+    return [
+        item
+        for item in (result.get("Items") or [])
+        if item.get("entity_type") == "EXCHANGE_OFFER"
+        and str(item.get("status", "")).upper() == "OPEN"
+    ]
+
+
+def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, actor_role, membership):
+    """Atomically accept an offer and hold the resource. Does NOT transfer ownership."""
+    if actor_role not in EXCHANGE_WRITE_ROLES:
+        raise AccessError(403, "You are not allowed to perform this action")
+
+    _require_active_organization(organization_id)
+    meta = _get_meta(exchange_request_id)
+    assert_requester_organization(membership, meta)
+
+    oid = str(offer_id or "").strip()
+    if oid and not oid.startswith("EXOFF-"):
+        oid = "EXOFF-" + oid
+
+    if str(meta.get("status", "")).upper() == "ACCEPTED":
+        if meta.get("accepted_offer_id") == oid:
+            offer = _get_offer(exchange_request_id, oid)
+            allocation_id = exchange_allocation_id(offer["offer_id"])
+            allocation = allocations_table().get_item(Key={"allocation_id": allocation_id}).get("Item") or {}
+            return _acceptance_response(meta, offer, allocation)
+        raise ExchangeOperationError(409, "Exchange request already accepted")
+
+    if str(meta.get("status", "")).upper() != "OPEN":
+        raise ExchangeOperationError(409, "Exchange request is not open")
+
+    offer = _get_offer(exchange_request_id, oid)
+
+    if str(offer.get("status", "")).upper() != "OPEN":
+        raise ExchangeOperationError(409, "Offer is not open")
+
+    if offer.get("provider_organization_id") == organization_id:
+        raise ExchangeOperationError(403, "Cannot accept your own organization's offer")
+
+    provider_org = str(offer.get("provider_organization_id") or "").strip()
+    resource_id = str(offer.get("resource_id") or "").strip()
+    resource = resources_table().get_item(Key={"resource_id": resource_id}).get("Item")
+
+    if not resource or resource.get("organization_id") != provider_org:
+        raise ExchangeOperationError(409, "Offered resource is no longer eligible")
+
+    if str(resource.get("location_id") or "") != str(offer.get("source_location_id") or ""):
+        raise ExchangeOperationError(409, "Offered resource location no longer matches")
+
+    if not resource_eligible_to_offer(resource):
+        raise ExchangeOperationError(409, "Offered resource is no longer eligible")
+
+    if not resource_type_names_compatible(meta.get("resource_type_name"), resource):
+        raise ExchangeOperationError(409, "Resource type does not match the exchange request")
+
+    mode = normalize_tracking_mode(resource.get("tracking_mode"))
+    request_mode = str(meta.get("tracking_mode") or "INDIVIDUAL").upper()
+
+    if mode != request_mode:
+        raise ExchangeOperationError(409, "Resource tracking mode does not match the exchange request")
+
+    quantity = int(offer.get("quantity_offered") or 1)
+
+    if mode == "QUANTITY":
+        try:
+            available = quantity_snapshot(resource)["quantity_available"]
+        except ResourceStateError as error:
+            raise ExchangeOperationError(409, "Offered resource is no longer eligible") from error
+        if quantity > available:
+            raise ExchangeOperationError(409, "Offered quantity is no longer available")
+
+    now = _now_iso()
+    oid = offer["offer_id"]
+    allocation_id = exchange_allocation_id(oid)
+    request_id = meta["exchange_request_id"]
+    exchanges_name = getattr(exchanges_table(), "table_name", None) or getattr(
+        exchanges_table(), "name", TABLE_NAME
+    )
+    resources_name = getattr(resources_table(), "table_name", None) or getattr(
+        resources_table(), "name", "Resources"
+    )
+    allocations_name = getattr(allocations_table(), "table_name", None) or getattr(
+        allocations_table(), "name", "Allocations"
+    )
+    allocation = {
+        "allocation_id": allocation_id,
+        "allocation_type": ALLOCATION_TYPE_EXCHANGE,
+        "status": EXCHANGE_ALLOCATION_STATUS_OPEN,
+        "resource_id": resource_id,
+        "organization_id": provider_org,
+        "provider_organization_id": provider_org,
+        "requester_organization_id": organization_id,
+        "exchange_request_id": request_id,
+        "offer_id": oid,
+        "quantity": quantity,
+        "location_id": resource.get("location_id") or "",
+        "location": resource.get("Location") or "",
+        "resource_type": resource.get("Type") or meta.get("resource_type_name") or "",
+        "allocated_at": now,
+        "updated_at": now,
+        "accepted_by": actor_sub,
+    }
+
+    open_offers = _list_open_offers(request_id)
+    competing = [item for item in open_offers if item.get("offer_id") != oid]
+    in_txn = competing[:MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION]
+    deferred = competing[MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION:]
+
+    transact_items = [
+        {
+            "Update": {
+                "TableName": exchanges_name,
+                "Key": _serialize_map({"pk": meta_pk(request_id), "sk": meta_sk()}),
+                "UpdateExpression": (
+                    "SET #status = :accepted, accepted_offer_id = :offer_id, "
+                    "accepted_resource_id = :resource_id, "
+                    "accepted_provider_organization_id = :provider, "
+                    "updated_at = :now, updated_by = :actor "
+                    "REMOVE network_list_key"
+                ),
+                "ConditionExpression": "#status = :open",
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": _serialize_map(
+                    {
+                        ":accepted": "ACCEPTED",
+                        ":open": "OPEN",
+                        ":offer_id": oid,
+                        ":resource_id": resource_id,
+                        ":provider": provider_org,
+                        ":now": now,
+                        ":actor": actor_sub,
+                    }
+                ),
+            }
+        },
+        {
+            "Update": {
+                "TableName": exchanges_name,
+                "Key": _serialize_map({"pk": meta_pk(request_id), "sk": offer_sk(oid)}),
+                "UpdateExpression": "SET #status = :accepted, updated_at = :now, updated_by = :actor",
+                "ConditionExpression": "#status = :open",
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": _serialize_map(
+                    {
+                        ":accepted": "ACCEPTED",
+                        ":open": "OPEN",
+                        ":now": now,
+                        ":actor": actor_sub,
+                    }
+                ),
+            }
+        },
+    ]
+
+    if mode == "INDIVIDUAL":
+        transact_items.append(
+            {
+                "Update": {
+                    "TableName": resources_name,
+                    "Key": _serialize_map({"resource_id": resource_id}),
+                    "UpdateExpression": "SET #a = :false, operational_status = :op_allocated, updated_at = :now",
+                    "ConditionExpression": EMERGENCY_CLAIM_CONDITION,
+                    "ExpressionAttributeNames": {"#a": "Available"},
+                    "ExpressionAttributeValues": _serialize_map(
+                        {
+                            ":false": False,
+                            ":true": True,
+                            ":organization_id": provider_org,
+                            ":op_available": "AVAILABLE",
+                            ":indiv": "INDIVIDUAL",
+                            ":op_allocated": "ALLOCATED",
+                            ":now": now,
+                        }
+                    ),
+                }
+            }
+        )
+    else:
+        transact_items.append(
+            {
+                "Update": {
+                    "TableName": resources_name,
+                    "Key": _serialize_map({"resource_id": resource_id}),
+                    "UpdateExpression": (
+                        "SET quantity_available = quantity_available - :qty, "
+                        "quantity_allocated = quantity_allocated + :qty, updated_at = :now"
+                    ),
+                    "ConditionExpression": (
+                        "organization_id = :organization_id AND tracking_mode = :quantity "
+                        "AND quantity_available >= :qty"
+                    ),
+                    "ExpressionAttributeValues": _serialize_map(
+                        {
+                            ":qty": quantity,
+                            ":organization_id": provider_org,
+                            ":quantity": "QUANTITY",
+                            ":now": now,
+                        }
+                    ),
+                }
+            }
+        )
+
+    transact_items.append(
+        {
+            "Put": {
+                "TableName": allocations_name,
+                "Item": _serialize_map(allocation),
+                "ConditionExpression": "attribute_not_exists(allocation_id)",
+            }
+        }
+    )
+
+    for other in in_txn:
+        transact_items.append(
+            {
+                "Update": {
+                    "TableName": exchanges_name,
+                    "Key": _serialize_map(
+                        {"pk": meta_pk(request_id), "sk": offer_sk(other["offer_id"])}
+                    ),
+                    "UpdateExpression": "SET #status = :superseded, updated_at = :now",
+                    "ConditionExpression": "#status = :open",
+                    "ExpressionAttributeNames": {"#status": "status"},
+                    "ExpressionAttributeValues": _serialize_map(
+                        {
+                            ":superseded": "SUPERSEDED",
+                            ":open": "OPEN",
+                            ":now": now,
+                        }
+                    ),
+                }
+            }
+        )
+
+    try:
+        _transact_write(transact_items)
+    except ClientError as error:
+        code = error.response["Error"]["Code"]
+        if code in {"TransactionCanceledException", "ConditionalCheckFailedException"}:
+            latest = _get_meta(request_id)
+            if (
+                str(latest.get("status", "")).upper() == "ACCEPTED"
+                and latest.get("accepted_offer_id") == oid
+            ):
+                allocation_row = allocations_table().get_item(
+                    Key={"allocation_id": allocation_id}
+                ).get("Item") or allocation
+                return _acceptance_response(latest, _get_offer(request_id, oid), allocation_row)
+            raise ExchangeOperationError(409, "Resource state conflict") from error
+        raise
+
+    for other in deferred:
+        try:
+            exchanges_table().update_item(
+                Key={"pk": meta_pk(request_id), "sk": offer_sk(other["offer_id"])},
+                UpdateExpression="SET #status = :superseded, updated_at = :now",
+                ConditionExpression="#status = :open",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":superseded": "SUPERSEDED",
+                    ":open": "OPEN",
+                    ":now": now,
+                },
+            )
+        except ClientError:
+            pass
+
+    history_reason_item = {
+        "history_id": "HIST-EXCHANGE-" + oid + "-" + resource_id,
+        "resource_id": resource_id,
+        "organization_id": provider_org,
+        "location_id": resource.get("location_id") or "",
+        "resource_type": resource.get("Type") or "",
+        "location": resource.get("Location") or "",
+        "previous_status": "AVAILABLE",
+        "new_status": "ALLOCATED" if mode == "INDIVIDUAL" else "AVAILABLE",
+        "changed_at": now,
+        "reason": "RESOURCE_EXCHANGE_ALLOCATED",
+        "allocation_id": allocation_id,
+        "exchange_request_id": request_id,
+        "offer_id": oid,
+    }
+    if mode == "QUANTITY":
+        history_reason_item["quantity"] = quantity
+        history_reason_item["history_id"] = "HIST-EXCHANGE-QTY-" + oid + "-" + resource_id
+
+    try:
+        history_table().put_item(
+            Item=history_reason_item,
+            ConditionExpression="attribute_not_exists(history_id)",
+        )
+    except ClientError:
+        pass
+
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "exchange.offer_accepted",
+            "exchange_offer",
+            oid,
+            location_id=meta.get("destination_location_id") or "",
+            metadata={
+                "exchange_request_id": request_id,
+                "offer_id": oid,
+                "resource_id": resource_id,
+                "provider_organization_id": provider_org,
+                "requester_organization_id": organization_id,
+                "quantity": quantity,
+                "ownership_transferred": False,
+            },
+        ),
+    )
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            provider_org,
+            actor_sub,
+            actor_role,
+            "resource.exchange_allocated",
+            "allocation",
+            allocation_id,
+            location_id=resource.get("location_id") or "",
+            metadata={
+                "exchange_request_id": request_id,
+                "offer_id": oid,
+                "resource_id": resource_id,
+                "requester_organization_id": organization_id,
+                "quantity": quantity,
+            },
+        ),
+    )
+
+    return _acceptance_response(_get_meta(request_id), _get_offer(request_id, oid), allocation)
+
+
+def _acceptance_response(meta, offer, allocation):
+    return {
+        "message": "Offer accepted",
+        "request": requester_view(meta),
+        "offer": requester_offer_view(offer),
+        "allocation": {
+            "allocation_id": allocation.get("allocation_id"),
+            "allocation_type": allocation.get("allocation_type"),
+            "status": allocation.get("status"),
+            "resource_id": allocation.get("resource_id"),
+            "quantity": allocation.get("quantity"),
+            "exchange_request_id": allocation.get("exchange_request_id"),
+            "offer_id": allocation.get("offer_id"),
+            "provider_organization_id": allocation.get("provider_organization_id"),
+            "requester_organization_id": allocation.get("requester_organization_id"),
+        },
+        "ownership_transferred": False,
+        "location_transferred": False,
+    }
+
+
+def _transact_write(transact_items):
+    """Execute TransactWriteItems. Tests may monkeypatch this helper."""
+    _dynamodb_client().transact_write_items(TransactItems=transact_items)

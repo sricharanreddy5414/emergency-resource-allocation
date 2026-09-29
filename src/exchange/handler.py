@@ -1,4 +1,4 @@
-"""Authenticated Resource Exchange HTTP API (Phase 5C).
+"""Authenticated Resource Exchange HTTP API (Phase 5C/5D).
 
 Routes:
   POST   /exchange/requests
@@ -7,9 +7,10 @@ Routes:
   POST   /exchange/requests/{exchange_request_id}/offers
   GET    /exchange/requests/{exchange_request_id}/offers
   GET    /exchange/requests/{exchange_request_id}/offers/{offer_id}
+  POST   /exchange/requests/{exchange_request_id}/offers/{offer_id}/accept
   GET    /exchange/offers?scope=mine
 
-OFFER CREATE does not hold or mutate Resources.
+OFFER CREATE does not hold. ACCEPT creates atomic EXCHANGE hold (no ownership transfer).
 """
 
 import json
@@ -73,6 +74,14 @@ def _match_offer_item(path):
     return (match.group(1), match.group(2)) if match else (None, None)
 
 
+def _match_accept(path):
+    match = re.search(
+        r"/exchange/requests/(EXREQ-[A-Za-z0-9_-]+)/offers/(EXOFF-[A-Za-z0-9_-]+)/accept$",
+        path,
+    )
+    return (match.group(1), match.group(2)) if match else (None, None)
+
+
 def lambda_handler(event, context):
     begin_request(event)
     method = (event.get("httpMethod") or "GET").upper()
@@ -114,6 +123,22 @@ def lambda_handler(event, context):
                 return response(200, service.list_network_requests(membership["organization_id"], query))
 
             return response(400, {"message": "scope must be mine or network"})
+
+        accept_request_id, accept_offer_id = _match_accept(path)
+
+        if accept_request_id and accept_offer_id and method == "POST":
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.accept_offer(
+                accept_request_id,
+                accept_offer_id,
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
 
         request_id, offer_id = _match_offer_item(path)
 
