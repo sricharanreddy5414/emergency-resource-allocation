@@ -35,6 +35,14 @@ Added `tests/test_everyday_resource_hardening.py` covering tenant isolation, rol
 
 No production or pilot data changes. No API Gateway wiring. `scripts/verify_hardening.py` run against account `481838970142` / `eu-north-1` after `aws login`.
 
+## Phase 3 implementation (API Gateway exposure)
+
+Repeatable script: `scripts/expose_everyday_resource_routes.py`.
+
+Wires Cognito-protected `POST` plus `OPTIONS` for the four everyday paths on API `4c6dni17l3` stage `dev`, integrating `get-resources:live` the same way as `/allocate/resources/release`. Existing `/allocate` and `/allocate/resources/release` are verified unchanged. Lambda invoke permission already covers `execute-api:...:4c6dni17l3/*/*`.
+
+Smoke checks for unauthenticated `401` and `OPTIONS` `200` live in `scripts/smoke_test.py`.
+
 ## Foundation implementation (Phase 1)
 
 Code lives in `src/shared/resource_state.py` and is packaged with `get-resources`.
