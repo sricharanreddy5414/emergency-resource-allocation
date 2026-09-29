@@ -9657,10 +9657,36 @@ function renderExchangeLifecycleActions(request) {
             .filter(item => String(item.status || "ACTIVE").toUpperCase() === "ACTIVE")
             .map(item => `<option value="${escapeHtml(item.location_id)}" ${item.location_id === request.destination_location_id ? "selected" : ""}>${escapeHtml(item.name || item.location_id)}</option>`)
             .join("");
+        const acceptedOffer = (exchangeDetailOffers || []).find(item => item.offer_id === request.accepted_offer_id) || {};
+        const quantityMode = String(request.tracking_mode || "").toUpperCase() === "QUANTITY";
+        const offeredQty = acceptedOffer.quantity_offered || request.quantity_requested || "";
+        const qtyResources = (resources || [])
+            .filter(item => String(item.tracking_mode || "").toUpperCase() === "QUANTITY")
+            .filter(item => String(item.operational_status || "AVAILABLE").toUpperCase() === "AVAILABLE")
+            .filter(item => String(item.Type || item.resource_type_name || "").toUpperCase() === String(request.resource_type_name || "").toUpperCase())
+            .map(item => `<option value="${escapeHtml(item.resource_id)}">${escapeHtml(item.name || item.resource_id)} (${escapeHtml(String(item.quantity_available ?? "?"))} available)</option>`)
+            .join("");
+        const quantityFields = quantityMode ? `
+                <div class="form-group">
+                    <label for="exchangeHandoverQuantity">Quantity to transfer</label>
+                    <input id="exchangeHandoverQuantity" type="number" min="1" step="1" value="${escapeHtml(String(offeredQty))}" readonly>
+                    <p class="exchange-muted">Must match the accepted hold (${escapeHtml(String(offeredQty))} units).</p>
+                </div>
+                <div class="form-group">
+                    <label for="exchangeHandoverDestination">Destination quantity pool</label>
+                    <select id="exchangeHandoverDestination">
+                        <option value="">Create new PRIVATE pool at destination</option>
+                        ${qtyResources}
+                    </select>
+                </div>
+                <p class="exchange-muted">${escapeHtml(String(offeredQty))} units will transfer from the provider organization to your organization.</p>
+        ` : `
+                <p class="exchange-muted">Confirming handover transfers ownership of this resource to your organization and moves it to the selected destination location.</p>
+        `;
         actions += `
             <div class="exchange-action-block">
                 <h3>Confirm handover</h3>
-                <p class="exchange-muted">Confirming handover transfers ownership of this resource to your organization and moves it to the selected destination location.</p>
+                ${quantityFields}
                 <div class="form-group">
                     <label for="exchangeHandoverLocation">Destination location</label>
                     <select id="exchangeHandoverLocation">${locationOptions}</select>
@@ -10067,23 +10093,37 @@ async function confirmExchangeHandover() {
     if (exchangeBusy || !exchangeDetailRequest || !canWriteExchange()) {
         return;
     }
-    if (!window.confirm("Confirming handover transfers ownership of this resource to your organization and moves it to the selected destination location.")) {
+    const quantityMode = String(exchangeDetailRequest.tracking_mode || "").toUpperCase() === "QUANTITY";
+    const acceptedOffer = (exchangeDetailOffers || []).find(item => item.offer_id === exchangeDetailRequest.accepted_offer_id) || {};
+    const quantity = Number($("exchangeHandoverQuantity")?.value || acceptedOffer.quantity_offered || exchangeDetailRequest.quantity_requested || 0);
+    const confirmText = quantityMode
+        ? `${quantity} units will transfer from the provider organization to your organization. Continue?`
+        : "Confirming handover transfers ownership of this resource to your organization and moves it to the selected destination location.";
+    if (!window.confirm(confirmText)) {
         return;
     }
 
     const button = $("exchangeConfirmHandoverBtn");
     setExchangeBusy(button, true, "Confirming Handover...", "Confirm Handover");
     try {
+        const body = {
+            destination_location_id: $("exchangeHandoverLocation")?.value || exchangeDetailRequest.destination_location_id || ""
+        };
+        if (quantityMode) {
+            body.quantity = quantity;
+            const destResource = ($("exchangeHandoverDestination")?.value || "").trim();
+            if (destResource) {
+                body.destination_resource_id = destResource;
+            }
+        }
         await exchangeRequest(
             "/requests/" + encodeURIComponent(exchangeDetailRequest.exchange_request_id) + "/handover/confirm",
             {
                 method: "POST",
-                body: {
-                    destination_location_id: $("exchangeHandoverLocation")?.value || exchangeDetailRequest.destination_location_id || ""
-                }
+                body
             }
         );
-        showToast("Handover completed. The resource is now owned by your organization.");
+        showToast(quantityMode ? "Quantity handover completed." : "Handover completed. The resource is now owned by your organization.");
         await loadExchangeWorkspace();
         await openExchangeRequest(exchangeDetailRequest.exchange_request_id);
         await loadResources();

@@ -354,9 +354,9 @@ def seed():
                 "operational_status": "AVAILABLE",
                 "tracking_mode": "QUANTITY",
                 "quantity_total": 10,
-                "quantity_available": 7,
+                "quantity_available": 10,
                 "quantity_reserved": 0,
-                "quantity_allocated": 3,
+                "quantity_allocated": 0,
             },
         ]
     )
@@ -405,7 +405,21 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                             "TransactWriteItems",
                         )
                     if "quantity_available >= :qty" in condition:
-                        if item.get("quantity_available", 0) < values.get(":qty", 0):
+                        qty = int(values.get(":qty", 0))
+                        if item.get("quantity_available", 0) < qty:
+                            raise ClientError(
+                                {"Error": {"Code": "TransactionCanceledException"}},
+                                "TransactWriteItems",
+                            )
+                    elif "quantity_allocated >= :qty" in condition:
+                        qty = int(values.get(":qty", 0))
+                        if item.get("quantity_allocated", 0) < qty or item.get("quantity_total", 0) < qty:
+                            raise ClientError(
+                                {"Error": {"Code": "TransactionCanceledException"}},
+                                "TransactWriteItems",
+                            )
+                    elif values.get(":requester") and values.get(":qty") is not None and "quantity_total = quantity_total + :qty" in (upd.get("UpdateExpression") or ""):
+                        if item.get("organization_id") != values.get(":requester"):
                             raise ClientError(
                                 {"Error": {"Code": "TransactionCanceledException"}},
                                 "TransactWriteItems",
@@ -445,12 +459,21 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
             elif "Put" in entry:
                 put = entry["Put"]
                 item = _decode(put["Item"])
-                if item["allocation_id"] in allocations.items:
-                    raise ClientError(
-                        {"Error": {"Code": "TransactionCanceledException"}},
-                        "TransactWriteItems",
-                    )
-                planned.append(("alloc_put", item, None, None))
+                table = put["TableName"]
+                if table == "Resources" or "resource_id" in item and "allocation_id" not in item:
+                    if item["resource_id"] in resources.items:
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    planned.append(("res_put", item, None, None))
+                else:
+                    if item["allocation_id"] in allocations.items:
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    planned.append(("alloc_put", item, None, None))
 
         for kind, a, b, c in planned:
             if kind == "ex_upd":
@@ -467,6 +490,12 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                     item["completed_destination_location_id"] = b.get(":loc_id")
                     item["previous_owner_organization_id"] = b.get(":provider")
                     item["previous_location_id"] = b.get(":prev_loc")
+                    if ":dest_resource" in b:
+                        item["completed_destination_resource_id"] = b[":dest_resource"]
+                    if ":qty" in b and "quantity_transferred" in expr:
+                        item["quantity_transferred"] = int(b[":qty"])
+                    item.pop("expiry_due_key", None)
+                    item.pop("expiry_due_at", None)
                 elif "#status = :accepted" in expr:
                     item["status"] = "ACCEPTED"
                     if ":offer_id" in b:
@@ -478,9 +507,19 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                     item["status"] = "SUPERSEDED"
             elif kind == "res_upd":
                 item = resources.items[a["resource_id"]]
-                if ":qty" in b and "quantity_available" in (c or ""):
-                    item["quantity_available"] -= b[":qty"]
-                    item["quantity_allocated"] = item.get("quantity_allocated", 0) + b[":qty"]
+                expr = c or ""
+                qty = int(b[":qty"]) if ":qty" in b else None
+                if qty is not None and "quantity_allocated = quantity_allocated - :qty" in expr and "quantity_total = quantity_total - :qty" in expr:
+                    item["quantity_allocated"] = int(item.get("quantity_allocated", 0)) - qty
+                    item["quantity_total"] = int(item.get("quantity_total", 0)) - qty
+                elif qty is not None and "quantity_total = quantity_total + :qty" in expr:
+                    item["quantity_total"] = int(item.get("quantity_total", 0)) + qty
+                    item["quantity_available"] = int(item.get("quantity_available", 0)) + qty
+                    if b.get(":private"):
+                        item["visibility"] = b[":private"]
+                elif qty is not None and "quantity_available = quantity_available - :qty" in expr:
+                    item["quantity_available"] = int(item.get("quantity_available", 0)) - qty
+                    item["quantity_allocated"] = int(item.get("quantity_allocated", 0)) + qty
                 elif b.get(":requester"):
                     item["organization_id"] = b[":requester"]
                     item["location_id"] = b.get(":loc_id")
@@ -495,13 +534,18 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                 item = allocations.items[a["allocation_id"]]
                 item["status"] = b.get(":released", item.get("status"))
                 item["released_at"] = b.get(":now")
+                if ":dest_resource" in b:
+                    item["destination_resource_id"] = b[":dest_resource"]
             elif kind == "alloc_put":
                 allocations.items[a["allocation_id"]] = a
+            elif kind == "res_put":
+                resources.items[a["resource_id"]] = a
 
     monkeypatch.setattr(service, "_transact_write", fake_transact)
 
 
 def wire(monkeypatch, exchanges, resources, allocations, orgs, locations, types, audit=None, history=None):
+    sys.modules["service"] = service
     monkeypatch.setattr(service, "exchanges_table", lambda: exchanges)
     monkeypatch.setattr(service, "resources_table", lambda: resources)
     monkeypatch.setattr(service, "allocations_table", lambda: allocations)
@@ -885,15 +929,31 @@ def test_billing_blocks_handover(monkeypatch, status):
     assert denied["statusCode"] == 403
 
 
-def test_quantity_handover_deferred(monkeypatch):
+def test_quantity_handover_completes(monkeypatch):
     request_id, offer_id, exchanges, resources, allocations, audit, history = setup_accepted_exchange(
         monkeypatch, tracking="QUANTITY", resource_id="R-B-Q"
     )
-    denied = start_transfer_as_provider(monkeypatch, request_id)
-    assert denied["statusCode"] == 409
-    assert "deferred" in body_of(denied)["message"].lower()
-    assert resources.items["R-B-Q"]["organization_id"] == ORG_B
-    assert resources.items["R-B-Q"]["quantity_total"] == 10
+    started = start_transfer_as_provider(monkeypatch, request_id)
+    assert started["statusCode"] == 200, body_of(started)
+    confirmed = confirm_as_requester(
+        monkeypatch,
+        request_id,
+        body={"organization_id": ORG_A, "quantity": 3, "destination_location_id": "LOC-A"},
+    )
+    assert confirmed["statusCode"] == 200, body_of(confirmed)
+    payload = body_of(confirmed)
+    assert payload["request"]["status"] == "COMPLETED"
+    assert payload["transfer"]["quantity"] == 3
+    assert payload["transfer"]["destination_created"] is True
+    src = resources.items["R-B-Q"]
+    assert src["organization_id"] == ORG_B
+    assert src["quantity_total"] == 7
+    assert src["quantity_available"] == 7
+    assert src["quantity_allocated"] == 0
+    dest = resources.items[payload["transfer"]["destination_resource_id"]]
+    assert dest["organization_id"] == ORG_A
+    assert dest["quantity_total"] == 3
+    assert dest["visibility"] == "PRIVATE"
 
 
 def test_provider_loses_resource_after_handover(monkeypatch):

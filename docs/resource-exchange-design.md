@@ -699,18 +699,19 @@ until Phase 7C removes that gate.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/exchange/requests/{id}/transfer/start` | Unlock for QUANTITY (same META-only start as individual) — Phase 7C |
-| POST | `/exchange/requests/{id}/handover/confirm` | Quantity ownership transfer per Phase 7B lock — Phase 7C |
+| POST | `/exchange/requests/{id}/transfer/start` | QUANTITY allowed (META-only; Phase 7C) |
+| POST | `/exchange/requests/{id}/handover/confirm` | Quantity ownership transfer per Phase 7B lock (Phase 7C) |
 | — | QR / notifications / MFA | Future phases |
 
 ---
 
 ## Quantity Ownership Transfer — Locked Design (Phase 7B)
 
-**Status:** DESIGN LOCK ONLY. No runtime change in this phase.  
-**Current code:** QUANTITY accept/hold and 7A hold release work; `start_transfer` /
-`confirm_handover` still call `_reject_quantity_handover` → **409**.  
-**Next implementation phase:** 7C (implement this lock). Do not start QR / notifications / MFA here.
+**Status:** DESIGN LOCK (7B) + **IMPLEMENTED in Phase 7C**.  
+Runtime: QUANTITY `transfer/start` and `handover/confirm` follow this section.
+`quantity` is required on confirm and must equal the accepted hold.
+Provider counters at complete: `quantity_allocated -= n`, `quantity_total -= n`
+(available unchanged). Destination merge or create as below.
 
 ### Why this phase exists
 
@@ -1147,8 +1148,8 @@ Phase 5F implements this inside the existing Operations shell (`frontend/index.h
 | **5G** | Expiry sweeper + lazy expiry + hold release (superseded numbering; live as 7A worker) |
 | **5H** | Cancel / reject / withdraw (live as Phase 7A) |
 | **7A** | Lifecycle recovery: cancel / reject / withdraw / expiry / hold release (complete) |
-| **7B** | Quantity ownership transfer **design lock** (this section; docs only) |
-| **7C** | Implement quantity handover per 7B lock (runtime; not started) |
+| **7B** | Quantity ownership transfer **design lock** (complete) |
+| **7C** | Implement quantity handover per 7B lock (complete) |
 | **Later** | QR / notifications / MFA |
 
 No implementation phase for quantity transfer starts until this 7B lock is approved.

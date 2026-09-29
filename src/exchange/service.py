@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
@@ -240,6 +241,8 @@ def requester_view(meta):
         "completed_at": meta.get("completed_at"),
         "confirming_actor_sub": meta.get("confirming_actor_sub"),
         "transfer_started_at": meta.get("transfer_started_at"),
+        "completed_destination_resource_id": meta.get("completed_destination_resource_id"),
+        "quantity_transferred": meta.get("quantity_transferred"),
         "created_at": meta.get("created_at"),
         "updated_at": meta.get("updated_at"),
         "visibility": "NETWORK",
@@ -1277,14 +1280,9 @@ def _accepted_context(meta):
 
 
 def _reject_quantity_handover(meta, offer, resource):
-    mode = normalize_tracking_mode(
-        (resource or {}).get("tracking_mode") or meta.get("tracking_mode")
-    )
-    if mode == "QUANTITY":
-        raise ExchangeOperationError(
-            409,
-            "Quantity exchange handover is deferred pending safe requester pool resolution",
-        )
+    """Deprecated Phase 5E gate — retained only so old imports do not break tests."""
+    del meta, offer, resource
+    return None
 
 
 def start_transfer(exchange_request_id, organization_id, actor_sub, actor_role, membership):
@@ -1336,7 +1334,18 @@ def start_transfer(exchange_request_id, organization_id, actor_sub, actor_role, 
     if not resource or resource.get("organization_id") != organization_id:
         raise ExchangeOperationError(409, "Offered resource is no longer eligible")
 
-    _reject_quantity_handover(meta, offer, resource)
+    mode = normalize_tracking_mode(resource.get("tracking_mode") or meta.get("tracking_mode"))
+    if mode == "QUANTITY":
+        from quantity_handover import assert_source_eligible, held_quantity
+
+        held = held_quantity(offer, allocation)
+        if held < 1:
+            raise ExchangeOperationError(409, "Offered resource is no longer eligible")
+        assert_source_eligible(
+            resource, organization_id, resource_id, held, error_cls=ExchangeOperationError
+        )
+    elif str(resource.get("operational_status") or "").upper() != "ALLOCATED":
+        raise ExchangeOperationError(409, "Offered resource is no longer eligible")
 
     now = _now_iso()
     request_id = meta["exchange_request_id"]
@@ -1455,13 +1464,27 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
     if not resource or resource.get("organization_id") != provider_org:
         raise ExchangeOperationError(409, "Offered resource is no longer eligible")
 
+    mode = normalize_tracking_mode(resource.get("tracking_mode") or meta.get("tracking_mode"))
+    if mode == "QUANTITY":
+        from quantity_handover import confirm_quantity_handover
+
+        return confirm_quantity_handover(
+            service=sys.modules[__name__],
+            meta=meta,
+            offer=offer,
+            allocation=allocation,
+            resource=resource,
+            body=body or {},
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            actor_role=actor_role,
+        )
+
     if str(resource.get("operational_status") or "").upper() != "ALLOCATED":
         raise ExchangeOperationError(409, "Resource is not exchange-held")
 
     if available_flag(resource.get("Available")):
         raise ExchangeOperationError(409, "Resource is not exchange-held")
-
-    _reject_quantity_handover(meta, offer, resource)
 
     dest_id = str(
         (body or {}).get("destination_location_id")
@@ -1679,11 +1702,13 @@ def _allocation_view(allocation):
         "offer_id": allocation.get("offer_id"),
         "provider_organization_id": allocation.get("provider_organization_id"),
         "requester_organization_id": allocation.get("requester_organization_id"),
+        "destination_resource_id": allocation.get("destination_resource_id"),
+        "destination_location_id": allocation.get("destination_location_id"),
     }
 
 
-def _handover_response(meta, offer, allocation, *, message):
-    return {
+def _handover_response(meta, offer, allocation, *, message, transfer=None):
+    payload = {
         "message": message,
         "request": requester_view(meta),
         "offer": requester_offer_view(offer),
@@ -1691,6 +1716,20 @@ def _handover_response(meta, offer, allocation, *, message):
         "ownership_transferred": str(meta.get("status", "")).upper() == "COMPLETED",
         "location_transferred": str(meta.get("status", "")).upper() == "COMPLETED",
     }
+    if transfer is not None:
+        payload["transfer"] = transfer
+    elif str(meta.get("status", "")).upper() == "COMPLETED" and meta.get(
+        "completed_destination_resource_id"
+    ):
+        payload["transfer"] = {
+            "tracking_mode": "QUANTITY",
+            "quantity": meta.get("quantity_transferred"),
+            "source_resource_id": meta.get("accepted_resource_id"),
+            "destination_resource_id": meta.get("completed_destination_resource_id"),
+            "destination_created": None,
+            "ownership_transferred": True,
+        }
+    return payload
 
 
 def _acceptance_response(meta, offer, allocation):

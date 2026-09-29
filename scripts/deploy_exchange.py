@@ -86,6 +86,7 @@ POLICY = {
             "Effect": "Allow",
             "Action": [
                 "dynamodb:GetItem",
+                "dynamodb:PutItem",
                 "dynamodb:UpdateItem",
                 "dynamodb:TransactWriteItems",
             ],

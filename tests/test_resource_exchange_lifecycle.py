@@ -154,6 +154,25 @@ class ExchangeStore:
             item["status"] = "TRANSFER_PENDING"
         if values.get(":completed") == "COMPLETED" and "#status = :completed" in expr:
             item["status"] = "COMPLETED"
+            if ":loc_id" in values and "completed_destination_location_id" in expr:
+                item["completed_destination_location_id"] = values[":loc_id"]
+            if ":dest_resource" in values and "completed_destination_resource_id" in expr:
+                item["completed_destination_resource_id"] = values[":dest_resource"]
+            if ":qty" in values and "quantity_transferred" in expr:
+                item["quantity_transferred"] = values[":qty"]
+            if ":provider" in values and "previous_owner_organization_id" in expr:
+                item["previous_owner_organization_id"] = values[":provider"]
+            if ":prev_loc" in values and "previous_location_id" in expr:
+                item["previous_location_id"] = values[":prev_loc"]
+            if ":now" in values:
+                item["completed_at"] = values[":now"]
+                item["updated_at"] = values[":now"]
+            if ":actor" in values:
+                item["confirming_actor_sub"] = values[":actor"]
+                item["updated_by"] = values[":actor"]
+            if "REMOVE expiry_due_key" in expr:
+                item.pop("expiry_due_key", None)
+                item.pop("expiry_due_at", None)
 
         for field in (
             "accepted_offer_id",
@@ -273,6 +292,9 @@ class ResourceStore:
         item = self.items[rid]
         values = kwargs.get("ExpressionAttributeValues") or {}
         condition = kwargs.get("ConditionExpression") or ""
+        if ":qty" in values:
+            values = dict(values)
+            values[":qty"] = int(values[":qty"])
         if "Available = :true" in condition or "#a = :true" in condition:
             if not item.get("Available"):
                 raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
@@ -287,11 +309,34 @@ class ResourceStore:
             item["quantity_available"] -= values[":qty"]
             item["quantity_allocated"] = item.get("quantity_allocated", 0) + values[":qty"]
             return
+        expr = kwargs.get("UpdateExpression") or ""
         if "quantity_allocated >= :qty" in condition:
             if item.get("quantity_allocated", 0) < values.get(":qty", 0):
                 raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+            # Phase 7C complete: allocated-=n AND total-=n (available unchanged).
+            if "quantity_total = quantity_total - :qty" in expr:
+                if item.get("quantity_total", 0) < values.get(":qty", 0):
+                    raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+                if "organization_id = :provider" in condition and item.get("organization_id") != values.get(":provider"):
+                    raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+                item["quantity_allocated"] -= values[":qty"]
+                item["quantity_total"] -= values[":qty"]
+                return
+            # Hold release: allocated → available
             item["quantity_allocated"] -= values[":qty"]
             item["quantity_available"] = item.get("quantity_available", 0) + values[":qty"]
+            return
+        if "quantity_total = quantity_total + :qty" in expr:
+            if "organization_id = :requester" in condition and item.get("organization_id") != values.get(":requester"):
+                raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+            if "location_id = :loc_id" in condition and item.get("location_id") != values.get(":loc_id"):
+                raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+            if "operational_status = :available" in condition and str(item.get("operational_status", "")).upper() != "AVAILABLE":
+                raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+            item["quantity_total"] = item.get("quantity_total", 0) + values[":qty"]
+            item["quantity_available"] = item.get("quantity_available", 0) + values[":qty"]
+            if values.get(":private"):
+                item["visibility"] = values[":private"]
             return
         if values.get(":op_allocated") == "ALLOCATED" or values.get(":allocated") == "ALLOCATED":
             if values.get(":false") is False or values.get(":op_allocated") == "ALLOCATED":
@@ -300,6 +345,12 @@ class ResourceStore:
         if values.get(":available") == "AVAILABLE" and values.get(":true") is True:
             item["Available"] = True
             item["operational_status"] = "AVAILABLE"
+
+    def put_item(self, Item, ConditionExpression=None, **kwargs):
+        rid = Item["resource_id"]
+        if ConditionExpression and "attribute_not_exists" in ConditionExpression and rid in self.items:
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
+        self.items[rid] = copy.deepcopy(Item)
 
 
 class AllocStore:
@@ -332,6 +383,10 @@ class AllocStore:
         if values.get(":released") == "RELEASED":
             item["status"] = "RELEASED"
             item["released_at"] = values.get(":now")
+            if ":dest_resource" in values:
+                item["destination_resource_id"] = values[":dest_resource"]
+            if ":loc_id" in values and "destination_location_id" in (kwargs.get("UpdateExpression") or ""):
+                item["destination_location_id"] = values[":loc_id"]
 
 
 class SimpleStore:
@@ -424,6 +479,7 @@ def seed():
 
 
 def install(monkeypatch, orgs, locations, types, resources, exchanges, allocs, audits, history):
+    sys.modules["service"] = service
     monkeypatch.setattr(service, "organizations_table", lambda: orgs)
     monkeypatch.setattr(service, "locations_table", lambda: locations)
     monkeypatch.setattr(service, "resource_types_table", lambda: types)
@@ -459,6 +515,8 @@ def install(monkeypatch, orgs, locations, types, resources, exchanges, allocs, a
                 table = put["TableName"]
                 if table == "Allocations":
                     allocs.put_item(item, ConditionExpression=put.get("ConditionExpression"))
+                elif table == "Resources":
+                    resources.put_item(item, ConditionExpression=put.get("ConditionExpression"))
                 else:
                     exchanges.put_item(item, ConditionExpression=put.get("ConditionExpression"))
 

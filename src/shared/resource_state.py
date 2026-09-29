@@ -102,13 +102,28 @@ def effective_operational_status(resource):
 
 
 def _non_negative_int(value, label):
-    if isinstance(value, bool) or not isinstance(value, int):
+    if isinstance(value, bool) or value is None:
         raise ResourceStateError(f"{label} is invalid")
 
-    if value < 0:
+    if isinstance(value, int):
+        number = value
+    else:
+        # DynamoDB resource/table APIs return Decimal for numeric attributes.
+        try:
+            from decimal import Decimal
+        except ImportError:  # pragma: no cover
+            Decimal = ()  # type: ignore
+
+        if not isinstance(value, Decimal):
+            raise ResourceStateError(f"{label} is invalid")
+        if value != value.to_integral_value():
+            raise ResourceStateError(f"{label} is invalid")
+        number = int(value)
+
+    if number < 0:
         raise ResourceStateError(f"{label} is invalid")
 
-    return value
+    return number
 
 
 def quantity_snapshot(resource):
