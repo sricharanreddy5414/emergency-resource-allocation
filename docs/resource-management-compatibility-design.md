@@ -29,6 +29,12 @@ Tests: `tests/test_everyday_resource_operations.py` plus the full existing suite
 
 API Gateway methods for the new paths are not added in this phase; the handler routes exist for the next infra step.
 
+## Phase 2.5 implementation (hardening)
+
+Added `tests/test_everyday_resource_hardening.py` covering tenant isolation, role and billing gates on the resource handler, individual and quantity concurrency, transact rollback, emergency matcher matrix, auto-release compatibility, public projection safety, validation, history/audit on success only, and emergency allocation regression (`ALLOC-{request_id}`).
+
+No production or pilot data changes. No API Gateway wiring. `scripts/verify_hardening.py` run against account `481838970142` / `eu-north-1` after `aws login`.
+
 ## Foundation implementation (Phase 1)
 
 Code lives in `src/shared/resource_state.py` and is packaged with `get-resources`.
