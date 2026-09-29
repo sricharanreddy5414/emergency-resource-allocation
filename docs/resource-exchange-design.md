@@ -585,23 +585,43 @@ On leave OPEN → remove/blank `network_list_key` so item leaves the sparse inde
 
 Dedicated Lambda `erap-exchange`, Cognito authorizer. Additive routes only.
 
+### Phase 5C implemented routes (API foundation)
+
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/exchange/requests` | Create OPEN request |
-| GET | `/exchange/requests?scope=mine\|network` | List |
-| GET | `/exchange/requests/{id}` | Detail / projection |
-| POST | `/exchange/requests/{id}/cancel` | Cancel per §16 |
-| POST | `/exchange/requests/{id}/offers` | Create offer (**no hold**) |
-| GET | `/exchange/requests/{id}/offers` | List offers (participant rules) |
+| POST | `/exchange/requests` | Create OPEN NETWORK request |
+| GET | `/exchange/requests?scope=mine\|network` | List mine or network OPEN |
+| GET | `/exchange/requests/{exchange_request_id}` | Requester detail or network projection |
+| POST | `/exchange/requests/{exchange_request_id}/offers` | Create OPEN offer (**no hold**) |
+| GET | `/exchange/requests/{exchange_request_id}/offers` | List offers (requester all / provider own) |
+| GET | `/exchange/requests/{exchange_request_id}/offers/{offer_id}` | Get one offer |
+| GET | `/exchange/offers?scope=mine` | Provider offers via ProviderOrgOfferIndex |
+
+**Phase 5C semantics (locked behavior, not a redesign):**
+
+- Requests on this API must use NETWORK visibility (PUBLIC/PRIVATE rejected).
+- Network discovery uses `NetworkOpenRequestIndex`; own org excluded from `scope=network`.
+- Pagination: existing `page_token` / `next_token` (`pages.py`), limit 1–50.
+- **OFFER CREATION DOES NOT HOLD THE RESOURCE** — no Resources/Allocations/quantity/history mutation.
+- Type matching: case-insensitive `resource_type_name` vs provider resource `Type`/`name`; cross-org type ids are not equivalent.
+- Offer eligibility: `AVAILABLE` only; quantity offers cannot exceed available or requested qty; stock may change before Phase 5D accept.
+- Writes: OPERATOR/ADMIN/OWNER + billing write gate. Reads: MEMBER+.
+- Idempotency key on create request/offer; fingerprint conflict → 409.
+- Audit: `exchange.request_created`, `exchange.offer_created`.
+- `scripts/expose_exchange_routes.py` and table infra remain **not applied** (no AWS mutation in 5C).
+
+### Later-phase routes (not implemented in 5C)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/exchange/requests/{id}/cancel` | Cancel |
 | POST | `/exchange/offers/{id}/accept` | Atomic accept + hold |
 | POST | `/exchange/offers/{id}/reject` | Reject |
-| POST | `/exchange/offers/{id}/withdraw` | Withdraw OPEN offer |
-| POST | `/exchange/requests/{id}/transfer/start` | ACCEPTED → TRANSFER_PENDING |
-| POST | `/exchange/requests/{id}/handover/confirm` | → COMPLETED + ownership/location |
+| POST | `/exchange/offers/{id}/withdraw` | Withdraw |
+| POST | `/exchange/requests/{id}/transfer/start` | Transfer start |
+| POST | `/exchange/requests/{id}/handover/confirm` | Handover + ownership |
 
-NETWORK visibility updates remain on existing resource PUT once visibility helper allows NETWORK.
-
-Errors: 401 / 403 (+ `BILLING_REQUIRED`) / 404 (hide cross-tenant) / 409 (concurrency/state) / 400 validation.
+Errors: 401 / 403 (+ `BILLING_REQUIRED`) / 404 (hide cross-tenant) / 409 / 400.
 
 ---
 

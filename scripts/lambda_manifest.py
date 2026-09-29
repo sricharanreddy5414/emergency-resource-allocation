@@ -98,6 +98,14 @@ TABLES = [
 
 # Packaged for a later deploy. Not in PACKAGES, so the existing nine functions
 # stay the only ones the deploy, alias, and route scripts touch.
+EXCHANGE_PACKAGES = {
+    "erap-exchange": {
+        **SHARED,
+        "handler.py": "src/exchange/handler.py",
+        "service.py": "src/exchange/service.py",
+    },
+}
+
 BILLING_PACKAGES = {
     "erap-billing": {
         "common.py": "src/organization/common.py",
@@ -146,6 +154,7 @@ BILLING_PACKAGES = {
 def package_map():
     mapping = dict(PACKAGES)
     mapping.update(BILLING_PACKAGES)
+    mapping.update(EXCHANGE_PACKAGES)
     return mapping
 
 
