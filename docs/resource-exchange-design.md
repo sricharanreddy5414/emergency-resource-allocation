@@ -319,7 +319,7 @@ Exchange-held quantity uses existing **`quantity_allocated`** (same as everyday 
 |---|---|
 | Offer create | none |
 | Accept | `quantity_available -= n`; `quantity_allocated += n` iff `quantity_available >= n` |
-| Complete | `quantity_allocated -= n`; `quantity_total -= n`; requester pool `quantity_total += n`, `quantity_available += n` (create pool if missing) |
+| Complete | `quantity_allocated -= n`; `quantity_total -= n`; requester pool `quantity_total += n`, `quantity_available += n` (**Phase 7B:** merge into explicit `destination_resource_id`, or create PRIVATE pool if omitted — see *Quantity Ownership Transfer — Locked Design*) |
 | Cancel/expire after accept | reverse accept: `quantity_allocated -= n`; `quantity_available += n` |
 
 **Invariants (always):**
@@ -638,7 +638,7 @@ Core accept `TransactWriteItems` is exactly **4 items**: META + accepted offer +
 
 After a successful hold (and on idempotent same-offer retry), `_supersede_competing_open_offers` conditionally sets every remaining OPEN sibling to `SUPERSEDED` (`status = OPEN` only; already non-OPEN left unchanged). Cleanup is re-entrant: if a follow-up update fails transiently, a later accept retry heals leftovers. Stale OPEN competitors cannot be accepted (request already ACCEPTED → 409).
 
-Deferred to later phases after 7A: quantity ownership transfer, QR, notifications.
+After Phase 7A: quantity ownership **transfer implementation** remains deferred until Phase 7C; architecture is locked in Phase 7B below. QR / notifications / MFA remain later.
 
 ### Phase 7A implemented routes (lifecycle recovery)
 
@@ -688,16 +688,367 @@ Deferred to later phases after 7A: quantity ownership transfer, QR, notification
 5. History: `RESOURCE_EXCHANGE_TRANSFERRED`. Audit: `exchange.handover_confirmed`, `resource.ownership_transferred`.
 6. Idempotent: transfer start when already `TRANSFER_PENDING` → 200; confirm when already `COMPLETED` → 200; no duplicate ownership write.
 
-**Quantity handover decision (Phase 5E):**
+**Quantity handover decision (Phase 5E — historical):**
 
-§12 documents complete accounting (`quantity_total` move + upsert requester pool), but open question #3 (upsert vs fail-if-missing) and safe cross-tenant pool resolution without Scan remain unresolved. **Phase 5E rejects quantity transfer/handover with 409** (“deferred pending safe requester pool resolution”). Provider counters and ownership are not mutated for QUANTITY in this phase.
+Phase 5E left quantity handover unresolved and rejects with 409
+(`Quantity exchange handover is deferred pending safe requester pool resolution`).
+Phase 7B locks the architecture below. Runtime behavior remains the Phase 5E 409
+until Phase 7C removes that gate.
 
 ### Later-phase routes (beyond 7A)
 
 | Method | Path | Purpose |
 |---|---|---|
-| — | quantity handover | Deferred pending safe requester pool resolution |
-| — | QR / notifications | Future phases |
+| POST | `/exchange/requests/{id}/transfer/start` | Unlock for QUANTITY (same META-only start as individual) — Phase 7C |
+| POST | `/exchange/requests/{id}/handover/confirm` | Quantity ownership transfer per Phase 7B lock — Phase 7C |
+| — | QR / notifications / MFA | Future phases |
+
+---
+
+## Quantity Ownership Transfer — Locked Design (Phase 7B)
+
+**Status:** DESIGN LOCK ONLY. No runtime change in this phase.  
+**Current code:** QUANTITY accept/hold and 7A hold release work; `start_transfer` /
+`confirm_handover` still call `_reject_quantity_handover` → **409**.  
+**Next implementation phase:** 7C (implement this lock). Do not start QR / notifications / MFA here.
+
+### Why this phase exists
+
+Quantity pools are multi-unit `Resources` rows (`tracking_mode=QUANTITY`). Partial
+exchange must move **units**, not the entire provider row. Individual handover
+(rewriting one `resource_id` to the requester) is therefore invalid for QUANTITY.
+
+### Current quantity model (as implemented)
+
+Counters (invariant always):
+
+```
+quantity_available + quantity_reserved + quantity_allocated == quantity_total
+(all ≥ 0)
+```
+
+New QUANTITY resources set `Available=false`, `quantity_available=quantity_total`,
+`reserved=allocated=0` (`resource_state.initialize_new_resource_fields`).
+
+| Operation | Counter effect | Notes |
+|---|---|---|
+| Everyday reserve | available−n, reserved+n | `available >= n` |
+| Everyday allocate (direct) | available−n, allocated+n | |
+| Everyday allocate (from reserved) | reserved−n, allocated+n | |
+| Everyday return | allocated−n, available+n | |
+| Emergency | **none** | QUANTITY not emergency-matchable |
+| Exchange offer create | none | metadata only |
+| Exchange accept (QUANTITY) | available−n, allocated+n | hold; `quantity_total` unchanged; pool stays AVAILABLE |
+| Exchange cancel/expiry after accept | allocated−n, available+n | reverse hold; no ownership change |
+| Exchange handover (QUANTITY) | **blocked 409** today | locked formulas below for 7C |
+
+No `quantity_exchange_held` column. No `EXCHANGE_HELD` status. Hold is
+`allocation_type=EXCHANGE` + `status=OPEN` plus the allocated counter slice.
+
+### Product requirement
+
+Provider B pool (e.g. 100 total / 80 available / 20 allocated) may transfer
+exactly **n** units to requester A. Remaining units stay on B’s pool under the
+**same** `resource_id`. This is not whole-row ownership transfer.
+
+### Options evaluated (not implemented)
+
+| Option | Summary | Verdict |
+|---|---|---|
+| **A** — Transfer entire QUANTITY row | Same as individual: rewrite `organization_id` / location on provider `resource_id` | **Rejected.** Breaks partial ownership; would move uninvolved units and history. |
+| **B** — Reduce provider pool; credit requester pool (merge or create) | Provider: leave held units by decreasing `allocated` and `total`. Requester: increase or create a QUANTITY pool at destination | **Chosen.** Matches §12 accounting, preserves provider identity, supports partial transfer, reuses Resources. |
+| **C** — Always create a dedicated transfer resource | Every handover creates `RESOURCE-TRANSFER-*` with total=n | **Rejected as sole path.** Fits the model for *create* cases but fragments inventory when a compatible destination pool already exists; operators would allocate across many tiny pools. |
+| **D** — New ownership/lot table | Separate lots per transfer | **Rejected.** Traceability already fits Allocations + ResourceExchanges + history/audit. Extra table unjustified. |
+
+### Chosen model (LOCKED) — Option B with explicit destination resolution
+
+**Name:** Provider counter reduction + requester destination-pool credit
+(merge-if-specified, create-if-omitted).
+
+#### Source (provider) pool
+
+- `resource_id` of the accepted offer **remains stable** forever for that pool.
+- `organization_id` remains the **provider** (no row ownership rewrite).
+- `location_id` / `Location` remain the provider source location.
+- At handover confirm, for quantity `n = quantity_offered` (allocation.quantity):
+
+```
+quantity_allocated -= n
+quantity_total    -= n
+# quantity_available and quantity_reserved unchanged by this step
+# invariant still holds
+```
+
+Conditions (all required):
+
+- `organization_id == provider`
+- `tracking_mode == QUANTITY`
+- `quantity_allocated >= n`
+- `quantity_total >= n`
+
+Full drain (`n == quantity_total` after prior holds reverse correctly) may leave
+`quantity_total = 0` with all counters 0. **Do not auto-delete** the provider row;
+lifecycle retire remains a separate operator action. Empty pools are allowed after
+transfer.
+
+Identity fields that **do not move** with the units: provider `resource_id`,
+`asset_tag`, `serial_number`, `department`, `responsible_team`, provider
+`visibility`, provider `name` / description stay on the provider row.
+
+#### Destination (requester) pool
+
+Resolution **without Scan** (LOCKED):
+
+1. **Merge path (preferred when requester already has a pool):**  
+   Body may include `destination_resource_id`. That resource MUST:
+   - exist; `organization_id == requester`
+   - `tracking_mode == QUANTITY`
+   - `location_id ==` confirmed destination location (request META or body)
+   - type-compatible with the exchange (`Type` / name vs request `resource_type_name`, same rule as offer eligibility)
+   - not be a terminal pool that cannot receive stock (`RETIRED` rejected; `MAINTENANCE`/`DAMAGED` rejected for credit)
+   - Then atomically:
+
+```
+quantity_total     += n
+quantity_available += n
+# reserved/allocated unchanged
+```
+
+2. **Create path (when `destination_resource_id` omitted):**  
+   Server generates a new `resource_id` (same validation alphabet as resource
+   create; unique Put `attribute_not_exists`). New row:
+   - `organization_id` = requester
+   - `location_id` / `Location` = destination location
+   - `tracking_mode` = QUANTITY
+   - `resource_type_id` / `Type` from request META (requester-local type)
+   - `name` = request `resource_type_name` (or safe offer snapshot name)
+   - `quantity_total = n`, `quantity_available = n`, `reserved = 0`, `allocated = 0`
+   - `Available = false` (QUANTITY convention)
+   - `operational_status = AVAILABLE`
+   - `visibility = PRIVATE` (force; strip public index attrs)
+   - no serial/asset_tag required
+
+**Why not silent auto-merge by type+location:** Resources already allow multiple
+QUANTITY pools of the same type at one location (no uniqueness constraint).
+Auto-picking would need Scan or a new GSI and would hide operator intent.
+Explicit `destination_resource_id` or create is the safe ERAP rule.
+
+**Why merge when specified:** Quantity resources are operational **pools**, not
+serial lots. Crediting an existing destination pool matches everyday allocate/
+return semantics and avoids permanent fragmentation (rejects pure Option C).
+
+After COMPLETED, the destination pool is a **normal** requester QUANTITY
+resource: everyday reserve/allocate/return, future exchange offers, lifecycle —
+subject to ordinary rules. No permanent “exchange-only” state.
+
+#### Location
+
+| Phase | Provider pool location | Destination pool location |
+|---|---|---|
+| Before handover | Provider source (unchanged) | N/A or pre-existing requester pool |
+| After COMPLETED | Unchanged on provider row | Destination location on requester pool (merge target or new row) |
+
+Destination location validation matches individual handover: ACTIVE, owned by
+requester. Invalid destination → fail confirm; hold remains; no counter move.
+
+#### Allocation model
+
+Reuse `allocation_type = EXCHANGE` only (no new type).
+
+| Field | Meaning for QUANTITY |
+|---|---|
+| `allocation_id` | `EXCHANGE-{offer_id}` (existing) |
+| `resource_id` | **source** (provider) pool |
+| `quantity` | units held / transferred |
+| `provider_organization_id` / `requester_organization_id` | parties |
+| `status` | OPEN while held; **RELEASED** after successful handover (or cancel/expiry) |
+
+Optional non-key attributes on the allocation (or META) at complete time for
+traceability: `destination_resource_id`, `destination_location_id` (also on META
+today as `completed_destination_location_id`).
+
+#### Traceability (no new table)
+
+| Fact | Where |
+|---|---|
+| exchange_request_id, offer_id, parties, quantity, timestamps | ResourceExchanges META + OFFER |
+| source resource, held quantity, RELEASED | Allocations EXCHANGE row |
+| provider counter leave / requester counter enter | ResourceStatusHistory on **both** resource_ids |
+| actor / billing-bound action | AuditEvents |
+
+Do **not** add a lot/ownership table for V1 quantity exchange.
+
+#### Transaction boundary (LOCKED)
+
+`confirm_handover` for QUANTITY uses one `TransactWriteItems` of **exactly 4**
+items (same budget class as accept; well under DynamoDB 100-item limit):
+
+1. META: `TRANSFER_PENDING → COMPLETED` (conditions + destination / previous-owner attrs as today)
+2. Provider Resources: allocated−n, total−n (conditions above)
+3. Requester Resources: Update (merge) **or** Put (create) with conditions
+4. Allocations: `OPEN → RELEASED`, `allocation_type=EXCHANGE`
+
+History and audit writes follow existing ERAP convention: **after** successful
+transaction (best-effort / non-owning). Failed history/audit must not leave
+ownership wrong; ownership is defined solely by the transaction success.
+
+If the transaction fails, nothing partially transfers (no orphan create, no
+provider drain, no COMPLETED, no RELEASED).
+
+`start_transfer` for QUANTITY (Phase 7C): META-only `ACCEPTED → TRANSFER_PENDING`
+(same as individual). No resource/allocation mutation. Remove QUANTITY reject
+from both start and confirm in 7C.
+
+#### Concurrency (LOCKED)
+
+| Race | Winner | Loser |
+|---|---|---|
+| Two accepts on same pool stock | Conditional `quantity_available >= n` | 409 |
+| Handover vs cancel/expiry | One TransactWrite wins on META status + allocation OPEN | 409 / idempotent terminal |
+| Handover vs second handover | META `TRANSFER_PENDING` condition | 409 or idempotent COMPLETED |
+| Two handovers draining same allocated slice | `quantity_allocated >= n` / `total >= n` | 409 |
+| Merge into same destination concurrently | Conditional updates on destination counters | 409 |
+
+Never allow negative counters. Never double-complete. Never reverse COMPLETED.
+
+#### Partial / validation rules (LOCKED for 7C)
+
+| Case | Rule |
+|---|---|
+| Transfer 5 of 100 | Allowed if held `n=5` |
+| Transfer 100 of 100 | Allowed; provider may reach total=0 |
+| More than available at accept | 409 at accept (existing) |
+| `n <= 0` / non-integer | 400 at offer/accept (existing integer ≥ 1) |
+| Reserved stock | Exchange hold only takes from **available** at accept; reserved units are not offered via exchange hold |
+| Other allocated (everyday) | Reduces available; exchange compete via available condition |
+| RETIRED / MAINTENANCE / DAMAGED provider pool | Reject offer/accept/confirm per eligibility (no credit from/to terminal pools) |
+| Destination RETIRED | 409 on confirm |
+
+#### Cancel / expiry interaction (LOCKED)
+
+| Stage | Behavior |
+|---|---|
+| Before accept | No quantity mutation (7A / offer rules) |
+| After accept, before handover | Cancel/expiry reverses hold (allocated→available); provider total unchanged; no requester credit |
+| After COMPLETED | **Immutable.** Cancel must not reverse provider drain or requester credit |
+
+#### History / audit (LOCKED — reuse vocabulary)
+
+| Event | When |
+|---|---|
+| History `RESOURCE_EXCHANGE_ALLOCATED` | Accept hold (existing) |
+| History `RESOURCE_EXCHANGE_HOLD_RELEASED` | Cancel/expiry release (existing) |
+| History `RESOURCE_EXCHANGE_TRANSFERRED` | Confirm: write on **provider** source (units left) **and** **requester** destination (units entered); include quantity, exchange_request_id, offer_id, counterpart resource_id |
+| Audit `exchange.handover_confirmed` | Confirm (existing event name) |
+| Audit `resource.ownership_transferred` | Confirm; payload must include quantity + source/destination resource_ids (quantity analogue of individual org move) |
+
+Do not invent extra history reason codes beyond these.
+
+#### Visibility (LOCKED)
+
+Destination pool after transfer: **PRIVATE**. Never auto-set PUBLIC /
+`visibility_key`. Never insert PublicDiscoveryIndex. NETWORK ≠ PUBLIC.
+Provider pool visibility unchanged by quantity handover.
+
+#### Authorization / billing (LOCKED)
+
+Same matrix as individual handover (§17): requester confirms; provider starts
+transfer; OWNER/ADMIN/OPERATOR; MEMBER denied; unrelated → 403/404 per
+convention. Billing write gate unchanged (TRIALING/ACTIVE/PAST_DUE/GRANDFATHERED).
+No Razorpay / billing table changes.
+
+#### API contract (LOCKED — reuse endpoints)
+
+Prefer existing routes; no new path required.
+
+**`POST /exchange/requests/{id}/transfer/start`** (provider)  
+QUANTITY allowed in 7C. Body unchanged. Response: request status TRANSFER_PENDING.
+
+**`POST /exchange/requests/{id}/handover/confirm`** (requester)
+
+Request body (quantity-relevant):
+
+| Field | Required | Meaning |
+|---|---|---|
+| `organization_id` | yes (existing) | requester org |
+| `destination_location_id` | optional if META has it | ACTIVE requester location |
+| `destination_resource_id` | optional | merge into this QUANTITY pool; omit → create |
+
+Response (quantity SUCCESS shape — design target):
+
+```json
+{
+  "message": "Handover confirmed",
+  "request": { "status": "COMPLETED", "...": "..." },
+  "allocation": { "allocation_id": "...", "status": "RELEASED", "quantity": "10" },
+  "transfer": {
+    "tracking_mode": "QUANTITY",
+    "quantity": 10,
+    "source_resource_id": "PROVIDER-POOL-ID",
+    "destination_resource_id": "REQUESTER-POOL-ID",
+    "destination_created": false,
+    "ownership_transferred": true
+  }
+}
+```
+
+Errors: 400 validation; 403/`BILLING_REQUIRED`; 404 hide cross-tenant; 409
+insufficient/held state/conflict/idempotent races; COMPLETED retry → 200
+idempotent (existing style).
+
+Until 7C ships, both routes continue returning the Phase 5E quantity 409.
+
+#### Frontend impact (NOT implemented in 7B)
+
+Exchange UI only (no redesign):
+
+- Show offered/held quantity and provider available context already present
+- On confirm: optional destination pool picker (requester QUANTITY pools at
+  destination location) **or** “create new pool”
+- Transfer summary: n units, source → destination resource ids/names
+- Existing confirmation dialog; refresh after success
+- Surface 409 insufficient / conflict and billing errors from API
+- Do not fake COMPLETED in the client
+
+#### Failure / recovery (LOCKED)
+
+| Failure | Behavior |
+|---|---|
+| Any TransactWrite item fails | Full abort; hold remains if still ACCEPTED/TRANSFER_PENDING |
+| History/audit after success fails | Ownership already correct; retry-safe history/audit; ops may heal logs |
+| Lazy expiry / cancel during confirm race | One winner; loser 409 |
+| Completed exchange | Never undone by cancel/expiry/admin path in V1 |
+
+#### Database impact (LOCKED)
+
+**Sufficient existing tables:** Resources, Allocations, ResourceExchanges,
+ResourceStatusHistory, AuditEvents. **No new table.** No new GSI required for
+destination resolution when `destination_resource_id` is explicit or create uses
+a new id. Do not use DynamoDB TTL for business complete.
+
+#### Future test matrix (for Phase 7C — do not implement in 7B)
+
+- Basic / partial / full quantity transfer  
+- Insufficient / zero / negative / non-integer quantity  
+- Reserved and everyday-allocated interaction at accept  
+- RETIRED / MAINTENANCE destination or source rejection  
+- Concurrent accepts on same pool; handover vs cancel; handover vs expiry  
+- Handover retry / same-exchange idempotent confirm  
+- Merge into existing destination; create when omitted  
+- Tenant isolation; MEMBER denied; billing gate  
+- Emergency allocation regression (QUANTITY still non-matchable; EMERGENCY rows untouched)  
+- Everyday allocate/return on destination after COMPLETED  
+- Public discovery / NETWORK: destination PRIVATE; no PublicDiscoveryIndex  
+- Provider `resource_id` stable; no accidental whole-row org rewrite  
+
+### Phase 7B documentation checklist
+
+| Check | Status |
+|---|---|
+| Chosen Option B + explicit merge-or-create | Locked |
+| Open question #3 resolved | Locked (explicit id or create; no Scan auto-merge) |
+| Runtime still 409 until 7C | Confirmed |
+| No AWS / code / data mutations in 7B | Required |
 
 Errors: 401 / 403 (+ `BILLING_REQUIRED`) / 404 (hide cross-tenant) / 409 / 400.
 
@@ -793,12 +1144,14 @@ Phase 5F implements this inside the existing Operations shell (`frontend/index.h
 | **5D** | Atomic accept + EXCHANGE Allocations holds + competing SUPERSEDED |
 | **5E** | Transfer start + handover confirm + individual ownership/location (quantity handover deferred) |
 | **5F** | Frontend Exchange experience (**this phase**; no live AWS deploy) |
-| **5G** | Expiry sweeper + lazy expiry + hold release |
-| **5H** | Cancel / reject / withdraw + quantity handover resolution |
-| **5I** | Security/concurrency hardening vs emergency/everyday/lifecycle |
-| **5J** | Authenticated non-pilot live smoke |
+| **5G** | Expiry sweeper + lazy expiry + hold release (superseded numbering; live as 7A worker) |
+| **5H** | Cancel / reject / withdraw (live as Phase 7A) |
+| **7A** | Lifecycle recovery: cancel / reject / withdraw / expiry / hold release (complete) |
+| **7B** | Quantity ownership transfer **design lock** (this section; docs only) |
+| **7C** | Implement quantity handover per 7B lock (runtime; not started) |
+| **Later** | QR / notifications / MFA |
 
-No phase starts until this lock is approved.
+No implementation phase for quantity transfer starts until this 7B lock is approved.
 
 ---
 
@@ -819,10 +1172,10 @@ Most 5A questions are **closed** by 5A.1. Remaining:
 
 1. **Cross-org type matching:** exact `resource_type_name` equality vs provider-local compatible type ids when offering.  
 2. **Organization display name field** for network projections (which `Organizations` attribute is safe).  
-3. **Quantity complete at handover:** always upsert requester QUANTITY pool (recommended) vs fail if pool missing — confirm product preference.  
-4. **Handover SLA default durations** (request TTL vs post-accept handover TTL numeric values).  
+3. ~~**Quantity complete at handover:** upsert vs fail-if-missing~~ — **CLOSED by Phase 7B:** merge into explicit `destination_resource_id`, or create a new PRIVATE QUANTITY pool when omitted. No Scan-based auto-merge.  
+4. **Handover SLA default durations** — largely closed by 7A defaults (7d request / 72h handover); keep only if product wants different caps.
 
-Everything else in Decisions 1–18 is **locked**.
+Everything else in Decisions 1–18 plus the Phase 7B quantity ownership lock is **locked**.
 
 ---
 
