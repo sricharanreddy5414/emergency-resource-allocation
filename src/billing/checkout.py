@@ -27,9 +27,8 @@ def create_checkout(
     """Return the public checkout reference for one organization.
 
     organization_id must already be the membership selected by authorize.
-    plans and links are injection points for tests. Production prices are
-    purchasable, but total_count is unset, so provider_plan refuses the
-    call before Razorpay.
+    plans and links are injection points for tests. Production links use
+    the 100-year cycle counts. Checkout still does not activate the plan.
     """
     plan_id = _plan_id(body)
     plan = _plan(plan_id, plans)

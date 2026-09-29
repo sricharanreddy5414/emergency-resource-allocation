@@ -359,7 +359,7 @@ def test_billing_endpoints_remain_available_when_expired(monkeypatch):
     read = api_handler.lambda_handler(event, None)
     event["httpMethod"] = "POST"
     event["path"] = "/billing/checkout"
-    event["body"] = json.dumps({"plan_id": "MONTHLY"})
+    event["body"] = json.dumps({"plan_id": "FREE_TRIAL"})
     checkout = api_handler.lambda_handler(event, None)
     checkout_body = json.loads(checkout["body"])
 

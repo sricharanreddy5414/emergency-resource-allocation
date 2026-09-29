@@ -88,7 +88,7 @@ A missing `OrganizationSubscriptions` row means the same legacy access. `access_
 
 ## Future Razorpay integration
 
-Razorpay is the intended first provider. The `provider` value `razorpay` is reserved on events. Checkout uses `require_purchasable` for the priced plans, then `provider_plan`. `total_count` is unset, so that second check still refuses checkout before Razorpay is called.
+Razorpay is the intended first provider. The `provider` value `razorpay` is reserved on events. Checkout uses `require_purchasable` for the priced plans, then `provider_plan`. Monthly checkout sends `total_count` 1200. Yearly checkout sends `total_count` 100. Those are the documented 100-year maximums, not an unlimited subscription.
 
 ## Webhook architecture
 
@@ -121,7 +121,7 @@ Do not scan or update production organizations in Phase A. When a later phase ba
 
 Only an `OWNER` membership can call checkout. `ADMIN`, `OPERATOR`, and `MEMBER` receive 403. A missing token receives 401. `organization_id` in the body is only a selector. The write uses the organization from `authorize`. Organization A cannot open checkout for Organization B.
 
-The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` and `YEARLY` are purchasable and have Razorpay test plan ids. `total_count` stays unset because Razorpay requires either a finite billing-cycle count or an `end_at`, and ERAP does not invent a duration. Checkout therefore returns 409 `Plan is not currently available for purchase` and does not call Razorpay.
+The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` sends test plan `plan_ThiWT35Gf1jyio` with `total_count` 1200. `YEARLY` sends test plan `plan_ThiWTXOzBHl2Qb` with `total_count` 100. A customer can cancel before that maximum. `subscription.completed` stays ignored because the current statuses cannot represent the end of a fully paid term without ending the last paid period early.
 
 When a later configuration makes a plan purchasable and sets a Razorpay plan id plus `total_count`, the provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty. The test key id must start with `rzp_test_`. The secret id must be `erap/billing/razorpay/test`, holding `key_id`, `key_secret`, and `webhook_secret`. Checkout uses the key pair. Phase D uses `webhook_secret` only to verify signatures. The secret value is not in git and is not created by this repository. A live key or any other secret id fails closed.
 
@@ -249,4 +249,4 @@ The billing page shows `pending_plan_id` as awaiting confirmation. It does not d
 
 ## What remains unimplemented
 
-An unset Razorpay `total_count`, so checkout does not start a subscription, the grandfather backfill, one trial per owner, refunds, invoices, plan changes, provider repair fetches, creating the billing tables and `LifecycleDueIndex`, creating or deploying the billing routes, creating the Razorpay test secret, creating the expiry schedule, enabling live Razorpay, and deploying the billing workspace or `erap-billing-expiry`. `PAST_DUE` recovery is not a new checkout.
+A terminal mapping for Razorpay `subscription.completed`, the grandfather backfill, one trial per owner, refunds, invoices, plan changes, provider repair fetches, creating the billing tables and `LifecycleDueIndex`, creating or deploying the billing routes, creating the Razorpay test secret, creating the expiry schedule, enabling live Razorpay, and deploying the billing workspace or `erap-billing-expiry`. `PAST_DUE` recovery is not a new checkout.

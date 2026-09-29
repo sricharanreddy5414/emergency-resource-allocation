@@ -316,6 +316,19 @@ def test_duplicate_after_ignored_does_not_create_another_event():
     assert len(events.rows) == 1
 
 
+def test_completed_subscription_does_not_change_status():
+    current = subscription(ORG_A, SUB_A, "ACTIVE")
+    current["plan_id"] = "MONTHLY"
+    current["billing_interval"] = "month"
+    body = payload("subscription.completed", SUB_A)
+    _, _, subscriptions, events = deliver(body, [current])
+
+    assert subscriptions.updates == 0
+    assert subscriptions.rows[ORG_A]["subscription_status"] == "ACTIVE"
+    assert subscriptions.rows[ORG_A]["plan_id"] == "MONTHLY"
+    assert events.rows["evt_1"]["processing_status"] == "IGNORED"
+
+
 def test_unknown_subscription_is_ignored():
     body = payload("subscription.activated", "sub_Unknown000001")
     status, _, subscriptions, events = deliver(body, [subscription(ORG_A, SUB_A)])

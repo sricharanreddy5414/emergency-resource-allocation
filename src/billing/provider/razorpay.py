@@ -26,13 +26,11 @@ SUBSCRIPTIONS_URL = "https://api.razorpay.com/v1/subscriptions"
 TEST_SECRET_ID = "erap/billing/razorpay/test"
 TIMEOUT_SECONDS = 10
 
-# Test plan ids are not secrets. total_count stays unset because Razorpay
-# requires a finite billing-cycle count or an end_at, and ERAP does not
-# invent a subscription duration. provider_plan fails closed until that
-# decision exists, so checkout does not call Razorpay.
+# 1200 monthly cycles and 100 yearly cycles are Razorpay's documented
+# 100-year maximum. A customer can cancel earlier. This is not unlimited.
 RAZORPAY_PLAN_LINKS = {
-    "MONTHLY": {"razorpay_plan_id": "plan_ThiWT35Gf1jyio", "total_count": None},
-    "YEARLY": {"razorpay_plan_id": "plan_ThiWTXOzBHl2Qb", "total_count": None},
+    "MONTHLY": {"razorpay_plan_id": "plan_ThiWT35Gf1jyio", "total_count": 1200},
+    "YEARLY": {"razorpay_plan_id": "plan_ThiWTXOzBHl2Qb", "total_count": 100},
 }
 
 
@@ -88,6 +86,9 @@ def load_webhook_secret(client=None, secret_id=None):
     return secret
 
 
+# subscription.completed is unmapped. Razorpay sends it when every invoice
+# in total_count has been generated. ACTIVE cannot become EXPIRED, and
+# treating completion as CANCELLED would end the last paid period early.
 _EVENT_TARGETS = {
     "subscription.activated": "ACTIVE",
     "subscription.charged": "ACTIVE",

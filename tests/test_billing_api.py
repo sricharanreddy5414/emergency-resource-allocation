@@ -360,14 +360,16 @@ def test_plans_follow_the_billing_role_policy(monkeypatch):
     assert PLANS["MONTHLY"]["purchasable"] is True
     assert RAZORPAY_PLAN_LINKS["MONTHLY"]["razorpay_plan_id"].startswith("plan_")
     assert RAZORPAY_PLAN_LINKS["YEARLY"]["razorpay_plan_id"].startswith("plan_")
-    assert RAZORPAY_PLAN_LINKS["MONTHLY"]["total_count"] is None
-    assert RAZORPAY_PLAN_LINKS["YEARLY"]["total_count"] is None
+    assert RAZORPAY_PLAN_LINKS["MONTHLY"]["total_count"] == 1200
+    assert RAZORPAY_PLAN_LINKS["YEARLY"]["total_count"] == 100
+    assert "1200" not in rendered
+    assert "100" not in rendered
     refused, _body, _table, _history, _provider = call(monkeypatch, "GET", "/billing/plans", role="MEMBER")
     assert refused["statusCode"] == 403
 
 
 def test_checkout_permissions_and_unavailable_plan(monkeypatch):
-    response, body, _table, _history, provider = call(
+    response, body, table, _history, provider = call(
         monkeypatch,
         "POST",
         "/billing/checkout",
@@ -375,9 +377,29 @@ def test_checkout_permissions_and_unavailable_plan(monkeypatch):
         body={"plan_id": "MONTHLY"},
         organization_id=ORG_A,
     )
-    assert response["statusCode"] == 409
-    assert body["message"] == "Plan is not currently available for purchase"
-    assert provider.calls == []
+    assert response["statusCode"] == 200
+    assert provider.calls == [(
+        "create",
+        {
+            "razorpay_plan_id": "plan_ThiWT35Gf1jyio",
+            "total_count": 1200,
+            "organization_id": ORG_A,
+        },
+    )]
+    assert table.items[ORG_A]["subscription_status"] == "TRIALING"
+    assert table.items[ORG_A]["pending_plan_id"] == "MONTHLY"
+    assert "plan_Thi" not in response["body"]
+    trial, trial_body, _table, _history, trial_provider = call(
+        monkeypatch,
+        "POST",
+        "/billing/checkout",
+        rows=[subscription()],
+        body={"plan_id": "FREE_TRIAL"},
+        organization_id=ORG_A,
+    )
+    assert trial["statusCode"] == 409
+    assert trial_body["message"] == "Plan is not currently available for purchase"
+    assert trial_provider.calls == []
     for role in ("ADMIN", "OPERATOR", "MEMBER"):
         refused, _body, _table, _history, role_provider = call(
             monkeypatch,
