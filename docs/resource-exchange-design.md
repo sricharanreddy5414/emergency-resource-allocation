@@ -632,9 +632,11 @@ Dedicated Lambda `erap-exchange`, Cognito authorizer. Additive routes only.
 - Idempotent retry: same offer already ACCEPTED → 200 existing state; different offer → 409.
 - Concurrent accept / emergency / everyday / reserve: loser gets **409**; no partial mutation.
 
-**Transaction-size strategy (DynamoDB TransactWriteItems ≤ 100 items):**
+**Transaction-size / competing-offer strategy:**
 
-Accept transaction always includes: META + accepted offer + resource + allocation Put (± up to **40** competing SUPERSEDED updates in-transaction). Remaining OPEN siblings are superseded with conditional follow-up updates (`status = OPEN` only). Documented max in-transaction supersede: `MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION = 40`. Critical hold consistency never depends on the follow-up path.
+Core accept `TransactWriteItems` is exactly **4 items**: META + accepted offer + resource + allocation Put. Competing OPEN offers are **not** mutated inside that transaction (avoids DynamoDB 100-item truncation and avoids a sibling withdraw/reject race cancelling a valid hold).
+
+After a successful hold (and on idempotent same-offer retry), `_supersede_competing_open_offers` conditionally sets every remaining OPEN sibling to `SUPERSEDED` (`status = OPEN` only; already non-OPEN left unchanged). Cleanup is re-entrant: if a follow-up update fails transiently, a later accept retry heals leftovers. Stale OPEN competitors cannot be accepted (request already ACCEPTED → 409).
 
 Deferred to later phases: cancel, reject, withdraw, transfer start, handover confirm, expiry.
 

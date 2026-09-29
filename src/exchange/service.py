@@ -56,10 +56,11 @@ from resource_state import (
 )
 
 # Core accept transaction: META + accepted offer + resource + allocation = 4.
-# Remaining TransactWrite capacity used for SUPERSEDED updates (DynamoDB max 100).
-MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION = 40
-
-
+# Competing SUPERSEDED updates run post-commit (conditional) so a sibling
+# withdraw/reject race cannot cancel the hold, and DynamoDB's 100-item
+# TransactWrite limit cannot truncate the invariant.
+MAX_SUPERSEDE_CLEANUP_ROUNDS = 8
+MAX_SUPERSEDE_BATCH_HINT = 40  # documented batch size for follow-up cleanup loops
 
 class ExchangeOperationError(Exception):
     def __init__(self, status_code, message, code=None):
@@ -874,6 +875,51 @@ def _list_open_offers(exchange_request_id):
     ]
 
 
+def _supersede_competing_open_offers(request_id, accepted_offer_id, now=None):
+    """Conditionally SUPERSEDE every remaining OPEN sibling offer.
+
+    Runs outside the core accept transaction so:
+    - hold consistency never depends on sibling count
+    - already non-OPEN siblings are left unchanged (condition fails → skip)
+    - transient follow-up failures are healed by idempotent accept retry
+    """
+    stamp = now or _now_iso()
+    accepted = str(accepted_offer_id or "").strip()
+
+    for _ in range(MAX_SUPERSEDE_CLEANUP_ROUNDS):
+        competing = [
+            item
+            for item in _list_open_offers(request_id)
+            if item.get("offer_id") != accepted
+        ]
+        if not competing:
+            return True
+
+        for other in competing:
+            try:
+                exchanges_table().update_item(
+                    Key={"pk": meta_pk(request_id), "sk": offer_sk(other["offer_id"])},
+                    UpdateExpression="SET #status = :superseded, updated_at = :now",
+                    ConditionExpression="#status = :open",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":superseded": "SUPERSEDED",
+                        ":open": "OPEN",
+                        ":now": stamp,
+                    },
+                )
+            except ClientError:
+                # ConditionalCheckFailed (already non-OPEN) or transient — continue.
+                continue
+
+    remaining = [
+        item
+        for item in _list_open_offers(request_id)
+        if item.get("offer_id") != accepted
+    ]
+    return not remaining
+
+
 def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, actor_role, membership):
     """Atomically accept an offer and hold the resource. Does NOT transfer ownership."""
     if actor_role not in EXCHANGE_WRITE_ROLES:
@@ -892,6 +938,8 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
             offer = _get_offer(exchange_request_id, oid)
             allocation_id = exchange_allocation_id(offer["offer_id"])
             allocation = allocations_table().get_item(Key={"allocation_id": allocation_id}).get("Item") or {}
+            # Heal any competing OPEN leftovers from a prior interrupted cleanup.
+            _supersede_competing_open_offers(exchange_request_id, oid)
             return _acceptance_response(meta, offer, allocation)
         raise ExchangeOperationError(409, "Exchange request already accepted")
 
@@ -970,11 +1018,7 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
         "accepted_by": actor_sub,
     }
 
-    open_offers = _list_open_offers(request_id)
-    competing = [item for item in open_offers if item.get("offer_id") != oid]
-    in_txn = competing[:MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION]
-    deferred = competing[MAX_SUPERSEDE_IN_ACCEPT_TRANSACTION:]
-
+    # Core atomic hold only. Competing SUPERSEDED is post-commit cleanup.
     transact_items = [
         {
             "Update": {
@@ -1080,28 +1124,6 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
         }
     )
 
-    for other in in_txn:
-        transact_items.append(
-            {
-                "Update": {
-                    "TableName": exchanges_name,
-                    "Key": _serialize_map(
-                        {"pk": meta_pk(request_id), "sk": offer_sk(other["offer_id"])}
-                    ),
-                    "UpdateExpression": "SET #status = :superseded, updated_at = :now",
-                    "ConditionExpression": "#status = :open",
-                    "ExpressionAttributeNames": {"#status": "status"},
-                    "ExpressionAttributeValues": _serialize_map(
-                        {
-                            ":superseded": "SUPERSEDED",
-                            ":open": "OPEN",
-                            ":now": now,
-                        }
-                    ),
-                }
-            }
-        )
-
     try:
         _transact_write(transact_items)
     except ClientError as error:
@@ -1115,25 +1137,12 @@ def accept_offer(exchange_request_id, offer_id, organization_id, actor_sub, acto
                 allocation_row = allocations_table().get_item(
                     Key={"allocation_id": allocation_id}
                 ).get("Item") or allocation
+                _supersede_competing_open_offers(request_id, oid, now)
                 return _acceptance_response(latest, _get_offer(request_id, oid), allocation_row)
             raise ExchangeOperationError(409, "Resource state conflict") from error
         raise
 
-    for other in deferred:
-        try:
-            exchanges_table().update_item(
-                Key={"pk": meta_pk(request_id), "sk": offer_sk(other["offer_id"])},
-                UpdateExpression="SET #status = :superseded, updated_at = :now",
-                ConditionExpression="#status = :open",
-                ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={
-                    ":superseded": "SUPERSEDED",
-                    ":open": "OPEN",
-                    ":now": now,
-                },
-            )
-        except ClientError:
-            pass
+    _supersede_competing_open_offers(request_id, oid, now)
 
     history_reason_item = {
         "history_id": "HIST-EXCHANGE-" + oid + "-" + resource_id,

@@ -927,3 +927,244 @@ def test_second_accept_on_same_request_conflicts(monkeypatch):
     assert again["statusCode"] == 409
     assert len(allocations.items) == 1
     assert resources.items["R-B-2"]["Available"] is True
+
+
+def _seed_competing_offers(exchanges, request_id, count, *, skip_offer_id=None):
+    """Insert OPEN competing offers directly (bypass create_offer resource uniqueness)."""
+    from exchange_model import meta_pk, offer_sk
+
+    seeded = []
+    for index in range(count):
+        oid = f"EXOFF-COMP{index:04d}"
+        if oid == skip_offer_id:
+            continue
+        item = {
+            "pk": meta_pk(request_id),
+            "sk": offer_sk(oid),
+            "entity_type": "EXCHANGE_OFFER",
+            "offer_id": oid,
+            "exchange_request_id": request_id,
+            "status": "OPEN",
+            "provider_organization_id": ORG_B,
+            "resource_id": f"R-SEED-{index}",
+            "source_location_id": "LOC-B",
+            "quantity_offered": 1,
+        }
+        exchanges.items[(item["pk"], item["sk"])] = item
+        seeded.append(oid)
+    return seeded
+
+
+def _offer_statuses(exchanges):
+    return {
+        item["offer_id"]: item["status"]
+        for item in exchanges.items.values()
+        if item.get("entity_type") == "EXCHANGE_OFFER"
+    }
+
+
+def test_accept_core_transaction_is_exactly_four_items(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_open_exchange(
+        monkeypatch
+    )
+    _seed_competing_offers(exchanges, request_id, 5)
+    seen = {"count": None}
+    inner = service._transact_write
+
+    def wrapped(items):
+        seen["count"] = len(items)
+        return inner(items)
+
+    monkeypatch.setattr(service, "_transact_write", wrapped)
+    use_memberships(monkeypatch, memberships((ORG_A, "OPERATOR")))
+    use_billing(monkeypatch, "ACTIVE")
+    accepted = handler.lambda_handler(
+        event(
+            "POST",
+            {"organization_id": ORG_A},
+            path=f"/exchange/requests/{request_id}/offers/{offer_id}/accept",
+        ),
+        None,
+    )
+    assert accepted["statusCode"] == 200
+    assert seen["count"] == 4
+    statuses = _offer_statuses(exchanges)
+    assert statuses[offer_id] == "ACCEPTED"
+    assert all(status == "SUPERSEDED" for oid, status in statuses.items() if oid != offer_id)
+
+
+def test_forty_or_fewer_competing_offers_all_superseded(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_open_exchange(
+        monkeypatch
+    )
+    seeded = _seed_competing_offers(exchanges, request_id, 40)
+    assert len(seeded) == 40
+    use_memberships(monkeypatch, memberships((ORG_A, "OPERATOR")))
+    use_billing(monkeypatch, "ACTIVE")
+    accepted = handler.lambda_handler(
+        event(
+            "POST",
+            {"organization_id": ORG_A},
+            path=f"/exchange/requests/{request_id}/offers/{offer_id}/accept",
+        ),
+        None,
+    )
+    assert accepted["statusCode"] == 200
+    statuses = _offer_statuses(exchanges)
+    assert statuses[offer_id] == "ACCEPTED"
+    assert all(statuses[oid] == "SUPERSEDED" for oid in seeded)
+    assert len(allocations.items) == 1
+
+
+def test_more_than_forty_competing_offers_all_superseded(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_open_exchange(
+        monkeypatch
+    )
+    seeded = _seed_competing_offers(exchanges, request_id, 55)
+    use_memberships(monkeypatch, memberships((ORG_A, "OPERATOR")))
+    use_billing(monkeypatch, "ACTIVE")
+    accepted = handler.lambda_handler(
+        event(
+            "POST",
+            {"organization_id": ORG_A},
+            path=f"/exchange/requests/{request_id}/offers/{offer_id}/accept",
+        ),
+        None,
+    )
+    assert accepted["statusCode"] == 200
+    statuses = _offer_statuses(exchanges)
+    assert statuses[offer_id] == "ACCEPTED"
+    assert all(statuses[oid] == "SUPERSEDED" for oid in seeded)
+    meta = next(i for i in exchanges.items.values() if i.get("sk") == "META")
+    assert meta["status"] == "ACCEPTED"
+    assert len(allocations.items) == 1
+    assert resources.items["R-B-1"]["Available"] is False
+
+
+def test_supersede_followup_failure_healed_on_retry(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_open_exchange(
+        monkeypatch
+    )
+    seeded = _seed_competing_offers(exchanges, request_id, 3)
+    original_update = exchanges.update_item
+    fail_budget = {"n": 2}
+
+    def flaky_update(**kwargs):
+        values = kwargs.get("ExpressionAttributeValues") or {}
+        if values.get(":superseded") == "SUPERSEDED" and fail_budget["n"] > 0:
+            fail_budget["n"] -= 1
+            raise ClientError(
+                {"Error": {"Code": "ProvisionedThroughputExceededException"}},
+                "UpdateItem",
+            )
+        return original_update(**kwargs)
+
+    exchanges.update_item = flaky_update
+    use_memberships(monkeypatch, memberships((ORG_A, "OPERATOR")))
+    use_billing(monkeypatch, "ACTIVE")
+    path = f"/exchange/requests/{request_id}/offers/{offer_id}/accept"
+    first = handler.lambda_handler(event("POST", {"organization_id": ORG_A}, path=path), None)
+    assert first["statusCode"] == 200
+    # Hold succeeded even if some supersedes flaked in the first pass.
+    assert len(allocations.items) == 1
+    assert resources.items["R-B-1"]["Available"] is False
+
+    # Ensure at least one leftover OPEN if cleanup rounds exhausted mid-failure,
+    # then force leftovers and heal via idempotent retry.
+    for oid in seeded:
+        key = next(
+            k for k, v in exchanges.items.items() if v.get("offer_id") == oid
+        )
+        exchanges.items[key]["status"] = "OPEN"
+    fail_budget["n"] = 0
+    second = handler.lambda_handler(event("POST", {"organization_id": ORG_A}, path=path), None)
+    assert second["statusCode"] == 200
+    statuses = _offer_statuses(exchanges)
+    assert statuses[offer_id] == "ACCEPTED"
+    assert all(statuses[oid] == "SUPERSEDED" for oid in seeded)
+    assert len(allocations.items) == 1
+
+
+def test_competing_offer_cannot_be_accepted_after_request_accepted(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_open_exchange(
+        monkeypatch
+    )
+    seeded = _seed_competing_offers(exchanges, request_id, 2)
+    # Leave one competitor intentionally OPEN after accept by stubbing cleanup.
+    monkeypatch.setattr(service, "_supersede_competing_open_offers", lambda *a, **k: False)
+    use_memberships(monkeypatch, memberships((ORG_A, "OPERATOR")))
+    use_billing(monkeypatch, "ACTIVE")
+    first = handler.lambda_handler(
+        event(
+            "POST",
+            {"organization_id": ORG_A},
+            path=f"/exchange/requests/{request_id}/offers/{offer_id}/accept",
+        ),
+        None,
+    )
+    assert first["statusCode"] == 200
+    competitor = seeded[0]
+    assert _offer_statuses(exchanges)[competitor] == "OPEN"
+    blocked = handler.lambda_handler(
+        event(
+            "POST",
+            {"organization_id": ORG_A},
+            path=f"/exchange/requests/{request_id}/offers/{competitor}/accept",
+        ),
+        None,
+    )
+    assert blocked["statusCode"] == 409
+    assert len(allocations.items) == 1
+
+
+def test_failed_transaction_does_not_supersede_competitors(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_open_exchange(
+        monkeypatch
+    )
+    seeded = _seed_competing_offers(exchanges, request_id, 5)
+
+    def boom(items):
+        raise ClientError({"Error": {"Code": "TransactionCanceledException"}}, "TransactWriteItems")
+
+    monkeypatch.setattr(service, "_transact_write", boom)
+    use_memberships(monkeypatch, memberships((ORG_A, "OPERATOR")))
+    use_billing(monkeypatch, "ACTIVE")
+    failed = handler.lambda_handler(
+        event(
+            "POST",
+            {"organization_id": ORG_A},
+            path=f"/exchange/requests/{request_id}/offers/{offer_id}/accept",
+        ),
+        None,
+    )
+    assert failed["statusCode"] == 409
+    statuses = _offer_statuses(exchanges)
+    assert statuses[offer_id] == "OPEN"
+    assert all(statuses[oid] == "OPEN" for oid in seeded)
+    assert allocations.items == {}
+    assert resources.items["R-B-1"]["Available"] is True
+
+
+def test_non_open_competitor_preserved_on_accept(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_open_exchange(
+        monkeypatch
+    )
+    seeded = _seed_competing_offers(exchanges, request_id, 2)
+    withdrawn = seeded[0]
+    key = next(k for k, v in exchanges.items.items() if v.get("offer_id") == withdrawn)
+    exchanges.items[key]["status"] = "WITHDRAWN"
+    use_memberships(monkeypatch, memberships((ORG_A, "OPERATOR")))
+    use_billing(monkeypatch, "ACTIVE")
+    accepted = handler.lambda_handler(
+        event(
+            "POST",
+            {"organization_id": ORG_A},
+            path=f"/exchange/requests/{request_id}/offers/{offer_id}/accept",
+        ),
+        None,
+    )
+    assert accepted["statusCode"] == 200
+    statuses = _offer_statuses(exchanges)
+    assert statuses[withdrawn] == "WITHDRAWN"
+    assert statuses[seeded[1]] == "SUPERSEDED"
+    assert statuses[offer_id] == "ACCEPTED"
