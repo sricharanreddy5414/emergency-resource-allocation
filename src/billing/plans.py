@@ -1,4 +1,4 @@
-"""Server-side plan configuration. Prices are not decided."""
+"""Server-side plan configuration."""
 
 from .errors import BillingError
 
@@ -36,13 +36,13 @@ PLAN_RULES = {
     },
     "MONTHLY": {
         "billing_interval": "month",
-        "amount_minor": None,
-        "purchasable": False,
+        "amount_minor": 99900,
+        "purchasable": True,
     },
     "YEARLY": {
         "billing_interval": "year",
-        "amount_minor": None,
-        "purchasable": False,
+        "amount_minor": 999900,
+        "purchasable": True,
     },
 }
 
@@ -159,9 +159,9 @@ PLANS = {
             "plan_id": "MONTHLY",
             "display_name": "Monthly",
             "billing_interval": "month",
-            "amount_minor": None,
+            "amount_minor": 99900,
             "currency": "INR",
-            "purchasable": False,
+            "purchasable": True,
             "entitlements": {},
         }
     ),
@@ -170,9 +170,9 @@ PLANS = {
             "plan_id": "YEARLY",
             "display_name": "Yearly",
             "billing_interval": "year",
-            "amount_minor": None,
+            "amount_minor": 999900,
             "currency": "INR",
-            "purchasable": False,
+            "purchasable": True,
             "entitlements": {},
         }
     ),

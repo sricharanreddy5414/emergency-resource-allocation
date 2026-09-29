@@ -118,13 +118,13 @@ def test_plan_configuration():
     assert PLANS["GRANDFATHERED"]["purchasable"] is False
 
     assert PLANS["MONTHLY"]["billing_interval"] == "month"
-    assert PLANS["MONTHLY"]["amount_minor"] is None
+    assert PLANS["MONTHLY"]["amount_minor"] == 99900
     assert PLANS["MONTHLY"]["currency"] == "INR"
-    assert PLANS["MONTHLY"]["purchasable"] is False
+    assert PLANS["MONTHLY"]["purchasable"] is True
 
     assert PLANS["YEARLY"]["billing_interval"] == "year"
-    assert PLANS["YEARLY"]["amount_minor"] is None
-    assert PLANS["YEARLY"]["purchasable"] is False
+    assert PLANS["YEARLY"]["amount_minor"] == 999900
+    assert PLANS["YEARLY"]["purchasable"] is True
 
 
 def test_free_trial_cannot_use_a_paid_interval():
@@ -151,13 +151,22 @@ def test_monthly_cannot_use_the_yearly_interval():
         validate_plan_record(plan)
 
 
-@pytest.mark.parametrize("plan_id", ["FREE_TRIAL", "MONTHLY", "YEARLY", "GRANDFATHERED"])
-def test_current_plans_are_not_purchasable(plan_id):
+@pytest.mark.parametrize("plan_id", ["FREE_TRIAL", "GRANDFATHERED"])
+def test_non_commercial_plans_are_not_purchasable(plan_id):
     with pytest.raises(BillingError) as error:
         require_purchasable(plan_id)
 
     assert error.value.status_code == 409
     assert get_plan(plan_id)["purchasable"] is False
+
+
+@pytest.mark.parametrize("plan_id,amount", [("MONTHLY", 99900), ("YEARLY", 999900)])
+def test_commercial_plans_are_purchasable(plan_id, amount):
+    plan = require_purchasable(plan_id)
+
+    assert plan["purchasable"] is True
+    assert plan["amount_minor"] == amount
+    assert plan["currency"] == "INR"
 
 
 def test_negative_amount_is_rejected():

@@ -176,7 +176,7 @@ def body_of(result):
     return json.loads(result["body"])
 
 
-def test_owner_checkout_is_refused_while_plan_is_not_purchasable(monkeypatch):
+def test_owner_checkout_is_refused_while_total_count_is_unset(monkeypatch):
     table, provider, _organizations, _before = wire(monkeypatch, subscription=row())
 
     result = checkout_handler.lambda_handler(event({"plan_id": "MONTHLY"}), None)
@@ -347,15 +347,17 @@ def test_unknown_plan_is_rejected():
     assert error.value.status_code == 400
 
 
-def test_yearly_is_rejected_while_not_purchasable(monkeypatch):
+def test_yearly_checkout_is_refused_while_total_count_is_unset(monkeypatch):
     _table, provider, _organizations, _before = wire(monkeypatch, subscription=row())
 
     result = checkout_handler.lambda_handler(event({"plan_id": "YEARLY"}), None)
 
     assert result["statusCode"] == 409
     assert provider.calls == []
-    assert PLANS["YEARLY"]["purchasable"] is False
-    assert RAZORPAY_PLAN_LINKS["YEARLY"]["razorpay_plan_id"] is None
+    assert PLANS["YEARLY"]["purchasable"] is True
+    assert PLANS["YEARLY"]["amount_minor"] == 999900
+    assert RAZORPAY_PLAN_LINKS["YEARLY"]["razorpay_plan_id"].startswith("plan_")
+    assert RAZORPAY_PLAN_LINKS["YEARLY"]["total_count"] is None
 
 
 def test_missing_provider_plan_is_rejected():

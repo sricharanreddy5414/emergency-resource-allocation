@@ -59,16 +59,16 @@ Any other change is rejected. The frontend cannot set `subscription_status`.
 |---|---|---|---|---|
 | `FREE_TRIAL` | `none` | 0 minor units | INR | no |
 | `GRANDFATHERED` | `none` | 0 minor units | INR | no |
-| `MONTHLY` | `month` | unset | INR | no |
-| `YEARLY` | `year` | unset | INR | no |
+| `MONTHLY` | `month` | 99900 | INR | yes |
+| `YEARLY` | `year` | 999900 | INR | yes |
 
-Intervals are only `none`, `month`, and `year`. Money is an integer number of minor units (paise for INR). Floats are rejected. Monthly and yearly have no price because commercial pricing is not decided. `require_purchasable` rejects every current plan.
+Intervals are only `none`, `month`, and `year`. Money is an integer number of minor units (paise for INR). Floats are rejected. Monthly is ₹999 (`99900` paise) and yearly is ₹9,999 (`999900` paise). `require_purchasable` accepts those two plans and rejects the trial and grandfathered plans.
 
 Entitlement keys exist for later limits (`MAX_MEMBERS`, `MAX_LOCATIONS`, `MAX_RESOURCES`, `MAX_REQUESTS`, `ADVANCED_FEATURES`, `AUDIT_HISTORY`, `API_ACCESS`). Current plans set no limits, and nothing enforces them.
 
 ## Money representation
 
-INR 999.00 would be `99900` paise. No such price is configured. `amount_minor` is `0` for the trial and grandfathered plans, and `null` for monthly and yearly.
+INR 999.00 is `99900` paise, and INR 9,999.00 is `999900` paise. `amount_minor` is `0` for the trial and grandfathered plans.
 
 ## Event model
 
@@ -88,7 +88,7 @@ A missing `OrganizationSubscriptions` row means the same legacy access. `access_
 
 ## Future Razorpay integration
 
-Razorpay is the intended first provider. This phase does not call Razorpay, store Razorpay secrets, or open checkout. The `provider` value `razorpay` is reserved on events. Checkout must keep using `require_purchasable`, which fails while prices are unset.
+Razorpay is the intended first provider. The `provider` value `razorpay` is reserved on events. Checkout uses `require_purchasable` for the priced plans, then `provider_plan`. `total_count` is unset, so that second check still refuses checkout before Razorpay is called.
 
 ## Webhook architecture
 
@@ -121,7 +121,7 @@ Do not scan or update production organizations in Phase A. When a later phase ba
 
 Only an `OWNER` membership can call checkout. `ADMIN`, `OPERATOR`, and `MEMBER` receive 403. A missing token receives 401. `organization_id` in the body is only a selector. The write uses the organization from `authorize`. Organization A cannot open checkout for Organization B.
 
-The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` and `YEARLY` stay `purchasable: false`, and both Razorpay plan ids are unset, so checkout returns 409 `Plan is not currently available for purchase` and does not call Razorpay.
+The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` and `YEARLY` are purchasable and have Razorpay test plan ids. `total_count` stays unset because Razorpay requires either a finite billing-cycle count or an `end_at`, and ERAP does not invent a duration. Checkout therefore returns 409 `Plan is not currently available for purchase` and does not call Razorpay.
 
 When a later configuration makes a plan purchasable and sets a Razorpay plan id plus `total_count`, the provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty. The test key id must start with `rzp_test_`. The secret id must be `erap/billing/razorpay/test`, holding `key_id`, `key_secret`, and `webhook_secret`. Checkout uses the key pair. Phase D uses `webhook_secret` only to verify signatures. The secret value is not in git and is not created by this repository. A live key or any other secret id fails closed.
 
@@ -173,7 +173,7 @@ A missing token is 401. Errors use the existing `message` and `error.code` shape
 
 `GET /billing` returns `organization_id`, the subscription presentation, and `next_action`. The presentation keeps `TRIALING`, `ACTIVE`, `PAST_DUE`, `CANCELLED`, `EXPIRED`, and `GRANDFATHERED`. Empty timestamps are null. It does not return provider ids, the key secret, or the webhook secret. A missing row is presented as `GRANDFATHERED` with `next_action` `none` and is not written. `TRIALING`, `EXPIRED`, and `CANCELLED` use `subscribe`. `ACTIVE` uses `manage_subscription` until cancellation is requested, then `none`. `PAST_DUE` uses `payment_required`.
 
-`GET /billing/plans` returns `MONTHLY` and `YEARLY` with `plan_id`, `display_name`, `billing_interval`, `currency`, and `purchasable`. `amount_minor` is included only when a price is configured. It is omitted now. Razorpay plan ids, secrets, and entitlements are omitted.
+`GET /billing/plans` returns `MONTHLY` and `YEARLY` with `plan_id`, `display_name`, `billing_interval`, `currency`, `purchasable`, and `amount_minor`. Razorpay plan ids, secrets, and entitlements are omitted.
 
 `POST /billing/checkout` is the Phase C flow. The body may contain `plan_id` and a selector `organization_id`. Amount, currency, and provider ids are rejected. An unavailable plan returns 409 before any provider call. A successful provider response stores `provider_subscription_id` and does not set `ACTIVE`.
 
@@ -249,4 +249,4 @@ The billing page shows `pending_plan_id` as awaiting confirmation. It does not d
 
 ## What remains unimplemented
 
-Price activation, Razorpay plan ids, the grandfather backfill, one trial per owner, refunds, invoices, plan changes, provider repair fetches, creating the billing tables and `LifecycleDueIndex`, creating or deploying the billing routes, creating the Razorpay test secret, creating the expiry schedule, enabling live Razorpay, and deploying the billing workspace or `erap-billing-expiry`. `PAST_DUE` recovery is not a new checkout.
+An unset Razorpay `total_count`, so checkout does not start a subscription, the grandfather backfill, one trial per owner, refunds, invoices, plan changes, provider repair fetches, creating the billing tables and `LifecycleDueIndex`, creating or deploying the billing routes, creating the Razorpay test secret, creating the expiry schedule, enabling live Razorpay, and deploying the billing workspace or `erap-billing-expiry`. `PAST_DUE` recovery is not a new checkout.

@@ -16,7 +16,7 @@ sys.path[:0] = [
 from billing import api_handler
 from billing.errors import BillingError
 from billing.plans import PLANS, get_plan
-from billing.provider.razorpay import RazorpaySubscriptionProvider
+from billing.provider.razorpay import RAZORPAY_PLAN_LINKS, RazorpaySubscriptionProvider
 from test_organization import condition_pairs
 import membership
 
@@ -341,15 +341,27 @@ def test_plans_follow_the_billing_role_policy(monkeypatch):
     response, body, table, _history, _provider = call(monkeypatch, "GET", "/billing/plans", role="ADMIN")
     assert response["statusCode"] == 200
     assert [plan["plan_id"] for plan in body["plans"]] == ["MONTHLY", "YEARLY"]
-    assert all(plan["purchasable"] is False for plan in body["plans"])
-    assert all("amount_minor" not in plan for plan in body["plans"])
+    monthly, yearly = body["plans"]
+    assert monthly["display_name"] == "Monthly"
+    assert yearly["display_name"] == "Yearly"
+    assert monthly["purchasable"] is True
+    assert yearly["purchasable"] is True
+    assert monthly["amount_minor"] == 99900
+    assert yearly["amount_minor"] == 999900
+    assert monthly["currency"] == "INR"
+    assert yearly["currency"] == "INR"
     rendered = json.dumps(body)
-    assert "plan_Test" not in rendered
+    assert RAZORPAY_PLAN_LINKS["MONTHLY"]["razorpay_plan_id"] not in rendered
+    assert RAZORPAY_PLAN_LINKS["YEARLY"]["razorpay_plan_id"] not in rendered
     assert "rzp_" not in rendered
     assert "entitlements" not in rendered
     assert "razorpay" not in rendered
     assert table.reads == 0
-    assert PLANS["MONTHLY"]["purchasable"] is False
+    assert PLANS["MONTHLY"]["purchasable"] is True
+    assert RAZORPAY_PLAN_LINKS["MONTHLY"]["razorpay_plan_id"].startswith("plan_")
+    assert RAZORPAY_PLAN_LINKS["YEARLY"]["razorpay_plan_id"].startswith("plan_")
+    assert RAZORPAY_PLAN_LINKS["MONTHLY"]["total_count"] is None
+    assert RAZORPAY_PLAN_LINKS["YEARLY"]["total_count"] is None
     refused, _body, _table, _history, _provider = call(monkeypatch, "GET", "/billing/plans", role="MEMBER")
     assert refused["statusCode"] == 403
 

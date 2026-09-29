@@ -26,10 +26,13 @@ SUBSCRIPTIONS_URL = "https://api.razorpay.com/v1/subscriptions"
 TEST_SECRET_ID = "erap/billing/razorpay/test"
 TIMEOUT_SECONDS = 10
 
-# Commercial Razorpay plans are not created yet. None fails closed.
+# Test plan ids are not secrets. total_count stays unset because Razorpay
+# requires a finite billing-cycle count or an end_at, and ERAP does not
+# invent a subscription duration. provider_plan fails closed until that
+# decision exists, so checkout does not call Razorpay.
 RAZORPAY_PLAN_LINKS = {
-    "MONTHLY": {"razorpay_plan_id": None, "total_count": None},
-    "YEARLY": {"razorpay_plan_id": None, "total_count": None},
+    "MONTHLY": {"razorpay_plan_id": "plan_ThiWT35Gf1jyio", "total_count": None},
+    "YEARLY": {"razorpay_plan_id": "plan_ThiWTXOzBHl2Qb", "total_count": None},
 }
 
 
