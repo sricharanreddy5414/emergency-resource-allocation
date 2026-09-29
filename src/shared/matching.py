@@ -5,6 +5,8 @@ attributes. Requests without a request type keep the original type-name match.
 A resource from another organization is never selected.
 """
 
+from resource_state import emergency_matchable
+
 
 def _text(value):
     return str(value or "").strip()
@@ -94,7 +96,7 @@ def explain_match(resource, request):
     if _type_matches(resource, request):
         reasons.append("compatible resource type")
 
-    if _available(resource):
+    if emergency_matchable(resource):
         reasons.append("resource available")
 
     if resource.get("location_id") and resource.get("location_id") == request.get("location_id"):
@@ -126,7 +128,7 @@ def choose_resource(resources, request):
         if not _type_matches(resource, request):
             continue
 
-        if not _available(resource):
+        if not emergency_matchable(resource):
             continue
 
         if not _requirements_met(resource, request):

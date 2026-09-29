@@ -1,6 +1,33 @@
 # Resource management compatibility design
 
-Status: foundation implemented in `src/shared/resource_state.py` (Phase 1). Emergency matcher, allocation, release, and auto-release are unchanged. No migration and no deployment in that phase.
+Status: Phase 1 foundation and Phase 2 everyday operations are implemented in code on `feature/resource-management-2`. No migration and no deployment in these phases.
+
+## Phase 2 implementation (everyday operations)
+
+Code lives in `src/shared/everyday_operations.py`, wired from `src/resource/handler.py` on the existing `get-resources` Lambda.
+
+Operations:
+
+- Individual reservation and reservation release (`POST .../reserve`, `POST .../reservation-release`)
+- Individual everyday allocation and return (`POST .../everyday`, `POST .../everyday/return`)
+- Quantity reservation, allocation, and return on the same routes when `tracking_mode = QUANTITY`
+
+Everyday allocations use `allocation_type = EVERYDAY`, ids `EVERYDAY-...`, active status `OPEN`, finished status `RETURNED`. Emergency rows stay `ALLOC-{request_id}` with status `ALLOCATED`.
+
+Concurrency uses conditional `UpdateItem` and `TransactWriteItems` (resource update plus allocation put/return). Billing and tenant checks reuse `authorize()` from `access.py`.
+
+Emergency compatibility:
+
+- `src/shared/resource_state.py` — `emergency_matchable()` and claim condition helpers
+- `src/shared/matching.py` — matcher skips non-individual and non-available operational states
+- `src/allocation/service.py` — claim sets `operational_status = ALLOCATED` with expanded condition; failed allocation put restores `AVAILABLE`
+- `src/resource/handler.py` — emergency release restores `operational_status = AVAILABLE` when safe
+
+Auto-release continues to query `status = ALLOCATED` only; everyday `OPEN` rows are ignored.
+
+Tests: `tests/test_everyday_resource_operations.py` plus the full existing suite.
+
+API Gateway methods for the new paths are not added in this phase; the handler routes exist for the next infra step.
 
 ## Foundation implementation (Phase 1)
 

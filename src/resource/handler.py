@@ -20,6 +20,7 @@ from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 from observability import begin_request, error_body, load_object, log_result
 from pages import decode_token, encode_token
+from everyday_operations import EverydayOperationError, dispatch_everyday
 from resource_state import ResourceStateError, initialize_new_resource_fields, lifecycle_fields_from_body
 from visibility import PRIVATE_INDEX_ATTRIBUTES, publication_fields
 
@@ -98,6 +99,36 @@ def resource_types_table():
     return boto3.resource("dynamodb").Table(os.environ.get("RESOURCE_TYPES_TABLE", "ResourceTypes"))
 
 
+def everyday_route(body, path, organization_id, actor_sub, actor_role):
+    def load_resource(resource_id):
+        item = resources_table().get_item(Key={"resource_id": resource_id}).get("Item")
+        require_owned(item, organization_id)
+        return item
+
+    tables = {
+        "resources": resources_table(),
+        "allocations": allocations_table(),
+        "history": history_table(),
+        "audit": audit_table(),
+    }
+
+    try:
+        result = dispatch_everyday(
+            "POST",
+            path,
+            body,
+            organization_id,
+            actor_sub,
+            actor_role,
+            load_resource,
+            tables,
+        )
+    except EverydayOperationError as error:
+        return response(error.status_code, {"message": error.message})
+
+    return response(200, result)
+
+
 def is_available(value):
     if isinstance(value, str):
         return value.lower() == "true"
@@ -132,6 +163,14 @@ def lambda_handler(event, context):
         if method == "POST" and path.endswith("/release"):
             return release_resource(body, organization_id, _user_sub, membership.get("role"))
 
+        if method == "POST" and (
+            path.endswith("/reserve")
+            or path.endswith("/reservation-release")
+            or path.endswith("/everyday")
+            or path.endswith("/everyday/return")
+        ):
+            return everyday_route(body, path, organization_id, _user_sub, membership.get("role"))
+
         if method == "GET" and path.endswith("/history"):
             return resource_history(event, organization_id)
 
@@ -153,6 +192,8 @@ def lambda_handler(event, context):
         return response(400, {"message": str(error)})
     except ResourceStateError as error:
         return response(400, {"message": str(error)})
+    except EverydayOperationError as error:
+        return response(error.status_code, {"message": error.message})
     except Exception as error:
         print("Resource error:", error.__class__.__name__)
         return response(500, {"message": "Failed to process resource request"})
@@ -448,12 +489,17 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
     try:
         resources_table().update_item(
             Key={"resource_id": resource_id},
-            UpdateExpression="SET Available = :available",
-            ConditionExpression="attribute_exists(resource_id) AND Available = :allocated AND organization_id = :organization_id",
+            UpdateExpression="SET Available = :available, operational_status = :op_available",
+            ConditionExpression=(
+                "attribute_exists(resource_id) AND Available = :allocated AND organization_id = :organization_id "
+                "AND (attribute_not_exists(operational_status) OR operational_status = :op_allocated)"
+            ),
             ExpressionAttributeValues={
                 ":available": True,
                 ":allocated": False,
                 ":organization_id": organization_id,
+                ":op_available": "AVAILABLE",
+                ":op_allocated": "ALLOCATED",
             },
         )
         allocations_table().update_item(

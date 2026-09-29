@@ -155,6 +155,32 @@ def initialize_new_resource_fields(body, *, available):
     return fields
 
 
+def emergency_matchable(resource):
+    """True when the legacy emergency matcher may claim this resource."""
+    if not isinstance(resource, dict):
+        return False
+
+    if not available_flag(resource.get("Available")):
+        return False
+
+    if normalize_tracking_mode(resource.get("tracking_mode")) == "QUANTITY":
+        return False
+
+    stored = resource.get("operational_status")
+
+    if stored is None or not str(stored).strip():
+        return True
+
+    return str(stored).strip().upper() == "AVAILABLE"
+
+
+EMERGENCY_CLAIM_CONDITION = (
+    "#a = :true AND organization_id = :organization_id AND "
+    "(attribute_not_exists(operational_status) OR operational_status = :op_available) AND "
+    "(attribute_not_exists(tracking_mode) OR tracking_mode = :indiv)"
+)
+
+
 def lifecycle_fields_from_body(body):
     """Fields clients must not set through ordinary metadata update."""
     if not isinstance(body, dict):

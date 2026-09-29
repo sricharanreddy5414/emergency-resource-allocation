@@ -19,6 +19,15 @@ const RELEASE_RESOURCE_API_URL =
 const RESOURCE_HISTORY_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/resources/history";
 
+const RESOURCE_RESERVE_API_URL =
+    RESOURCES_API_URL + "/reserve";
+const RESOURCE_RESERVATION_RELEASE_API_URL =
+    RESOURCES_API_URL + "/reservation-release";
+const RESOURCE_EVERYDAY_ALLOCATE_API_URL =
+    RESOURCES_API_URL + "/everyday";
+const RESOURCE_EVERYDAY_RETURN_API_URL =
+    RESOURCES_API_URL + "/everyday/return";
+
 const REQUESTS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/requests";
 
@@ -61,6 +70,7 @@ const COGNITO_SCOPES =
 ========================================================= */
 
 let resources = [];
+const everydayAllocationByResource = {};
 let showAdminSection = function () {};
 let editingResourceId = "";
 
@@ -1613,7 +1623,8 @@ function initializeResourceDesk() {
             meta.textContent = [
                 resource.type,
                 resource.location,
-                getResourceStatus(resource),
+                "Emergency: " + getEmergencyAvailabilityLabel(resource),
+                "Operational: " + getOperationalStatusLabel(resource),
                 resource.visibility || "PRIVATE",
                 resource.id
             ].filter(Boolean).join(" · ");
@@ -2694,7 +2705,17 @@ function normalizeResources() {
                         resource.public_contact || "",
 
                     show_availability:
-                        resource.show_availability === true
+                        resource.show_availability === true,
+
+                    operational_status:
+                        resource.operational_status ??
+                        resource.operationalStatus ??
+                        "",
+
+                    tracking_mode:
+                        resource.tracking_mode ??
+                        resource.trackingMode ??
+                        "INDIVIDUAL"
 
                 };
 
@@ -3058,13 +3079,46 @@ function getResourceStatus(
     resource
 ) {
 
-    return isResourceAvailable(
-        resource
-    )
+    return getOperationalStatusLabel(resource);
 
+}
+
+
+function getEmergencyAvailabilityLabel(
+    resource
+) {
+
+    return isResourceAvailable(resource)
+        ? "Available"
+        : "Unavailable";
+
+}
+
+
+function getOperationalStatusLabel(
+    resource
+) {
+
+    const stored = String(
+        resource.operational_status || ""
+    ).trim().toUpperCase();
+
+    if (stored) {
+        return stored;
+    }
+
+    return isResourceAvailable(resource)
         ? "AVAILABLE"
-
         : "ALLOCATED";
+
+}
+
+
+function isQuantityResource(
+    resource
+) {
+
+    return String(resource.tracking_mode || "INDIVIDUAL").toUpperCase() === "QUANTITY";
 
 }
 
@@ -3084,9 +3138,11 @@ function canOperateResources() {
 
 function resourceRowActions(resource) {
 
-    const status = getResourceStatus(resource);
+    const operational = getOperationalStatusLabel(resource);
+    const canOperate = canOperateResources();
+    const quantity = isQuantityResource(resource);
 
-    const edit = canOperateResources()
+    const edit = canOperate
         ? `
             <button
                 type="button"
@@ -3098,17 +3154,62 @@ function resourceRowActions(resource) {
           `
         : "";
 
-    const release = status === "ALLOCATED"
-        ? `
-            <button
-                type="button"
-                class="release-resource-btn"
-                onclick="releaseResource('${escapeHtml(resource.id)}')"
-            >
-                Release
-            </button>
-          `
-        : "";
+    let everyday = "";
+
+    if (canOperate) {
+        if (quantity) {
+            everyday = `
+                <button type="button" class="resource-qty-reserve-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Reserve qty
+                </button>
+                <button type="button" class="resource-qty-allocate-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Allocate qty
+                </button>
+                <button type="button" class="resource-everyday-return-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Return qty
+                </button>
+            `;
+        } else if (operational === "AVAILABLE") {
+            everyday = `
+                <button type="button" class="resource-reserve-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Reserve
+                </button>
+                <button type="button" class="resource-everyday-allocate-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Allocate
+                </button>
+            `;
+        } else if (operational === "RESERVED") {
+            everyday = `
+                <button type="button" class="resource-reservation-release-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Release reservation
+                </button>
+                <button type="button" class="resource-everyday-allocate-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Allocate
+                </button>
+            `;
+        } else if (operational === "ALLOCATED") {
+            everyday = `
+                <button type="button" class="resource-everyday-return-btn" data-resource-id="${escapeHtml(resource.id)}">
+                    Return
+                </button>
+            `;
+        }
+    }
+
+    const emergencyRelease =
+        canOperate &&
+        !isResourceAvailable(resource) &&
+        operational !== "RESERVED"
+            ? `
+                <button
+                    type="button"
+                    class="release-resource-btn"
+                    onclick="releaseResource('${escapeHtml(resource.id)}')"
+                >
+                    Emergency release
+                </button>
+              `
+            : "";
 
     return `
 
@@ -3122,7 +3223,9 @@ function resourceRowActions(resource) {
 
         ${edit}
 
-        ${release}
+        ${everyday}
+
+        ${emergencyRelease}
 
     `;
 
@@ -3251,7 +3354,7 @@ function renderResourcesPage() {
 
             <tr>
 
-                <td colspan="6">
+                <td colspan="7">
                     No resources registered. Add a resource for this organization to start allocation.
                 </td>
 
@@ -3269,10 +3372,11 @@ function renderResourcesPage() {
             .map(
                 resource => {
 
-                    const status =
-                        getResourceStatus(
-                            resource
-                        );
+                    const emergencyLabel =
+                        getEmergencyAvailabilityLabel(resource);
+
+                    const operational =
+                        getOperationalStatusLabel(resource);
 
 
                     const action = resourceRowActions(resource);
@@ -3310,14 +3414,29 @@ function renderResourcesPage() {
 
                                 <span
                                     class="status-badge ${
-                                        status ===
-                                        "AVAILABLE"
+                                        emergencyLabel === "Available"
                                             ? "available"
                                             : "allocated"
                                     }"
                                 >
 
-                                    ${status}
+                                    ${escapeHtml(emergencyLabel)}
+
+                                </span>
+
+                            </td>
+
+                            <td>
+
+                                <span
+                                    class="status-badge ${
+                                        operational === "AVAILABLE"
+                                            ? "available"
+                                            : "allocated"
+                                    }"
+                                >
+
+                                    ${escapeHtml(operational)}
 
                                 </span>
 
@@ -3535,11 +3654,182 @@ async function viewResourceHistory(resourceId) {
 }
 
 
+async function postEverydayResource(url, payload) {
+
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + getIdToken(),
+        },
+        body: JSON.stringify({
+            ...payload,
+            organization_id: selectedOrganizationId(),
+        }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(data.message || "Request failed");
+    }
+
+    return data;
+}
+
+
+async function reserveResource(resourceId) {
+
+    try {
+        showToast("Reserving resource...");
+        await postEverydayResource(RESOURCE_RESERVE_API_URL, { resource_id: resourceId });
+        showToast("Resource reserved.");
+        await loadResources();
+    } catch (error) {
+        console.error("Reserve failed:", error);
+        showToast(error.message || "Unable to reserve resource.");
+    }
+}
+
+
+async function releaseResourceReservation(resourceId) {
+
+    try {
+        showToast("Releasing reservation...");
+        await postEverydayResource(RESOURCE_RESERVATION_RELEASE_API_URL, { resource_id: resourceId });
+        showToast("Reservation released.");
+        await loadResources();
+    } catch (error) {
+        console.error("Reservation release failed:", error);
+        showToast(error.message || "Unable to release reservation.");
+    }
+}
+
+
+async function everydayAllocateResource(resourceId, quantity) {
+
+    const body = { resource_id: resourceId };
+
+    if (quantity) {
+        body.quantity = quantity;
+    }
+
+    const purpose = window.prompt("Purpose (optional)", "") || "";
+
+    if (purpose.trim()) {
+        body.purpose = purpose.trim();
+    }
+
+    try {
+        showToast("Creating everyday allocation...");
+        const data = await postEverydayResource(RESOURCE_EVERYDAY_ALLOCATE_API_URL, body);
+
+        if (data.allocation_id) {
+            everydayAllocationByResource[resourceId] = data.allocation_id;
+        }
+
+        showToast(
+            data.allocation_id
+                ? `Allocated (${data.allocation_id}).`
+                : "Everyday allocation created."
+        );
+        await loadResources();
+    } catch (error) {
+        console.error("Everyday allocate failed:", error);
+        showToast(error.message || "Unable to allocate resource.");
+    }
+}
+
+
+async function everydayReturnResource(resourceId) {
+
+    let allocationId =
+        everydayAllocationByResource[resourceId] ||
+        window.prompt("Everyday allocation ID to return", "") ||
+        "";
+
+    allocationId = allocationId.trim();
+
+    if (!allocationId) {
+        showToast("Allocation ID is required to return.");
+        return;
+    }
+
+    try {
+        showToast("Returning everyday allocation...");
+        await postEverydayResource(RESOURCE_EVERYDAY_RETURN_API_URL, {
+            resource_id: resourceId,
+            allocation_id: allocationId,
+        });
+        delete everydayAllocationByResource[resourceId];
+        showToast("Everyday allocation returned.");
+        await loadResources();
+    } catch (error) {
+        console.error("Everyday return failed:", error);
+        showToast(error.message || "Unable to return allocation.");
+    }
+}
+
+
+function promptPositiveQuantity(label) {
+
+    const raw = window.prompt(label, "1");
+
+    if (raw === null) {
+        return null;
+    }
+
+    const value = Number.parseInt(String(raw).trim(), 10);
+
+    if (!Number.isFinite(value) || value < 1) {
+        showToast("Enter a whole number greater than zero.");
+        return null;
+    }
+
+    return value;
+}
+
+
+async function reserveQuantityResource(resourceId) {
+
+    const quantity = promptPositiveQuantity("Quantity to reserve");
+
+    if (!quantity) {
+        return;
+    }
+
+    try {
+        showToast("Reserving quantity...");
+        await postEverydayResource(RESOURCE_RESERVE_API_URL, {
+            resource_id: resourceId,
+            quantity,
+        });
+        showToast(`Reserved ${quantity} units.`);
+        await loadResources();
+    } catch (error) {
+        console.error("Quantity reserve failed:", error);
+        showToast(error.message || "Unable to reserve quantity.");
+    }
+}
+
+
+async function everydayAllocateQuantityResource(resourceId) {
+
+    const quantity = promptPositiveQuantity("Quantity to allocate");
+
+    if (!quantity) {
+        return;
+    }
+
+    await everydayAllocateResource(resourceId, quantity);
+}
+
+
 async function releaseResource(resourceId) {
 
     const confirmed =
         window.confirm(
-            `Release resource ${resourceId}?`
+            `Emergency release resource ${resourceId}?`
         );
 
     if (!confirmed) {
@@ -5250,6 +5540,55 @@ const rows =
 /* =========================================================
    EVENT LISTENERS
 ========================================================= */
+
+function everydayResourceDelegatedClick(event) {
+
+    const target = event.target.closest(
+        ".resource-reserve-btn, .resource-reservation-release-btn, " +
+        ".resource-everyday-allocate-btn, .resource-everyday-return-btn, " +
+        ".resource-qty-reserve-btn, .resource-qty-allocate-btn"
+    );
+
+    if (!target) {
+        return;
+    }
+
+    const resourceId = target.dataset.resourceId;
+
+    if (!resourceId) {
+        return;
+    }
+
+    if (target.classList.contains("resource-reserve-btn")) {
+        reserveResource(resourceId);
+        return;
+    }
+
+    if (target.classList.contains("resource-reservation-release-btn")) {
+        releaseResourceReservation(resourceId);
+        return;
+    }
+
+    if (target.classList.contains("resource-everyday-allocate-btn")) {
+        everydayAllocateResource(resourceId);
+        return;
+    }
+
+    if (target.classList.contains("resource-everyday-return-btn")) {
+        everydayReturnResource(resourceId);
+        return;
+    }
+
+    if (target.classList.contains("resource-qty-reserve-btn")) {
+        reserveQuantityResource(resourceId);
+        return;
+    }
+
+    if (target.classList.contains("resource-qty-allocate-btn")) {
+        everydayAllocateQuantityResource(resourceId);
+    }
+}
+
 
 function resourceHistoryDelegatedClick(event) {
 
@@ -8795,6 +9134,11 @@ async function initializeApp() {
     document.addEventListener(
         "click",
         resourceHistoryDelegatedClick
+    );
+
+    document.addEventListener(
+        "click",
+        everydayResourceDelegatedClick
     );
 
     document.addEventListener(

@@ -42,6 +42,10 @@ API `4c6dni17l3`, stage `dev`, region `eu-north-1`.
 | `PUT /allocate/resources` | `get-resources` | Replace metadata and visibility. Does not change `Available` |
 | `POST /allocate/resources/release` | `get-resources` | Release only when an `ALLOCATED` allocation and an `ALLOCATED` emergency request exist |
 | `GET /allocate/resources/history` | `get-resources` | Status history for one owned resource |
+| `POST /allocate/resources/reserve` | `get-resources` | Phase 2: individual or quantity reservation (handler; API Gateway method may be pending) |
+| `POST /allocate/resources/reservation-release` | `get-resources` | Phase 2: clear individual reservation |
+| `POST /allocate/resources/everyday` | `get-resources` | Phase 2: everyday allocation (`allocation_type=EVERYDAY`, status `OPEN`) |
+| `POST /allocate/resources/everyday/return` | `get-resources` | Phase 2: everyday return (status `RETURNED`) |
 | `POST /allocate` | `emergency-resource-allocation` | Create or match an emergency request, then allocate one available resource |
 | `GET /allocate/allocations` | `emergency-resource-allocation` | List allocations for the organization |
 | `GET /requests` | `create-request` | Emergency requests |

@@ -17,6 +17,7 @@ from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
 from matching import choose_resource, explain_match, sort_requests_by_priority
+from resource_state import EMERGENCY_CLAIM_CONDITION
 from observability import begin_request, error_body, load_object, log_result
 
 
@@ -285,13 +286,16 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         try:
             resources_table().update_item(
                 Key={"resource_id": resource_id},
-                UpdateExpression="SET #a = :false",
-                ConditionExpression="#a = :true AND organization_id = :organization_id",
+                UpdateExpression="SET #a = :false, operational_status = :op_allocated",
+                ConditionExpression=EMERGENCY_CLAIM_CONDITION,
                 ExpressionAttributeNames={"#a": "Available"},
                 ExpressionAttributeValues={
                     ":false": False,
                     ":true": True,
                     ":organization_id": organization_id,
+                    ":op_available": "AVAILABLE",
+                    ":indiv": "INDIVIDUAL",
+                    ":op_allocated": "ALLOCATED",
                 },
             )
         except ClientError as error:
@@ -335,12 +339,13 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
                 raise
             resources_table().update_item(
                 Key={"resource_id": resource_id},
-                UpdateExpression="SET Available = :available",
+                UpdateExpression="SET Available = :available, operational_status = :op_available",
                 ConditionExpression="organization_id = :organization_id AND Available = :held",
                 ExpressionAttributeValues={
                     ":available": True,
                     ":held": False,
                     ":organization_id": organization_id,
+                    ":op_available": "AVAILABLE",
                 },
             )
             return response(409, {"message": "Request is not eligible for allocation"})
