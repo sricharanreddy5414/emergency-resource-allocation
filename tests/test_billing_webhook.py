@@ -374,6 +374,53 @@ def test_payment_failure_pending_and_halted_move_to_past_due():
         assert events.rows["evt_" + event_name]["payment_state"] == payment_state
 
 
+def test_trial_ignores_events_that_cannot_confirm_activation():
+    cases = (
+        "subscription.pending",
+        "subscription.halted",
+        "subscription.cancelled",
+        "payment.failed",
+    )
+    for event_name in cases:
+        current = subscription(ORG_A, SUB_A)
+        current["pending_plan_id"] = "MONTHLY"
+        body = payload(event_name, SUB_A, payment_id="pay_NotActivation")
+        _, _, subscriptions, events = deliver(body, [current], event_id="evt_" + event_name)
+        row = subscriptions.rows[ORG_A]
+        stored = events.rows["evt_" + event_name]
+
+        assert row["subscription_status"] == "TRIALING"
+        assert row["plan_id"] == "FREE_TRIAL"
+        assert row["pending_plan_id"] == "MONTHLY"
+        assert stored["processing_status"] == "IGNORED"
+        assert stored["organization_id"] == ORG_A
+        assert row["provider_subscription_id"] == SUB_A
+
+
+def test_delayed_activation_and_charge_can_leave_trial():
+    later = int(datetime(2026, 10, 2, tzinfo=timezone.utc).timestamp())
+    for event_name in ("subscription.activated", "subscription.charged"):
+        current = subscription(ORG_A, SUB_A)
+        current["pending_plan_id"] = "MONTHLY"
+        current["updated_at"] = datetime(2026, 9, 30, tzinfo=timezone.utc).isoformat()
+        body = payload(
+            event_name,
+            SUB_A,
+            created_at=later,
+            period=(later, later + 2_592_000),
+            payment_id="pay_Delayed0001",
+        )
+        status, _, subscriptions, events = deliver(body, [current], event_id="evt_" + event_name)
+        row = subscriptions.rows[ORG_A]
+
+        assert status == 200
+        assert row["subscription_status"] == "ACTIVE"
+        assert row["plan_id"] == "MONTHLY"
+        assert row["pending_plan_id"] == ""
+        assert events.rows["evt_" + event_name]["processing_status"] == "PROCESSED"
+        assert events.rows["evt_" + event_name]["organization_id"] == ORG_A
+
+
 def test_past_due_recovers_to_active():
     body = payload("subscription.charged", SUB_A)
     _, _, subscriptions, _ = deliver(body, [subscription(ORG_A, SUB_A, "PAST_DUE")])
