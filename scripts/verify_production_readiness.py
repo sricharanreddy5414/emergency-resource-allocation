@@ -18,6 +18,7 @@ REQUIRED = {
     "docs/production-support.md": ("correlation id", "READ"),
     "docs/production-readiness-checklist.md": ("READY", "DEFERRED"),
     "docs/production-launch-gate.md": ("Production launch is NOT authorized by Phase 13.",),
+    "docs/saas-commercial-readiness.md": ("Production launch is NOT authorized by Phase 14.",),
     "docs/security-posture.md": ("Authentication",),
     "docs/disaster-recovery.md": ("NEVER restore directly over a production table during routine testing.",),
     "docs/observability.md": ("correlation_id",),

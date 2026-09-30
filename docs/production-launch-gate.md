@@ -4,6 +4,8 @@ Preparation only. This document does not launch ERAP.
 
 Production launch is NOT authorized by Phase 13.
 
+Phase 14 records the commercial model in `docs/saas-commercial-readiness.md`. Production launch is NOT authorized by Phase 14.
+
 Phase 15 is the launch decision. Phase 13 records whether the gates below can be checked with the current commands. A gate marked "check exists" means an operator can run it. It does not mean a launch is approved.
 
 | Gate | Check | Phase 13 result |
