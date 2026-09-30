@@ -58,6 +58,10 @@ from resource_state import (
 )
 from visibility import PRIVATE_INDEX_ATTRIBUTES
 
+# Captured at import so later tests that rebind sys.modules["service"]
+# cannot point QR helpers at a different, unpatched module.
+_THIS = sys.modules[__name__]
+
 # Core accept transaction: META + accepted offer + resource + allocation = 4.
 # Competing SUPERSEDED updates run post-commit (conditional) so a sibling
 # withdraw/reject race cannot cancel the hold, and DynamoDB's 100-item
@@ -1476,7 +1480,15 @@ def start_transfer(exchange_request_id, organization_id, actor_sub, actor_role, 
     }
 
 
-def confirm_handover(exchange_request_id, body, organization_id, actor_sub, actor_role, membership):
+def confirm_handover(
+    exchange_request_id,
+    body,
+    organization_id,
+    actor_sub,
+    actor_role,
+    membership,
+    qr_session=None,
+):
     """Requester confirms handover: TRANSFER_PENDING → COMPLETED + ownership/location."""
     if actor_role not in EXCHANGE_WRITE_ROLES:
         raise AccessError(403, "You are not allowed to perform this action")
@@ -1530,11 +1542,46 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
         raise ExchangeOperationError(409, "Offered resource is no longer eligible")
 
     mode = normalize_tracking_mode(resource.get("tracking_mode") or meta.get("tracking_mode"))
+    from handover_qr import audit_revoked, bind_for_handover, merge_channel
+
+    if qr_session is not None:
+        supplied = str((body or {}).get("destination_location_id") or "").strip()
+        locked = str(meta.get("destination_location_id") or "").strip()
+        if supplied and supplied != locked:
+            raise ExchangeOperationError(
+                400, "Destination location cannot be changed for QR handover"
+            )
+        if str(qr_session.get("resource_id") or "") != resource_id:
+            raise ExchangeOperationError(409, "Offered resource is no longer eligible")
+        if str(qr_session.get("offer_id") or "") != str(offer.get("offer_id") or ""):
+            raise ExchangeOperationError(409, "Accepted offer is not in ACCEPTED state")
+        body = dict(body or {})
+        body["destination_location_id"] = locked
+        if mode != "QUANTITY" and str(body.get("destination_resource_id") or "").strip():
+            raise ExchangeOperationError(
+                400, "Destination resource cannot be changed for QR handover"
+            )
+        if mode == "QUANTITY":
+            from quantity_handover import held_quantity
+
+            try:
+                session_qty = int(qr_session.get("quantity"))
+            except (TypeError, ValueError):
+                session_qty = -1
+            if session_qty != held_quantity(offer, allocation):
+                raise ExchangeOperationError(409, "Quantity must match the accepted exchange hold")
+
+    extra_items, audit_extra, revoked_session = bind_for_handover(
+        _THIS,
+        meta["exchange_request_id"],
+        qr_session,
+        _now_iso(),
+    )
     if mode == "QUANTITY":
         from quantity_handover import confirm_quantity_handover
 
-        return confirm_quantity_handover(
-            service=sys.modules[__name__],
+        result = confirm_quantity_handover(
+            service=_THIS,
             meta=meta,
             offer=offer,
             allocation=allocation,
@@ -1543,7 +1590,18 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
             organization_id=organization_id,
             actor_sub=actor_sub,
             actor_role=actor_role,
+            extra_transact_items=extra_items,
+            audit_extra=audit_extra,
         )
+        if revoked_session and result.get("message") == "Handover completed":
+            audit_revoked(
+                _THIS,
+                organization_id,
+                actor_sub,
+                actor_role,
+                revoked_session,
+            )
+        return result
 
     if str(resource.get("operational_status") or "").upper() != "ALLOCATED":
         raise ExchangeOperationError(409, "Resource is not exchange-held")
@@ -1666,6 +1724,7 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
             }
         },
     ]
+    transact_items.extend(extra_items)
 
     try:
         _transact_write(transact_items)
@@ -1718,14 +1777,17 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
             "exchange_request",
             request_id,
             location_id=new_location_id,
-            metadata={
-                "offer_id": oid,
-                "resource_id": resource_id,
-                "provider_organization_id": provider_org,
-                "requester_organization_id": organization_id,
-                "previous_location_id": previous_location_id,
-                "new_location_id": new_location_id,
-            },
+            metadata=merge_channel(
+                {
+                    "offer_id": oid,
+                    "resource_id": resource_id,
+                    "provider_organization_id": provider_org,
+                    "requester_organization_id": organization_id,
+                    "previous_location_id": previous_location_id,
+                    "new_location_id": new_location_id,
+                },
+                audit_extra,
+            ),
         ),
     )
     record_audit(
@@ -1738,15 +1800,26 @@ def confirm_handover(exchange_request_id, body, organization_id, actor_sub, acto
             "resource",
             resource_id,
             location_id=new_location_id,
-            metadata={
-                "exchange_request_id": request_id,
-                "offer_id": oid,
-                "provider_organization_id": provider_org,
-                "previous_location_id": previous_location_id,
-                "new_location_id": new_location_id,
-            },
+            metadata=merge_channel(
+                {
+                    "exchange_request_id": request_id,
+                    "offer_id": oid,
+                    "provider_organization_id": provider_org,
+                    "previous_location_id": previous_location_id,
+                    "new_location_id": new_location_id,
+                },
+                audit_extra,
+            ),
         ),
     )
+    if revoked_session:
+        audit_revoked(
+            _THIS,
+            organization_id,
+            actor_sub,
+            actor_role,
+            revoked_session,
+        )
 
     latest = _get_meta(request_id)
     try:
@@ -1832,6 +1905,45 @@ def _acceptance_response(meta, offer, allocation):
 def _transact_write(transact_items):
     """Execute TransactWriteItems. Tests may monkeypatch this helper."""
     _dynamodb_client().transact_write_items(TransactItems=transact_items)
+
+
+def issue_handover_qr(exchange_request_id, organization_id, actor_sub, actor_role, membership):
+    from handover_qr import issue_qr
+
+    return issue_qr(
+        _THIS,
+        exchange_request_id,
+        organization_id,
+        actor_sub,
+        actor_role,
+        membership,
+    )
+
+
+def preview_handover_qr(body, organization_id, actor_sub, actor_role, membership):
+    from handover_qr import preview_qr
+
+    return preview_qr(
+        _THIS,
+        body,
+        organization_id,
+        actor_sub,
+        actor_role,
+        membership,
+    )
+
+
+def confirm_handover_qr(body, organization_id, actor_sub, actor_role, membership):
+    from handover_qr import confirm_qr
+
+    return confirm_qr(
+        _THIS,
+        body,
+        organization_id,
+        actor_sub,
+        actor_role,
+        membership,
+    )
 
 
 # Phase 7A lifecycle recovery surface (cancel / reject / withdraw / expire).

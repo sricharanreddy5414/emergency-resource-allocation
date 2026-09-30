@@ -39,7 +39,15 @@ def record_audit(table, event):
     safe["metadata"] = {
         key: value
         for key, value in metadata.items()
-        if key not in {"token", "authorization", "password", "secret"}
+        if key not in {
+            "token",
+            "qr_payload",
+            "token_hash",
+            "active_token_hash",
+            "authorization",
+            "password",
+            "secret",
+        }
     }
 
     try:

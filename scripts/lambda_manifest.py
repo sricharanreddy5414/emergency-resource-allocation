@@ -109,6 +109,7 @@ EXCHANGE_PACKAGES = {
         "service.py": "src/exchange/service.py",
         "lifecycle.py": "src/exchange/lifecycle.py",
         "quantity_handover.py": "src/exchange/quantity_handover.py",
+        "handover_qr.py": "src/shared/handover_qr.py",
     },
     "erap-exchange-expiry": {
         **SHARED,
@@ -118,6 +119,7 @@ EXCHANGE_PACKAGES = {
         "service.py": "src/exchange/service.py",
         "lifecycle.py": "src/exchange/lifecycle.py",
         "quantity_handover.py": "src/exchange/quantity_handover.py",
+        "handover_qr.py": "src/shared/handover_qr.py",
     },
 }
 

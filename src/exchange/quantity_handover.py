@@ -31,6 +31,12 @@ class QuantityHandoverError(Exception):
         super().__init__(message)
 
 
+def _channel_metadata(metadata, audit_extra):
+    from handover_qr import merge_channel
+
+    return merge_channel(metadata, audit_extra)
+
+
 def held_quantity(offer, allocation):
     try:
         if allocation.get("quantity") is not None:
@@ -151,6 +157,8 @@ def confirm_quantity_handover(
     organization_id,
     actor_sub,
     actor_role,
+    extra_transact_items=None,
+    audit_extra=None,
 ):
     """Atomic quantity handover. service provides tables/helpers/error types."""
     error_cls = service.ExchangeOperationError
@@ -348,7 +356,10 @@ def confirm_quantity_handover(
     }
 
     try:
-        service._transact_write([meta_update, provider_update, destination_write, allocation_update])
+        service._transact_write(
+            [meta_update, provider_update, destination_write, allocation_update]
+            + list(extra_transact_items or [])
+        )
     except ClientError as error:
         code = error.response["Error"]["Code"]
         if code in {"TransactionCanceledException", "ConditionalCheckFailedException"}:
@@ -421,16 +432,19 @@ def confirm_quantity_handover(
             "exchange_request",
             request_id,
             location_id=new_location_id,
-            metadata={
-                "offer_id": oid,
-                "tracking_mode": "QUANTITY",
-                "quantity": quantity,
-                "source_resource_id": source_resource_id,
-                "destination_resource_id": destination_resource_id,
-                "destination_created": destination_created,
-                "provider_organization_id": provider_org,
-                "requester_organization_id": organization_id,
-            },
+            metadata=_channel_metadata(
+                {
+                    "offer_id": oid,
+                    "tracking_mode": "QUANTITY",
+                    "quantity": quantity,
+                    "source_resource_id": source_resource_id,
+                    "destination_resource_id": destination_resource_id,
+                    "destination_created": destination_created,
+                    "provider_organization_id": provider_org,
+                    "requester_organization_id": organization_id,
+                },
+                audit_extra,
+            ),
         ),
     )
     record_audit(
@@ -443,17 +457,20 @@ def confirm_quantity_handover(
             "resource",
             destination_resource_id,
             location_id=new_location_id,
-            metadata={
-                "exchange_request_id": request_id,
-                "offer_id": oid,
-                "tracking_mode": "QUANTITY",
-                "quantity": quantity,
-                "source_resource_id": source_resource_id,
-                "destination_resource_id": destination_resource_id,
-                "destination_created": destination_created,
-                "provider_organization_id": provider_org,
-                "requester_organization_id": organization_id,
-            },
+            metadata=_channel_metadata(
+                {
+                    "exchange_request_id": request_id,
+                    "offer_id": oid,
+                    "tracking_mode": "QUANTITY",
+                    "quantity": quantity,
+                    "source_resource_id": source_resource_id,
+                    "destination_resource_id": destination_resource_id,
+                    "destination_created": destination_created,
+                    "provider_organization_id": provider_org,
+                    "requester_organization_id": organization_id,
+                },
+                audit_extra,
+            ),
         ),
     )
 

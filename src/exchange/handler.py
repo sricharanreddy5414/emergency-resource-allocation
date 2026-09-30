@@ -13,6 +13,9 @@ Routes:
   POST   /exchange/requests/{exchange_request_id}/offers/{offer_id}/withdraw
   POST   /exchange/requests/{exchange_request_id}/transfer/start
   POST   /exchange/requests/{exchange_request_id}/handover/confirm
+  POST   /exchange/requests/{exchange_request_id}/handover/qr
+  POST   /exchange/handover/qr/preview
+  POST   /exchange/handover/qr/confirm
   GET    /exchange/offers?scope=mine
 
 OFFER CREATE does not hold. ACCEPT creates atomic EXCHANGE hold.
@@ -102,6 +105,21 @@ def _match_handover_confirm(path):
         path,
     )
     return match.group(1) if match else None
+
+
+def _match_handover_qr(path):
+    match = re.search(
+        r"/exchange/requests/(EXREQ-[A-Za-z0-9_-]+)/handover/qr$",
+        path,
+    )
+    return match.group(1) if match else None
+
+
+def _token_in_query(event):
+    query = event.get("queryStringParameters") or {}
+    if not isinstance(query, dict):
+        return False
+    return bool(query.get("token") or query.get("qr_payload"))
 
 
 def _match_cancel(path):
@@ -256,6 +274,51 @@ def lambda_handler(event, context):
             )
             result = service.confirm_handover(
                 handover_id,
+                body or {},
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
+        qr_issue_id = _match_handover_qr(path)
+
+        if qr_issue_id and method == "POST":
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.issue_handover_qr(
+                qr_issue_id,
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
+        if method == "POST" and path.endswith("/exchange/handover/qr/preview"):
+            if _token_in_query(event):
+                return response(400, {"message": "Token must be sent in the request body"})
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.preview_handover_qr(
+                body or {},
+                membership["organization_id"],
+                actor_sub,
+                membership.get("role"),
+                membership,
+            )
+            return response(200, result)
+
+        if method == "POST" and path.endswith("/exchange/handover/qr/confirm"):
+            if _token_in_query(event):
+                return response(400, {"message": "Token must be sent in the request body"})
+            actor_sub, membership = authorize(
+                event, body or {}, allowed_roles=EXCHANGE_WRITE_ROLES, access=WRITE_ACCESS
+            )
+            result = service.confirm_handover_qr(
                 body or {},
                 membership["organization_id"],
                 actor_sub,

@@ -396,6 +396,40 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                             {"Error": {"Code": "TransactionCanceledException"}},
                             "TransactWriteItems",
                         )
+                    if "#status = :active" in condition and item.get("status") != values.get(":active"):
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    if "expires_at = :expires" in condition and item.get("expires_at") != values.get(":expires"):
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    if "expires_at > :now" in condition and not (
+                        item.get("expires_at") and item.get("expires_at") > values.get(":now")
+                    ):
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    if "session_id = :sid" in condition and item.get("session_id") != values.get(":sid"):
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    if "version = :expected" in condition and item.get("version") != values.get(":expected"):
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    if "generation_count < :cap" in condition and int(item.get("generation_count") or 0) >= int(
+                        values.get(":cap")
+                    ):
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
                     planned.append(("ex_upd", key, values, expr))
                 elif table == "Resources":
                     item = resources.items.get(key["resource_id"])
@@ -435,6 +469,16 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                                 {"Error": {"Code": "TransactionCanceledException"}},
                                 "TransactWriteItems",
                             )
+                    elif values.get(":available") == "AVAILABLE" and "#a = :false" in condition:
+                        if (
+                            item.get("organization_id") != values.get(":provider")
+                            or item.get("operational_status") != "ALLOCATED"
+                            or item.get("Available") is not False
+                        ):
+                            raise ClientError(
+                                {"Error": {"Code": "TransactionCanceledException"}},
+                                "TransactWriteItems",
+                            )
                     elif not item.get("Available") or item.get("organization_id") != values.get(
                         ":organization_id"
                     ):
@@ -460,7 +504,15 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                 put = entry["Put"]
                 item = _decode(put["Item"])
                 table = put["TableName"]
-                if table == "Resources" or "resource_id" in item and "allocation_id" not in item:
+                if table == "ResourceExchanges":
+                    key = (item["pk"], item["sk"])
+                    if key in exchanges.items:
+                        raise ClientError(
+                            {"Error": {"Code": "TransactionCanceledException"}},
+                            "TransactWriteItems",
+                        )
+                    planned.append(("ex_put", item, None, None))
+                elif table == "Resources" or "resource_id" in item and "allocation_id" not in item:
                     if item["resource_id"] in resources.items:
                         raise ClientError(
                             {"Error": {"Code": "TransactionCanceledException"}},
@@ -505,6 +557,24 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                     item.pop("network_list_key", None)
                 if ":superseded" in expr and b.get(":superseded") == "SUPERSEDED":
                     item["status"] = "SUPERSEDED"
+                if "generation_count = generation_count +" in expr:
+                    item["generation_count"] = int(item.get("generation_count") or 0) + int(b[":one"])
+                    item["version"] = int(item.get("version") or 0) + int(b[":one"])
+                    item["active_token_hash"] = b.get(":hash")
+                    item["session_id"] = b.get(":session")
+                    item["status"] = b.get(":active_status") or item.get("status")
+                    item["expires_at"] = b.get(":expires")
+                    item["replaced_session_id"] = b.get(":old_session")
+                    item["updated_at"] = b.get(":now")
+                elif b.get(":next"):
+                    item["status"] = b[":next"]
+                    if ":ttl" in b:
+                        item["qr_ttl_epoch"] = int(b[":ttl"])
+                    item["updated_at"] = b.get(":now")
+                    if "REMOVE active_token_hash" in expr:
+                        item.pop("active_token_hash", None)
+            elif kind == "ex_put":
+                exchanges.items[(a["pk"], a["sk"])] = a
             elif kind == "res_upd":
                 item = resources.items[a["resource_id"]]
                 expr = c or ""
@@ -527,6 +597,9 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                     item["Available"] = True
                     item["operational_status"] = "AVAILABLE"
                     item["visibility"] = "PRIVATE"
+                elif b.get(":available") == "AVAILABLE" and b.get(":true") is True:
+                    item["Available"] = True
+                    item["operational_status"] = "AVAILABLE"
                 else:
                     item["Available"] = False
                     item["operational_status"] = "ALLOCATED"

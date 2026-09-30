@@ -53,6 +53,9 @@ ROUTES = (
     ),
     (("requests", "{exchange_request_id}", "transfer", "start"), ("POST",)),
     (("requests", "{exchange_request_id}", "handover", "confirm"), ("POST",)),
+    (("requests", "{exchange_request_id}", "handover", "qr"), ("POST",)),
+    (("handover", "qr", "preview"), ("POST",)),
+    (("handover", "qr", "confirm"), ("POST",)),
     (("offers",), ("GET",)),
 )
 

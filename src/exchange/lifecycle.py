@@ -483,6 +483,11 @@ def _cancel_with_hold_release(
             )
         )
 
+    from handover_qr import audit_revoked, revoke_active_for_request
+
+    qr_items, qr_session = revoke_active_for_request(service, request_id, now)
+    transact_items.extend(qr_items)
+
     try:
         service._transact_write(transact_items)
     except ClientError as error:
@@ -551,6 +556,14 @@ def _cancel_with_hold_release(
             },
         ),
     )
+    if qr_session:
+        audit_revoked(
+            service,
+            organization_id,
+            actor_sub,
+            actor_role,
+            qr_session,
+        )
 
     latest = service._get_meta(request_id)
     try:
