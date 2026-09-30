@@ -990,7 +990,11 @@ def query_due_exchange_items(now_text):
 
 
 def run_expiry(now=None, invocation_id=""):
+    from observability import begin_request, log_event
+
     service = _svc()
+    correlation = begin_request({"requestContext": {"requestId": invocation_id}})
+    log_event("INFO", "exchange-expiry", "run_expiry", "started", invocation_id=correlation)
     clock = now or datetime.now(timezone.utc)
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=timezone.utc)
@@ -1010,21 +1014,47 @@ def run_expiry(now=None, invocation_id=""):
             outcome = expire_open_offer(item, now=now_text)
         else:
             outcome = {"outcome": "skipped"}
-        counts[outcome.get("outcome", "skipped")] = counts.get(outcome.get("outcome", "skipped"), 0) + 1
-
-    print(
-        json_log(
-            invocation_id,
-            now_text,
-            counts,
+        name = str(outcome.get("outcome") or "skipped")
+        counts[name] = counts.get(name, 0) + 1
+        level = "INFO" if name == "expired" else "WARNING"
+        if name == "conflict":
+            level = "ERROR"
+        log_event(
+            level,
+            "exchange-expiry",
+            "run_expiry",
+            name,
+            invocation_id=correlation,
+            exchange_request_id=str(outcome.get("request_id") or ""),
+            exchange_offer_id=str(outcome.get("offer_id") or ""),
         )
-    )
+
+    json_log(correlation, now_text, counts)
     return counts
 
 
 def json_log(invocation_id, now_text, counts):
     import json
 
+    from observability import log_event
+
+    considered = sum(counts.values())
+    log_event(
+        "INFO",
+        "exchange-expiry",
+        "run_expiry",
+        "summary",
+        correlation_id=invocation_id or "",
+        invocation_id=invocation_id,
+        now=now_text,
+        items_considered=considered,
+        items_expired=counts.get("expired", 0),
+        items_skipped=counts.get("skipped", 0),
+        items_idempotent=counts.get("idempotent", 0),
+        items_conflict=counts.get("conflict", 0),
+        exchange_expiry=True,
+        counts=counts,
+    )
     return json.dumps(
         {
             "exchange_expiry": True,

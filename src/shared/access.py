@@ -78,9 +78,12 @@ def authorize(
     subscriptions=None,
 ):
     """Return (user_sub, membership). Fail closed."""
+    from observability import log_event, note_context
+
     user_sub = get_user_sub(event)
 
     if not user_sub:
+        log_event("WARNING", "authorization", "authorize", "unauthenticated")
         raise AccessError(401, "Authentication required")
 
     memberships = list_memberships(
@@ -90,6 +93,13 @@ def authorize(
     )
 
     if not memberships:
+        log_event(
+            "WARNING",
+            "authorization",
+            "authorize",
+            "membership_required",
+            actor_sub=user_sub,
+        )
         raise AccessError(403, "Organization membership is required")
 
     requested = requested_organization_id(event, body)
@@ -105,19 +115,51 @@ def authorize(
         )
 
         if not membership:
+            log_event(
+                "WARNING",
+                "authorization",
+                "authorize",
+                "tenant_mismatch",
+                actor_sub=user_sub,
+                organization_id=requested,
+            )
             raise AccessError(403, "Organization access denied")
     elif len(memberships) == 1:
         membership = memberships[0]
     else:
+        log_event(
+            "WARNING",
+            "authorization",
+            "authorize",
+            "selection_required",
+            actor_sub=user_sub,
+        )
         raise AccessError(400, "Organization selection is required")
 
     role = membership.get("role")
     status = membership.get("status") or "ACTIVE"
 
     if status != "ACTIVE":
+        log_event(
+            "WARNING",
+            "authorization",
+            "authorize",
+            "membership_inactive",
+            actor_sub=user_sub,
+            organization_id=membership.get("organization_id", ""),
+        )
         raise AccessError(403, "Organization access denied")
 
     if role not in allowed_roles:
+        log_event(
+            "WARNING",
+            "authorization",
+            "authorize",
+            "role_denied",
+            actor_sub=user_sub,
+            organization_id=membership.get("organization_id", ""),
+            role=role or "",
+        )
         raise AccessError(403, "You are not allowed to perform this action")
 
     if access == WRITE_ACCESS:
@@ -125,6 +167,16 @@ def authorize(
     elif access not in {READ_ACCESS, BILLING_ACCESS}:
         raise AccessError(500, "Unable to verify billing")
 
+    note_context(organization_id=membership.get("organization_id", ""), actor_sub=user_sub)
+    log_event(
+        "INFO",
+        "authorization",
+        "authorize",
+        "success",
+        organization_id=membership.get("organization_id", ""),
+        actor_sub=user_sub,
+        role=role or "",
+    )
     return user_sub, membership
 
 
@@ -139,10 +191,28 @@ def _require_operational_write(organization_id, subscriptions):
     try:
         item = table.get_item(Key={"organization_id": organization_id}).get("Item")
     except ClientError as error:
-        print("Billing entitlement read failed:", error.response["Error"]["Code"])
+        from observability import log_event
+
+        log_event(
+            "ERROR",
+            "authorization",
+            "authorize",
+            "billing_lookup_failed",
+            organization_id=organization_id,
+            error_code=error.response["Error"]["Code"],
+        )
         raise AccessError(500, "Unable to verify billing")
 
     if not is_operational_write_allowed(item):
+        from observability import log_event
+
+        log_event(
+            "WARNING",
+            "authorization",
+            "authorize",
+            "billing_denied",
+            organization_id=organization_id,
+        )
         raise AccessError(403, BILLING_REQUIRED, code="BILLING_REQUIRED")
 
 

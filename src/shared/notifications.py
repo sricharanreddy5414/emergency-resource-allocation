@@ -303,19 +303,20 @@ def emit_notification_event(
         error_code = ""
         if isinstance(error, ClientError):
             error_code = str((error.response.get("Error") or {}).get("Code") or "")
-        print(
-            "NOTIFICATION_EMIT_FAILED",
-            json.dumps(
-                {
-                    "event_code": event_code,
-                    "subject_id": str(subject_id or ""),
-                    "organization_id": str(recipient_organization_id or ""),
-                    "request_id": current_request_id(),
-                    "error": error.__class__.__name__,
-                    "error_code": error_code,
-                },
-                default=str,
-            ),
+        from observability import log_event
+
+        log_event(
+            "ERROR",
+            "notifications",
+            "notification_emit",
+            "failed",
+            event="NOTIFICATION_EMIT_FAILED",
+            event_code=event_code,
+            subject_id=str(subject_id or ""),
+            organization_id=str(recipient_organization_id or ""),
+            request_id=current_request_id(),
+            error=error.__class__.__name__,
+            error_code=error_code,
         )
 
 
@@ -384,19 +385,18 @@ def _emit_notification_event(
         body = existing.get("body") or body
         safe_payload = existing.get("payload") or safe_payload
         if str(existing.get("fanout_status") or "").upper() == "COMPLETE":
-            print(
+            from observability import log_event
+
+            log_event(
+                "WARNING",
+                "notifications",
                 "notification_emit",
-                json.dumps(
-                    {
-                        "event_id": eid,
-                        "event_code": code,
-                        "organization_id": org_id,
-                        "request_id": request_id,
-                        "outcome": "idempotent_complete",
-                        "recipient_count": 0,
-                    },
-                    default=str,
-                ),
+                "idempotent_complete",
+                notification_event_id=eid,
+                event_code=code,
+                organization_id=org_id,
+                request_id=request_id,
+                recipient_count=0,
             )
             return
 
@@ -442,19 +442,18 @@ def _emit_notification_event(
         ExpressionAttributeValues={":complete": "COMPLETE", ":count": written},
     )
 
-    print(
+    from observability import log_event
+
+    log_event(
+        "INFO" if created_new else "WARNING",
+        "notifications",
         "notification_emit",
-        json.dumps(
-            {
-                "event_id": eid,
-                "event_code": code,
-                "organization_id": org_id,
-                "request_id": request_id,
-                "outcome": "created" if created_new else "idempotent_fanout",
-                "recipient_count": written,
-            },
-            default=str,
-        ),
+        "created" if created_new else "idempotent_fanout",
+        notification_event_id=eid,
+        event_code=code,
+        organization_id=org_id,
+        request_id=request_id,
+        recipient_count=written,
     )
 
 

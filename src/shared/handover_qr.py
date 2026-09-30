@@ -34,15 +34,17 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43,80}")
 
 def log_qr(result, session_id="", exchange_request_id=""):
     """Structured metric line. Never includes the raw token or its hash."""
-    print(
-        json.dumps(
-            {
-                "qr_result": result,
-                "session_id": session_id or "",
-                "exchange_request_id": exchange_request_id or "",
-            },
-            default=str,
-        )
+    from observability import log_event
+
+    level = "INFO" if result in {"issued", "rotated", "confirmed", "previewed"} else "WARNING"
+    log_event(
+        level,
+        "qr",
+        "handover_qr",
+        result,
+        qr_result=result,
+        session_id=session_id or "",
+        exchange_request_id=exchange_request_id or "",
     )
 
 

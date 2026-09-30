@@ -623,29 +623,56 @@ def everyday_allocate_quantity(body, organization_id, actor_sub, actor_role, res
     }
 
 
+def _log_resource(operation, organization_id, actor_sub, resource_id):
+    from observability import log_event
+
+    log_event(
+        "INFO",
+        "resources",
+        operation,
+        "committed",
+        organization_id=organization_id,
+        actor_sub=actor_sub,
+        resource_id=resource_id,
+    )
+
+
 def dispatch_everyday(method, path, body, organization_id, actor_sub, actor_role, load_resource, tables):
     resource = load_resource(_resource_id(body))
+    resource_id = resource.get("resource_id") or _resource_id(body)
 
     if path.endswith("/reservation-release"):
-        return release_reservation(body, organization_id, actor_sub, actor_role, resource, tables)
+        result = release_reservation(body, organization_id, actor_sub, actor_role, resource, tables)
+        _log_resource("reservation.release", organization_id, actor_sub, resource_id)
+        return result
 
     if path.endswith("/reserve"):
         mode = normalize_tracking_mode(resource.get("tracking_mode"))
 
         if mode == "QUANTITY":
-            return reserve_quantity(body, organization_id, actor_sub, actor_role, resource, tables)
+            result = reserve_quantity(body, organization_id, actor_sub, actor_role, resource, tables)
+            _log_resource("quantity.reserve", organization_id, actor_sub, resource_id)
+            return result
 
-        return reserve_individual(body, organization_id, actor_sub, actor_role, resource, tables)
+        result = reserve_individual(body, organization_id, actor_sub, actor_role, resource, tables)
+        _log_resource("reserve", organization_id, actor_sub, resource_id)
+        return result
 
     if path.endswith("/everyday/return"):
-        return everyday_return(body, organization_id, actor_sub, actor_role, resource, tables)
+        result = everyday_return(body, organization_id, actor_sub, actor_role, resource, tables)
+        _log_resource("everyday.return", organization_id, actor_sub, resource_id)
+        return result
 
     if path.endswith("/everyday"):
         mode = normalize_tracking_mode(resource.get("tracking_mode"))
 
         if mode == "QUANTITY":
-            return everyday_allocate_quantity(body, organization_id, actor_sub, actor_role, resource, tables)
+            result = everyday_allocate_quantity(body, organization_id, actor_sub, actor_role, resource, tables)
+            _log_resource("quantity.allocate", organization_id, actor_sub, resource_id)
+            return result
 
-        return everyday_allocate_individual(body, organization_id, actor_sub, actor_role, resource, tables)
+        result = everyday_allocate_individual(body, organization_id, actor_sub, actor_role, resource, tables)
+        _log_resource("everyday.allocate", organization_id, actor_sub, resource_id)
+        return result
 
     raise EverydayOperationError(404, "Not found")

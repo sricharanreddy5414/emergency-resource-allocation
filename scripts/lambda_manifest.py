@@ -175,6 +175,7 @@ BILLING_PACKAGES = {
         "handler.py": "src/billing/webhook_handler.py",
     },
     "erap-billing-expiry": {
+        "observability.py": "src/shared/observability.py",
         "billing/__init__.py": "src/billing/__init__.py",
         "billing/errors.py": "src/billing/errors.py",
         "billing/models.py": "src/billing/models.py",

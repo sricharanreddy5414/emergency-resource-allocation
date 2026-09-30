@@ -1,8 +1,15 @@
-"""Request correlation and safe error bodies. Tokens are never logged."""
+"""Request correlation and safe operational logs. Tokens are never logged.
 
+Actor identifiers in logs are SHA-256 of the UTF-8 Cognito sub, truncated to
+16 hex characters. The hash is deterministic and not reversible. The raw sub
+is not written to CloudWatch.
+"""
+
+import hashlib
 import json
+import re
+import secrets
 import time
-import uuid
 from contextvars import ContextVar
 
 
@@ -19,10 +26,53 @@ _CODES = {
 }
 
 
+_REDACTED_KEYS = {
+    "authorization",
+    "cookie",
+    "password",
+    "mfa",
+    "otp",
+    "secret",
+    "webhook_secret",
+    "signature",
+    "token",
+    "qr_payload",
+    "qr_token",
+    "token_hash",
+    "active_token_hash",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "card",
+    "cvv",
+    "email",
+    "phone",
+    "body",
+    "headers",
+    "environment",
+}
+_ID_RE = re.compile(r"\b(EXREQ-[A-Za-z0-9_-]+|EXOFF-[A-Za-z0-9_-]+)\b")
+
+
+def actor_hash(actor_sub):
+    text = str(actor_sub or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _sensitive_text(value):
+    text = str(value or "")
+    if "bearer " in text.lower():
+        return True
+    parts = text.split(".")
+    return len(parts) == 3 and all(len(part) > 8 for part in parts)
+
+
 def begin_request(event):
     event = event or {}
     context = event.get("requestContext") or {}
-    request_id = str(context.get("requestId") or "").strip() or uuid.uuid4().hex[:16]
+    request_id = str(context.get("requestId") or "").strip() or secrets.token_hex(8)
     method = str(event.get("httpMethod") or context.get("http", {}).get("method") or "").upper()
     path = str(event.get("path") or event.get("rawPath") or "")
     meta = {
@@ -37,6 +87,48 @@ def begin_request(event):
 def current_request_id():
     meta = _meta.get()
     return meta["request_id"] if meta else ""
+
+
+def note_context(*, organization_id="", actor_sub=""):
+    meta = dict(_meta.get() or {})
+    if organization_id:
+        meta["organization_id"] = str(organization_id)
+    if actor_sub:
+        meta["actor_sub_hash"] = actor_hash(actor_sub)
+    _meta.set(meta)
+
+
+def log_event(level, service, operation, outcome, **fields):
+    """One JSON line. Secret-shaped fields and raw actor subs are dropped."""
+    allowed_level = str(level or "INFO").upper()
+    if allowed_level not in {"INFO", "WARNING", "ERROR"}:
+        allowed_level = "INFO"
+    meta = _meta.get() or {}
+    payload = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "level": allowed_level,
+        "service": str(service or ""),
+        "operation": str(operation or ""),
+        "outcome": str(outcome or ""),
+        "correlation_id": meta.get("request_id", ""),
+    }
+    if meta.get("organization_id") and "organization_id" not in fields:
+        payload["organization_id"] = meta.get("organization_id")
+    if meta.get("actor_sub_hash") and "actor_sub_hash" not in fields:
+        payload["actor_sub_hash"] = meta.get("actor_sub_hash")
+    for key, value in fields.items():
+        name = str(key)
+        if name.lower() in _REDACTED_KEYS or name in {"actor_sub", "user_sub"}:
+            if name in {"actor_sub", "user_sub"}:
+                payload["actor_sub_hash"] = actor_hash(value)
+            continue
+        if isinstance(value, str) and _sensitive_text(value):
+            continue
+        if value is None or value == "":
+            continue
+        payload[name] = value
+    print(json.dumps(payload, default=str))
+    return payload
 
 
 def load_object(raw, is_base64=False):
@@ -92,22 +184,33 @@ def log_result(status_code, operation="", organization_id="", entity_type="", en
         return
     started = meta.get("started")
     duration_ms = int((time.monotonic() - started) * 1000) if started else 0
-    print(
-        json.dumps(
-            {
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "request_id": meta.get("request_id", ""),
-                "route": route,
-                "operation": operation or route,
-                "result": status_code,
-                "duration_ms": duration_ms,
-                "organization_id": organization_id or "",
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "error_code": error_code,
-            },
-            default=str,
-        )
+    found = _ID_RE.findall(route)
+    exchange_request_id = next((item for item in found if item.startswith("EXREQ-")), "")
+    exchange_offer_id = next((item for item in found if item.startswith("EXOFF-")), "")
+    level = "INFO"
+    outcome = "ok"
+    if status_code >= 500:
+        level = "ERROR"
+        outcome = "failed"
+    elif status_code >= 400:
+        level = "WARNING"
+        outcome = "denied"
+    log_event(
+        level,
+        "api",
+        operation or route,
+        outcome,
+        request_id=meta.get("request_id", ""),
+        correlation_id=meta.get("request_id", ""),
+        route=route,
+        result=status_code,
+        duration_ms=duration_ms,
+        organization_id=organization_id or meta.get("organization_id", ""),
+        entity_type=entity_type,
+        entity_id=entity_id,
+        error_code=error_code,
+        exchange_request_id=exchange_request_id,
+        exchange_offer_id=exchange_offer_id,
     )
 
 

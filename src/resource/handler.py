@@ -18,7 +18,7 @@ from access import (
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
-from observability import begin_request, error_body, load_object, log_result
+from observability import begin_request, error_body, load_object, log_event, log_result
 from pages import decode_token, encode_token
 from everyday_operations import EverydayOperationError, dispatch_everyday
 from lifecycle_operations import LifecycleOperationError, dispatch_lifecycle
@@ -238,7 +238,7 @@ def lambda_handler(event, context):
     except LifecycleOperationError as error:
         return response(error.status_code, {"message": error.message})
     except Exception as error:
-        print("Resource error:", error.__class__.__name__)
+        log_event("ERROR", "resources", "request", "failed", error_code=error.__class__.__name__)
         return response(500, {"message": "Failed to process resource request"})
 
 
@@ -415,9 +415,26 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
         if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return response(409, {"message": "Resource ID already exists"})
 
-        print("Resource registration error:", error.response["Error"]["Code"])
+        log_event(
+            "ERROR",
+            "resources",
+            "resource.create",
+            "failed",
+            organization_id=organization_id,
+            resource_id=resource_id,
+            error_code=error.response["Error"]["Code"],
+        )
         return response(500, {"message": "Failed to register resource"})
 
+    log_event(
+        "INFO",
+        "resources",
+        "resource.create",
+        "committed",
+        organization_id=organization_id,
+        actor_sub=actor_sub,
+        resource_id=resource_id,
+    )
     record_audit(
         audit_table(),
         build_audit_event(
@@ -602,7 +619,15 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
             },
         )
     except ClientError as error:
-        print("Resource release error:", error.response["Error"]["Code"])
+        log_event(
+            "ERROR",
+            "resources",
+            "resource.release",
+            "failed",
+            organization_id=organization_id,
+            resource_id=resource_id,
+            error_code=error.response["Error"]["Code"],
+        )
         return response(409, {"message": "Resource could not be released"})
 
     if resource.get("visibility") == "PUBLIC" and resource.get("show_availability") is True:

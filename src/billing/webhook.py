@@ -37,7 +37,7 @@ def process_webhook(event, subscriptions, events, secret, now=None):
     try:
         existing = _begin(events, event_id, parsed, now)
     except ClientError as error:
-        print("Webhook record failed:", error.response["Error"]["Code"])
+        _log(event_id, "", "", "", "FAILED", error.response["Error"]["Code"])
         return 500, {"message": "Unable to record billing event"}
 
     if existing in {"PROCESSED", "IGNORED"}:
@@ -47,13 +47,27 @@ def process_webhook(event, subscriptions, events, secret, now=None):
     try:
         outcome = _apply(subscriptions, parsed, resume=existing == "resume")
     except ClientError as error:
-        print("Webhook subscription update failed:", error.response["Error"]["Code"])
+        _log(
+            event_id,
+            parsed.get("event_type") or "",
+            "",
+            parsed.get("provider_subscription_id") or "",
+            "FAILED",
+            error.response["Error"]["Code"],
+        )
         return 500, {"message": "Unable to record billing event"}
 
     try:
         _finish(events, event_id, parsed, outcome, now)
     except ClientError as error:
-        print("Webhook record failed:", error.response["Error"]["Code"])
+        _log(
+            event_id,
+            parsed.get("event_type") or "",
+            "",
+            parsed.get("provider_subscription_id") or "",
+            "FAILED",
+            error.response["Error"]["Code"],
+        )
         return 500, {"message": "Unable to record billing event"}
 
     _log(
@@ -376,12 +390,26 @@ def _header(event, name):
     return ""
 
 
-def _log(event_id, event_type, organization_id, provider_subscription_id, processing_status):
-    print(json.dumps({
-        "provider": "razorpay",
-        "provider_event_id": event_id,
-        "event_type": event_type,
-        "organization_id": organization_id,
-        "provider_subscription_id": provider_subscription_id,
-        "processing_status": processing_status,
-    }))
+def _log(event_id, event_type, organization_id, provider_subscription_id, processing_status, error_code=""):
+    from observability import log_event
+
+    status = str(processing_status or "")
+    if status in {"PROCESSED"}:
+        level, outcome = "INFO", "processed"
+    elif status in {"IGNORED", "REJECTED"}:
+        level, outcome = "WARNING", status.lower()
+    else:
+        level, outcome = "ERROR", "failed"
+    log_event(
+        level,
+        "billing",
+        "webhook",
+        outcome,
+        provider="razorpay",
+        billing_event_id=event_id,
+        event_type=event_type,
+        organization_id=organization_id,
+        provider_subscription_id=provider_subscription_id,
+        processing_status=status,
+        error_code=error_code,
+    )

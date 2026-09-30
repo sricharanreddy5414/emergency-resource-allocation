@@ -171,7 +171,18 @@ def _commit(
             )
             return "skipped"
 
-        print("Expiry update failed:", code)
+        from observability import log_event
+
+        log_event(
+            "ERROR",
+            "billing-expiry",
+            "lifecycle",
+            "failed",
+            error_code=code,
+            organization_id=item.get("organization_id") or "",
+            invocation_id=invocation_id or "",
+            correlation_id=invocation_id or "",
+        )
         raise
 
     outcome = "expired" if target == "EXPIRED" else "cancelled"
@@ -190,11 +201,20 @@ def _reached(value, now):
 
 
 def _log(invocation_id, action, organization_id, before, after, now):
-    print(json.dumps({
-        "lifecycle_action": action,
-        "organization_id": organization_id or "",
-        "subscription_status_before": before or "",
-        "subscription_status_after": after or "",
-        "at": format_utc(now),
-        "invocation_id": invocation_id or "",
-    }))
+    from observability import log_event
+
+    outcome = action or "skipped"
+    level = "WARNING" if outcome == "skipped" else "INFO"
+    log_event(
+        level,
+        "billing-expiry",
+        "lifecycle",
+        outcome,
+        lifecycle_action=action,
+        organization_id=organization_id or "",
+        subscription_status_before=before or "",
+        subscription_status_after=after or "",
+        at=format_utc(now),
+        invocation_id=invocation_id or "",
+        correlation_id=invocation_id or "",
+    )

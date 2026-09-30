@@ -145,7 +145,7 @@ Checkout success does not activate a subscription. Only a verified webhook can d
 
 `POST /billing/webhook` is deployed without Cognito. The test secret exists. Live Razorpay is not enabled. Pilot data is not modified by billing deployment.
 
-Razorpay authenticates the call with `X-Razorpay-Signature`. The signature is HMAC-SHA256 of the exact raw body, hex-encoded, compared with `hmac.compare_digest` against `webhook_secret` from `erap/billing/razorpay/test`. The body is not parsed and reserialized before the check. A missing or invalid signature returns 401, writes no `BillingEvents` row, and does not read `organization_id` from the payload. The response and logs do not contain the secret or the calculated signature.
+Razorpay authenticates the call with `X-Razorpay-Signature`. The signature is HMAC-SHA256 of the exact raw body, hex-encoded, compared with `hmac.compare_digest` against `webhook_secret` from `erap/billing/razorpay/test`. The body is not parsed and reserialized before the check. A missing or invalid signature returns 401, writes no `BillingEvents` row, and does not read `organization_id` from the payload. The response and logs do not contain the secret, the calculated signature, or the raw body. Webhook lines are JSON (`docs/observability.md`).
 
 `X-Razorpay-Event-Id` is `provider_event_id`. A missing id returns 400 and is not invented. The first verified delivery writes the event with `attribute_not_exists(provider_event_id)` and status `RECEIVED`. A later delivery of a `PROCESSED` or `IGNORED` id returns 200 and does not change the subscription or `processed_at`.
 

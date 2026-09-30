@@ -436,13 +436,15 @@ TTL deletion is eventually consistent; design must tolerate ghost reads briefly.
 
 ## 19. Observability
 
-Structured logs (no tokens):
+Structured logs (no tokens). Phase 11B writes these as JSON lines. Field names and redaction are in `docs/observability.md`.
 
 - `notification_emit` — event_id, event_code, org_id, recipient_count, request_id, outcome
 - `NOTIFICATION_EMIT_FAILED` — event code, subject, organization, request id, exception class, and DynamoDB error code. No tokens, secrets, or raw QR payloads.
 - `notification_read` / `notification_read_all`
 
-Metrics (CloudWatch, implementation phase):
+Metrics below were design notes. Phase 11B did not create them. Organization and user identifiers stay out of metric dimensions.
+
+Metrics (CloudWatch, not implemented):
 
 - `NotificationsEmitted`
 - `NotificationsEmitFailures`

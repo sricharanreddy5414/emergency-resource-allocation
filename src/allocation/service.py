@@ -165,7 +165,15 @@ def lambda_handler(event, context):
     except ValueError:
         return response(400, {"message": "Invalid request format"})
     except Exception as error:
-        print("Allocation error:", error.__class__.__name__)
+        from observability import log_event
+
+        log_event(
+            "ERROR",
+            "allocation",
+            "allocate",
+            "failed",
+            error_code=error.__class__.__name__,
+        )
         return response(500, {"message": "Unable to process allocation"})
 
 
@@ -302,7 +310,17 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
             if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 continue
 
-            print("Reserve error:", error.response["Error"]["Code"])
+            from observability import log_event
+
+            log_event(
+                "ERROR",
+                "allocation",
+                "reserve",
+                "failed",
+                organization_id=organization_id,
+                resource_id=resource_id,
+                error_code=error.response["Error"]["Code"],
+            )
             return response(500, {"message": "Unable to process allocation"})
 
         allocation_id = "ALLOC-" + current_request_id
@@ -403,6 +421,18 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         )
 
         if current_request_id == request_id:
+            from observability import log_event
+
+            log_event(
+                "INFO",
+                "allocation",
+                "allocate",
+                "committed",
+                organization_id=organization_id,
+                actor_sub=actor_sub,
+                request_id=current_request_id,
+                resource_id=resource_id,
+            )
             return response(
                 200,
                 {

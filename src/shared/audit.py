@@ -54,7 +54,38 @@ def record_audit(table, event):
         if table is not None:
             table.put_item(Item=safe)
     except Exception as error:
-        print("Audit write skipped:", error.__class__.__name__)
+        from observability import log_event
 
-    print("AUDIT", json.dumps(safe, default=str))
+        log_event(
+            "ERROR",
+            "audit",
+            "write",
+            "failed",
+            error_code=error.__class__.__name__,
+            organization_id=safe.get("organization_id") or "",
+        )
+
+    from observability import log_event
+
+    logged = dict(safe)
+    actor = logged.pop("actor_sub", "")
+    entity_id = str(logged.get("entity_id") or "")
+    identifiers = {}
+    if entity_id.startswith("EXREQ-"):
+        identifiers["exchange_request_id"] = entity_id
+    elif entity_id.startswith("EXOFF-"):
+        identifiers["exchange_offer_id"] = entity_id
+    elif logged.get("entity_type") == "resource":
+        identifiers["resource_id"] = entity_id
+    log_event(
+        "INFO",
+        "audit",
+        logged.get("action") or "audit",
+        str(logged.get("result") or "SUCCESS").lower(),
+        organization_id=logged.get("organization_id") or "",
+        actor_sub=actor,
+        entity_type=logged.get("entity_type") or "",
+        entity_id=entity_id,
+        **identifiers,
+    )
     return safe

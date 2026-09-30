@@ -36,7 +36,7 @@ from access import (
 from common import ALLOWED_ORIGIN
 from exchange_model import EXCHANGE_READ_ROLES, EXCHANGE_WRITE_ROLES
 import service
-from observability import begin_request, error_body, load_object, log_result
+from observability import begin_request, error_body, load_object, log_event, log_result
 
 
 def response(status_code, body):
@@ -44,6 +44,9 @@ def response(status_code, body):
 
     if isinstance(payload, dict):
         log_result(status_code, operation="exchange", error_code=payload.get("error", {}).get("code", ""))
+        message = str(payload.get("message") or "")
+        if status_code < 400 and "already" in message.lower():
+            log_event("WARNING", "exchange", "request", "idempotent")
 
     return {
         "statusCode": status_code,
@@ -378,8 +381,20 @@ def lambda_handler(event, context):
             body["code"] = error.code
         return response(error.status_code, body)
     except ClientError as error:
-        print("Exchange error:", error.response["Error"]["Code"])
+        log_event(
+            "ERROR",
+            "exchange",
+            "request",
+            "failed",
+            error_code=error.response["Error"]["Code"],
+        )
         return response(500, {"message": "Unable to process exchange request"})
     except Exception as error:
-        print("Exchange error:", type(error).__name__)
+        log_event(
+            "ERROR",
+            "exchange",
+            "request",
+            "failed",
+            error_code=type(error).__name__,
+        )
         return response(500, {"message": "Unable to process exchange request"})

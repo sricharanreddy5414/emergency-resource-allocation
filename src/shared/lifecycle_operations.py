@@ -516,25 +516,32 @@ def unassign_resource(body, organization_id, actor_sub, actor_role, resource, ta
 
 
 def dispatch_lifecycle(path, body, organization_id, actor_sub, actor_role, load_resource, tables):
+    from everyday_operations import _log_resource
+
     resource = load_resource(_resource_id(body))
+    resource_id = resource.get("resource_id") or _resource_id(body)
+
+    def finish(operation, result):
+        _log_resource(operation, organization_id, actor_sub, resource_id)
+        return result
 
     if path.endswith("/maintenance/complete"):
-        return complete_maintenance(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("maintenance.complete", complete_maintenance(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/maintenance"):
-        return start_maintenance(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("maintenance.start", start_maintenance(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/damage/recover"):
-        return recover_damage(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("damage.recover", recover_damage(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/damage"):
-        return mark_damaged(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("damage.mark", mark_damaged(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/retire"):
-        return retire_resource(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("retire", retire_resource(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/in-use/return"):
-        return return_to_available(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("in_use.return", return_to_available(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/in-use"):
-        return mark_in_use(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("in_use", mark_in_use(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/unassign"):
-        return unassign_resource(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("unassign", unassign_resource(body, organization_id, actor_sub, actor_role, resource, tables))
     if path.endswith("/assign"):
-        return assign_resource(body, organization_id, actor_sub, actor_role, resource, tables)
+        return finish("assign", assign_resource(body, organization_id, actor_sub, actor_role, resource, tables))
 
     raise LifecycleOperationError(404, "Not found")

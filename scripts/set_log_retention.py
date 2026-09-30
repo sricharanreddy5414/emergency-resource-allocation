@@ -10,8 +10,19 @@ from aws_cli import aws
 from lambda_manifest import PACKAGES, REGION
 
 
+# Later functions are outside PACKAGES. They use the same 30-day policy.
+EXTRA_FUNCTIONS = (
+    "erap-exchange",
+    "erap-exchange-expiry",
+    "erap-notifications",
+    "erap-billing",
+    "erap-billing-webhook",
+    "erap-billing-expiry",
+)
+
+
 def main():
-    for name in PACKAGES:
+    for name in [*PACKAGES, *EXTRA_FUNCTIONS]:
         group = f"/aws/lambda/{name}"
         try:
             aws(
