@@ -293,6 +293,28 @@ textarea {
     font-size: 12px;
 }
 
+.notification-count[hidden] {
+    display: none;
+}
+
+.notification-item.unread {
+    box-shadow: inset 3px 0 0 var(--signal);
+}
+
+.notification-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-start;
+    justify-content: flex-end;
+}
+
+.notification-item,
+.notification-list {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .profile-icon,
 .modal-avatar {
     display: grid;

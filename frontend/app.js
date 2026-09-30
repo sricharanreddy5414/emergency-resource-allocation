@@ -70,6 +70,9 @@ const REQUEST_TYPES_API_URL =
 const EXCHANGE_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/exchange";
 
+const NOTIFICATIONS_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/notifications";
+
 
 /* =========================================================
    AMAZON COGNITO CONFIGURATION
@@ -105,6 +108,10 @@ let requestTypes = [];
 let requestTypesLoadFailed = false;
 
 let notifications = [];
+let notificationNextPageToken = null;
+let notificationInboxStatus = "idle";
+let notificationInboxMessage = "";
+let notificationBusy = false;
 
 let currentUser = {
 
@@ -1554,6 +1561,12 @@ function navigateTo(sectionId) {
 
     }
 
+    if (sectionId === "notifications") {
+
+        loadNotificationInbox();
+
+    }
+
     if (
         sectionId ===
         "admin"
@@ -1780,118 +1793,279 @@ function initializeMobileMenu() {
 
 /* =========================================================
    NOTIFICATIONS
+   Persistent inbox uses GET/POST /notifications.
+   addNotification remains a transient toast only.
 ========================================================= */
 
-function addNotification(
-    title,
-    message
-) {
-
-    notifications.unshift({
-
-        title,
-
-        message,
-
-        time:
-            new Date()
-
-    });
-
-
-    renderNotifications();
-
-    updateNotificationCount();
-
+function canReadNotifications() {
+    return canOperateResources();
 }
 
+function addNotification(title, message) {
+    const text = [title, message].filter(Boolean).join(" — ");
+    if (text) {
+        showToast(text);
+    }
+}
+
+async function notificationRequest(path, options = {}) {
+    const organizationId = selectedOrganizationId();
+    if (!organizationId) {
+        throw Object.assign(new Error("Select an organization first."), { status: 400 });
+    }
+    const method = String(options.method || "GET").toUpperCase();
+    const params = new URLSearchParams(options.query || {});
+    params.set("organization_id", organizationId);
+    const headers = {
+        "Authorization": "Bearer " + (await waitForIdToken() || getIdToken() || "")
+    };
+    if (method !== "GET" && method !== "HEAD") {
+        headers["Content-Type"] = "application/json";
+    }
+    const response = await fetch(NOTIFICATIONS_API_URL + path + "?" + params.toString(), {
+        method,
+        headers,
+        body: method === "GET" || method === "HEAD" ? undefined : JSON.stringify(options.body || { organization_id: organizationId })
+    });
+    let payload = {};
+    try {
+        payload = unwrapApiPayload(await response.json());
+    } catch (_error) {
+        payload = {};
+    }
+    if (!response.ok) {
+        const error = new Error(apiFailureText(payload, "Unable to load notifications."));
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+    }
+    return payload;
+}
+
+function notificationErrorMessage(error) {
+    const status = Number(error?.status || 0);
+    if (status === 401) {
+        return "Sign in again to view notifications.";
+    }
+    if (status === 403) {
+        return "Notifications are available to owners, admins, and operators.";
+    }
+    if (status === 404) {
+        return "That notification is no longer available.";
+    }
+    return error?.message || "Unable to load notifications. Try again.";
+}
+
+async function refreshNotificationBadge() {
+    const count = $("notificationCount");
+    if (!count) {
+        return;
+    }
+    if (!canReadNotifications() || !selectedOrganizationId()) {
+        count.hidden = true;
+        count.textContent = "0";
+        return;
+    }
+    try {
+        const payload = await notificationRequest("/unread-count");
+        const unread = Number(payload.unread_count || 0);
+        count.textContent = unread > 99 ? "99+" : String(unread);
+        count.hidden = unread < 1;
+    } catch (_error) {
+        count.hidden = true;
+    }
+}
+
+async function loadNotificationInbox(options = {}) {
+    const append = Boolean(options.append);
+    if (!canReadNotifications()) {
+        notifications = [];
+        notificationNextPageToken = null;
+        notificationInboxStatus = "forbidden";
+        notificationInboxMessage = "Notifications are available to owners, admins, and operators.";
+        renderNotifications();
+        await refreshNotificationBadge();
+        return;
+    }
+    notificationInboxStatus = append ? "refreshing" : "loading";
+    renderNotifications();
+    try {
+        const query = { limit: "20" };
+        if (append && notificationNextPageToken) {
+            query.page_token = notificationNextPageToken;
+        }
+        const payload = await notificationRequest("", { query });
+        const page = Array.isArray(payload.notifications) ? payload.notifications : [];
+        notifications = append ? notifications.concat(page) : page;
+        notificationNextPageToken = payload.next_page_token || null;
+        notificationInboxStatus = "ready";
+        notificationInboxMessage = "";
+    } catch (error) {
+        if (!append) {
+            notifications = [];
+            notificationNextPageToken = null;
+        }
+        notificationInboxStatus = "error";
+        notificationInboxMessage = notificationErrorMessage(error);
+    }
+    renderNotifications();
+    await refreshNotificationBadge();
+}
+
+async function markNotificationRead(index) {
+    const item = notifications[index];
+    if (!item || item.read_at || notificationBusy) {
+        return;
+    }
+    const notificationId = item.notification_id;
+    if (!notificationId) {
+        return;
+    }
+    notificationBusy = true;
+    item.read_at = new Date().toISOString();
+    renderNotifications();
+    try {
+        const payload = await notificationRequest(
+            "/" + encodeURIComponent(notificationId) + "/read",
+            { method: "POST" }
+        );
+        if (payload.notification) {
+            notifications[index] = payload.notification;
+        }
+    } catch (error) {
+        if (error.status === 404) {
+            notifications.splice(index, 1);
+        } else {
+            item.read_at = null;
+            showToast(notificationErrorMessage(error));
+        }
+    } finally {
+        notificationBusy = false;
+        renderNotifications();
+        await refreshNotificationBadge();
+    }
+}
+
+async function markAllNotificationsRead() {
+    if (notificationBusy || !canReadNotifications()) {
+        return;
+    }
+    notificationBusy = true;
+    const button = $("clearNotificationsBtn");
+    if (button) {
+        button.disabled = true;
+    }
+    let rounds = 0;
+    let truncated = false;
+    try {
+        do {
+            const payload = await notificationRequest("/read-all", { method: "POST" });
+            truncated = Boolean(payload.truncated);
+            rounds += 1;
+        } while (truncated && rounds < 5);
+        notifications = notifications.map(item => ({
+            ...item,
+            read_at: item.read_at || new Date().toISOString()
+        }));
+        showToast(truncated
+            ? "Marked a batch as read. Open notifications again if more remain."
+            : "Unread notifications marked read.");
+        await loadNotificationInbox();
+    } catch (error) {
+        showToast(notificationErrorMessage(error));
+    } finally {
+        notificationBusy = false;
+        if (button) {
+            button.disabled = false;
+        }
+    }
+}
+
+async function openNotificationTarget(index) {
+    const item = notifications[index];
+    if (!item) {
+        return;
+    }
+    await markNotificationRead(index);
+    const href = item.href || {};
+    const requestId = String(href.exchange_request_id || "").trim();
+    if (href.kind === "exchange_request" && requestId.startsWith("EXREQ-")) {
+        navigateTo("exchange");
+        try {
+            await openExchangeRequest(requestId);
+        } catch (_error) {
+            showToast("The exchange request could not be opened.");
+        }
+    }
+}
 
 function renderNotifications() {
-
-    const list =
-        $("notificationList");
-
-
-    if (!list) return;
-
-
-    if (
-        notifications.length === 0
-    ) {
-
-        list.innerHTML = `
-
-            <div class="empty-state">
-
-                <h3>
-                    No notifications
-                </h3>
-
-                <p>
-                    Allocation and request messages from this session appear here.
-                </p>
-
-            </div>
-
-        `;
-
+    const list = $("notificationList");
+    if (!list) {
         return;
-
     }
-
-
-    list.innerHTML =
-        notifications
-            .map(
-                notification => `
-
-                    <article class="notification-item">
-
-                        <div>
-
-                            <strong>
-                                ${escapeHtml(
-                                    notification.title
-                                )}
-                            </strong>
-
-                            <p>
-                                ${escapeHtml(
-                                    notification.message
-                                )}
-                            </p>
-
-                            <time>
-                                ${escapeHtml(
-                                    notification.time
-                                        ? new Date(notification.time).toLocaleString()
-                                        : ""
-                                )}
-                            </time>
-
-                        </div>
-
-                    </article>
-
-                `
-            )
-            .join("");
-
+    if (notificationInboxStatus === "loading" && notifications.length === 0) {
+        list.innerHTML = `<div class="empty-state"><h3>Loading notifications</h3><p>Checking your organization inbox.</p></div>`;
+        return;
+    }
+    if (notificationInboxStatus === "forbidden") {
+        list.innerHTML = `<div class="empty-state"><h3>Notifications unavailable</h3><p>${escapeHtml(notificationInboxMessage)}</p></div>`;
+        return;
+    }
+    if (notificationInboxStatus === "error" && notifications.length === 0) {
+        list.innerHTML = `
+            <div class="empty-state">
+                <h3>Unable to load notifications</h3>
+                <p>${escapeHtml(notificationInboxMessage)}</p>
+                <button class="secondary-btn" type="button" id="notificationRetryBtn">Try again</button>
+            </div>`;
+        $("notificationRetryBtn")?.addEventListener("click", () => loadNotificationInbox());
+        return;
+    }
+    if (notifications.length === 0) {
+        list.innerHTML = `
+            <div class="empty-state">
+                <h3>No notifications</h3>
+                <p>Exchange updates for this organization appear here.</p>
+            </div>`;
+        return;
+    }
+    list.innerHTML = notifications.map((notification, index) => {
+        const unread = !notification.read_at;
+        const href = notification.href || {};
+        const canOpen = href.kind === "exchange_request" && String(href.exchange_request_id || "").startsWith("EXREQ-");
+        return `
+            <article class="notification-item${unread ? " unread" : ""}">
+                <div>
+                    <strong>${escapeHtml(notification.title || "Notification")}</strong>
+                    <p>${escapeHtml(notification.body || "")}</p>
+                    <time>${escapeHtml(notification.created_at ? new Date(notification.created_at).toLocaleString() : "")}</time>
+                </div>
+                <div class="notification-actions">
+                    ${canOpen ? `<button class="secondary-btn" type="button" data-notification-open="${index}">Open</button>` : ""}
+                    ${unread ? `<button class="secondary-btn" type="button" data-notification-read="${index}">Mark read</button>` : `<span class="exchange-muted">Read</span>`}
+                </div>
+            </article>`;
+    }).join("") + (notificationNextPageToken ? `<button class="secondary-btn" type="button" id="notificationMoreBtn">Load more</button>` : "");
+    list.querySelectorAll("[data-notification-read]").forEach(button => {
+        button.addEventListener("click", () => markNotificationRead(Number(button.dataset.notificationRead)));
+    });
+    list.querySelectorAll("[data-notification-open]").forEach(button => {
+        button.addEventListener("click", () => openNotificationTarget(Number(button.dataset.notificationOpen)));
+    });
+    $("notificationMoreBtn")?.addEventListener("click", () => loadNotificationInbox({ append: true }));
 }
 
-
 function updateNotificationCount() {
+    refreshNotificationBadge();
+}
 
-    const count =
-        $("notificationCount");
-
-
-    if (!count) return;
-
-
-    count.textContent =
-        notifications.length;
-
+function initializeNotifications() {
+    notifications = [];
+    notificationNextPageToken = null;
+    notificationInboxStatus = "idle";
+    renderNotifications();
+    refreshNotificationBadge();
 }
 
 
@@ -6230,23 +6404,13 @@ initializeRequestControls();
         );
 
 
-    /* Clear notifications */
+    /* Mark inbox notifications read */
 
     $("clearNotificationsBtn")
         ?.addEventListener(
             "click",
             () => {
-
-                notifications = [];
-
-                renderNotifications();
-
-                updateNotificationCount();
-
-                showToast(
-                    "Notifications cleared."
-                );
-
+                markAllNotificationsRead();
             }
         );
 
@@ -6422,21 +6586,6 @@ initializeRequestControls();
 
         }
     );
-
-}
-
-
-/* =========================================================
-   INITIALIZE NOTIFICATIONS
-========================================================= */
-
-function initializeNotifications() {
-
-    notifications = [];
-
-    renderNotifications();
-
-    updateNotificationCount();
 
 }
 
@@ -7624,6 +7773,8 @@ function applyOrganizationContext(organizations) {
     renderOrganizationSwitcher();
 
     updateOrganizationOnboardingEntry();
+
+    refreshNotificationBadge();
 
 }
 
@@ -9388,6 +9539,10 @@ async function exchangeRequest(path, options = {}) {
         error.status = response.status;
         error.payload = payload;
         throw error;
+    }
+
+    if (method !== "GET" && method !== "HEAD") {
+        refreshNotificationBadge();
     }
 
     return payload;
