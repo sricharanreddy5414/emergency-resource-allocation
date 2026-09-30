@@ -32,6 +32,7 @@ def test_new_runbooks_do_not_name_the_pilot_organization():
         "docs/production-support.md",
         "docs/production-readiness-checklist.md",
         "docs/production-launch-gate.md",
+        "docs/production-launch-checklist.md",
     ):
         text = (ROOT / relative).read_text(encoding="utf-8")
         assert FORBIDDEN_ORG not in text

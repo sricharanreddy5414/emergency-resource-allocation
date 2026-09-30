@@ -17,7 +17,11 @@ REQUIRED = {
     "docs/failure-runbook.md": ("API Gateway", "Secrets Manager"),
     "docs/production-support.md": ("correlation id", "READ"),
     "docs/production-readiness-checklist.md": ("READY", "DEFERRED"),
-    "docs/production-launch-gate.md": ("Production launch is NOT authorized by Phase 13.",),
+    "docs/production-launch-gate.md": (
+        "Production launch is NOT authorized by Phase 13.",
+        "NO-GO",
+    ),
+    "docs/production-launch-checklist.md": ("NO-GO", "BLOCKED"),
     "docs/saas-commercial-readiness.md": ("Production launch is NOT authorized by Phase 14.",),
     "docs/security-posture.md": ("Authentication",),
     "docs/disaster-recovery.md": ("NEVER restore directly over a production table during routine testing.",),

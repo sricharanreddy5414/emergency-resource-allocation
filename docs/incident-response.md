@@ -8,7 +8,7 @@ Collect evidence before changing anything: the GitHub run URL, the `live` alias 
 
 Critical outage or a confirmed exposure of tenant data, credentials, or a public data store.
 
-- Detection: API or Amplify down for everyone, authorizer failing closed for every caller, or a public bucket, log, or response containing secrets or another tenant's rows.
+- Detection: API or Amplify down for everyone, authorizer failing closed for every caller, a tenant isolation failure where one organization can read or change another organization's data, or a public bucket, log, or response containing secrets or another tenant's rows. A tenant isolation failure is SEV-1.
 - Immediate assessment: one person confirms the symptom with `python scripts/smoke_test_production.py` and `python scripts/verify_hardening.py`.
 - Containment: if a bad alias caused it, follow `docs/rollback.md`. If S3 is public, turn Block Public Access on and remove the public statement. Do not delete tables.
 - Evidence: save the command result and the alias description. Do not save secret values.

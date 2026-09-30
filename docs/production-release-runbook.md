@@ -2,6 +2,8 @@
 
 This is how a change on `main` reaches the live API. It does not authorize a commercial launch. See `docs/production-launch-gate.md`.
 
+The release order is PRE-RELEASE, then TEST, then VALIDATION, then APPROVAL, then DEPLOY, then SMOKE, then MONITOR, then ROLLBACK IF REQUIRED. Approval is a human decision recorded in the launch gate. A green test run is not that approval. Rollback uses `docs/rollback.md` and does not move an alias that a newer deploy already owns.
+
 Pushing `main` starts **Deploy backend**. That job publishes only the nine functions in `PACKAGES` and moves their `live` aliases. Exchange, notification, and billing functions stay on their current aliases unless their own deploy scripts are run on purpose.
 
 Do not run `python scripts/deploy_backend.py` on a workstation while the GitHub job is still in progress. The failure step will not move an alias that a later deploy already owns, and a second writer still makes the release harder to explain.
