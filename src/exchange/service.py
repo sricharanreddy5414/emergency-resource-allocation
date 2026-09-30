@@ -1506,10 +1506,18 @@ def confirm_handover(
             mode = str(meta.get("tracking_mode") or "").upper()
             extra = {"tracking_mode": mode or "INDIVIDUAL"}
             if mode == "QUANTITY":
-                dest = (allocation or {}).get("destination_resource_id") or ""
+                dest = (allocation or {}).get("destination_resource_id") or meta.get(
+                    "completed_destination_resource_id"
+                ) or ""
                 extra["destination_resource_id"] = dest
-                extra["destination_mode"] = "MERGE" if dest else "CREATE"
-                extra["quantity"] = (allocation or {}).get("quantity")
+                created = meta.get("completed_destination_created")
+                if created is True:
+                    extra["destination_mode"] = "CREATE"
+                elif created is False:
+                    extra["destination_mode"] = "MERGE"
+                extra["quantity"] = (allocation or {}).get("quantity") or meta.get(
+                    "quantity_transferred"
+                )
             notify_handover_completed(meta, offer, actor_sub, **extra)
         except Exception:
             pass

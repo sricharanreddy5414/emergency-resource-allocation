@@ -544,6 +544,8 @@ def install_transact(monkeypatch, exchanges, resources, allocations):
                     item["previous_location_id"] = b.get(":prev_loc")
                     if ":dest_resource" in b:
                         item["completed_destination_resource_id"] = b[":dest_resource"]
+                    if ":dest_created" in b:
+                        item["completed_destination_created"] = b[":dest_created"]
                     if ":qty" in b and "quantity_transferred" in expr:
                         item["quantity_transferred"] = int(b[":qty"])
                     item.pop("expiry_due_key", None)
@@ -1027,6 +1029,47 @@ def test_quantity_handover_completes(monkeypatch):
     assert dest["organization_id"] == ORG_A
     assert dest["quantity_total"] == 3
     assert dest["visibility"] == "PRIVATE"
+
+
+def test_handover_commits_when_notification_emit_raises(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_accepted_exchange(
+        monkeypatch
+    )
+    assert start_transfer_as_provider(monkeypatch, request_id)["statusCode"] == 200
+    import exchange_notify
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("notifications down")
+
+    monkeypatch.setattr(exchange_notify, "notify_handover_completed", fail)
+    confirmed = confirm_as_requester(monkeypatch, request_id)
+    assert confirmed["statusCode"] == 200, body_of(confirmed)
+    assert body_of(confirmed)["request"]["status"] == "COMPLETED"
+    assert resources.items["R-B-1"]["organization_id"] == ORG_A
+    assert list(allocations.items.values())[0]["status"] == "RELEASED"
+
+
+def test_quantity_replay_keeps_create_mode(monkeypatch):
+    request_id, offer_id, exchanges, resources, allocations, audit, history = setup_accepted_exchange(
+        monkeypatch, tracking="QUANTITY", resource_id="R-B-Q"
+    )
+    assert start_transfer_as_provider(monkeypatch, request_id)["statusCode"] == 200
+    import exchange_notify
+
+    seen = []
+    monkeypatch.setattr(
+        exchange_notify,
+        "notify_handover_completed",
+        lambda *args, **kwargs: seen.append(kwargs),
+    )
+    body = {"organization_id": ORG_A, "quantity": 3, "destination_location_id": "LOC-A"}
+    first = confirm_as_requester(monkeypatch, request_id, body)
+    assert first["statusCode"] == 200, body_of(first)
+    second = confirm_as_requester(monkeypatch, request_id, body)
+    assert second["statusCode"] == 200
+    assert body_of(second)["message"] == "Handover already completed"
+    assert [item.get("destination_mode") for item in seen] == ["CREATE", "CREATE"]
+    assert resources.items["R-B-Q"]["quantity_total"] == 7
 
 
 def test_provider_loses_resource_after_handover(monkeypatch):

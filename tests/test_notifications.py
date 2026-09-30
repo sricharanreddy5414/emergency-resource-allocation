@@ -56,6 +56,16 @@ def _load_notification_handler():
 _ensure_paths()
 
 
+def _condition_strings(expr):
+    found = []
+    for value in getattr(expr, "_values", ()) or ():
+        if hasattr(value, "_values"):
+            found.extend(_condition_strings(value))
+        elif isinstance(value, str):
+            found.append(value)
+    return found
+
+
 class FakeTable:
     def __init__(self, name="Notifications"):
         self.name = name
@@ -131,40 +141,56 @@ class FakeTable:
         self.queries.append(kwargs)
         index = kwargs.get("IndexName")
         limit = kwargs.get("Limit")
+        wanted = _condition_strings(kwargs.get("KeyConditionExpression"))
         items = []
         if index == "UnreadByUserIndex":
-            # Approximate Key unread_key from Expression - Fake uses scan of items
             for item in self.items.values():
                 if item.get("unread_key") and item.get("entity_type") == "NOTIFICATION":
-                    items.append(item)
+                    if not wanted or item.get("unread_key") in wanted:
+                        items.append(item)
             items.sort(key=lambda row: row.get("created_at") or "", reverse=True)
         else:
-            # Inbox query by pk
             for item in self.items.values():
                 if item.get("entity_type") == "NOTIFICATION" and str(item.get("sk", "")).startswith(
                     "AT#"
                 ):
-                    items.append(item)
-            items.sort(key=lambda row: row.get("created_at") or "", reverse=True)
-            if kwargs.get("FilterExpression") is not None:
-                # Filter by event_id when Attr used — tests set matching items only
-                pass
+                    if not wanted or item.get("pk") in wanted:
+                        items.append(item)
+            items.sort(key=lambda row: row.get("sk") or "", reverse=True)
+        start = kwargs.get("ExclusiveStartKey") or {}
+        if start.get("sk"):
+            items = [item for item in items if (item.get("sk") or "") < start["sk"]]
         if kwargs.get("Select") == "COUNT":
             count = len(items)
             if limit:
                 count = min(count, limit)
             return {"Count": count, "Items": []}
-        if limit:
+        next_key = None
+        if limit and len(items) > limit:
             items = items[:limit]
-        return {"Items": [dict(item) for item in items]}
+            last = items[-1]
+            next_key = {"pk": last.get("pk"), "sk": last.get("sk")}
+            if index == "UnreadByUserIndex":
+                next_key["unread_key"] = last.get("unread_key")
+                next_key["created_at"] = last.get("created_at")
+        result = {"Items": [dict(item) for item in items]}
+        if next_key:
+            result["LastEvaluatedKey"] = next_key
+        return result
 
 
 class MembersTable:
     def __init__(self, rows):
         self.rows = list(rows)
 
-    def query(self, **_kwargs):
-        return {"Items": list(self.rows)}
+    def query(self, **kwargs):
+        wanted = _condition_strings(kwargs.get("KeyConditionExpression"))
+        rows = [
+            row
+            for row in self.rows
+            if not wanted or row.get("organization_id") in wanted
+        ]
+        return {"Items": list(rows)}
 
 
 class OrganizationsTable:

@@ -239,23 +239,38 @@ def _copy_for(event_code, payload):
     return title, body
 
 
+def _identifier(value, prefix):
+    text = str(value or "").strip()
+    if text.startswith(prefix) and all(char not in text for char in ("/", "\\", " ", "#")):
+        return text
+    return ""
+
+
 def _safe_payload(payload):
-    allowed = {
-        "exchange_request_id",
-        "offer_id",
-        "resource_type_name",
-        "quantity",
-        "destination_mode",
-        "destination_resource_id",
-        "tracking_mode",
-        "href_kind",
-    }
     raw = payload or {}
     out = {}
-    for key in allowed:
-        if key in raw and raw[key] is not None and raw[key] != "":
-            out[key] = raw[key]
-    out.setdefault("href_kind", "exchange_request")
+    request_id = _identifier(raw.get("exchange_request_id"), "EXREQ-")
+    offer_id = _identifier(raw.get("offer_id"), "EXOFF-")
+    if request_id:
+        out["exchange_request_id"] = request_id
+    if offer_id:
+        out["offer_id"] = offer_id
+    type_name = str(raw.get("resource_type_name") or "").strip()
+    if type_name and "://" not in type_name:
+        out["resource_type_name"] = type_name[:80]
+    quantity = raw.get("quantity")
+    if isinstance(quantity, int) and not isinstance(quantity, bool):
+        out["quantity"] = quantity
+    destination_mode = str(raw.get("destination_mode") or "").strip().upper()
+    if destination_mode in {"CREATE", "MERGE"}:
+        out["destination_mode"] = destination_mode
+    destination_resource_id = str(raw.get("destination_resource_id") or "").strip()
+    if destination_resource_id and "://" not in destination_resource_id and "#" not in destination_resource_id:
+        out["destination_resource_id"] = destination_resource_id[:80]
+    tracking_mode = str(raw.get("tracking_mode") or "").strip().upper()
+    if tracking_mode in {"INDIVIDUAL", "QUANTITY"}:
+        out["tracking_mode"] = tracking_mode
+    out["href_kind"] = "exchange_request"
     return out
 
 
@@ -285,6 +300,9 @@ def emit_notification_event(
             organizations=organizations,
         )
     except Exception as error:
+        error_code = ""
+        if isinstance(error, ClientError):
+            error_code = str((error.response.get("Error") or {}).get("Code") or "")
         print(
             "NOTIFICATION_EMIT_FAILED",
             json.dumps(
@@ -294,6 +312,7 @@ def emit_notification_event(
                     "organization_id": str(recipient_organization_id or ""),
                     "request_id": current_request_id(),
                     "error": error.__class__.__name__,
+                    "error_code": error_code,
                 },
                 default=str,
             ),
@@ -475,6 +494,11 @@ def public_notification_view(item):
     if read_at == "":
         read_at = None
     payload = item.get("payload") or {}
+    request_id = _identifier(
+        item.get("href_exchange_request_id") or payload.get("exchange_request_id"),
+        "EXREQ-",
+    )
+    offer_id = _identifier(item.get("href_offer_id") or payload.get("offer_id"), "EXOFF-")
     return {
         "notification_id": item.get("notification_id"),
         "event_code": item.get("event_code"),
@@ -483,10 +507,8 @@ def public_notification_view(item):
         "created_at": item.get("created_at") or "",
         "read_at": read_at,
         "href": {
-            "kind": item.get("href_kind") or payload.get("href_kind") or "exchange_request",
-            "exchange_request_id": item.get("href_exchange_request_id")
-            or payload.get("exchange_request_id")
-            or "",
-            "offer_id": item.get("href_offer_id") or payload.get("offer_id") or "",
+            "kind": "exchange_request",
+            "exchange_request_id": request_id,
+            "offer_id": offer_id,
         },
     }

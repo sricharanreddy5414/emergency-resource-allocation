@@ -71,6 +71,11 @@ def list_notifications(
         exclusive = decode_token(
             page_token, ["pk", "sk"] if not unread_only else ["unread_key", "created_at", "pk", "sk"]
         )
+        expected_pk = inbox_pk(org_id, sub)
+        if exclusive.get("pk") != expected_pk or not str(exclusive.get("sk") or "").startswith("AT#"):
+            raise NotificationOperationError(400, "Invalid page token")
+        if unread_only and exclusive.get("unread_key") != unread_key_for(org_id, sub):
+            raise NotificationOperationError(400, "Invalid page token")
 
     store = _table(table)
     if unread_only:
@@ -228,6 +233,7 @@ def mark_all_read(organization_id, user_sub, membership, *, table=None, max_item
     marked = 0
     start_key = None
     pages = 0
+    truncated = False
     while marked < max_items and pages < 20:
         pages += 1
         query = {
@@ -239,10 +245,18 @@ def mark_all_read(organization_id, user_sub, membership, *, table=None, max_item
             query["ExclusiveStartKey"] = start_key
         result = store.query(**query)
         items = list(result.get("Items") or [])
-        if not items:
+        next_key = result.get("LastEvaluatedKey")
+        if next_key and next_key == start_key:
+            truncated = True
             break
+        if not items:
+            start_key = next_key
+            if not start_key:
+                break
+            continue
         for item in items:
             if marked >= max_items:
+                truncated = True
                 break
             if item.get("organization_id") != org_id or item.get("user_sub") != sub:
                 continue
@@ -257,12 +271,17 @@ def mark_all_read(organization_id, user_sub, membership, *, table=None, max_item
             except ClientError as error:
                 if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
                     raise
-        start_key = result.get("LastEvaluatedKey")
+        if truncated:
+            break
+        start_key = next_key
         if not start_key:
             break
+    else:
+        if start_key:
+            truncated = True
 
     return {
         "organization_id": org_id,
         "marked_read": marked,
-        "truncated": bool(start_key) or marked >= max_items,
+        "truncated": truncated,
     }

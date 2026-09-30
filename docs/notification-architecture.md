@@ -306,7 +306,7 @@ Organization selection: `organization_id` query/body per `access.requested_organ
 
 ### 13.1 `GET /notifications`
 
-**Auth:** Cognito + ACTIVE membership (`READ_ROLES`).  
+**Auth:** Cognito + ACTIVE membership. Inbox routes allow `OWNER`, `ADMIN`, and `OPERATOR`. `MEMBER` is denied.  
 **Query:**
 
 - `organization_id` (required when multi-org)
@@ -385,7 +385,7 @@ Session-only `addNotification` calls for local resource CRUD may remain until th
 
 1. Cognito ID token authorizer on all `/notifications*` methods.
 2. `authorize()` derives `user_sub` and membership; frontend `organization_id` is a selector, not trust.
-3. Role: any `READ_ROLES` may read own inbox; mark-read allowed for same.
+3. Role: `OWNER`, `ADMIN`, and `OPERATOR` may read and mark their own inbox. `MEMBER` is denied. A page token must match that caller's inbox key.
 4. Inbox keys include `user_sub`; users cannot mark another member’s notification.
 5. Payload projection (§7); strip secrets in emitter (mirror audit redaction for token/password/secret).
 6. Compatible with `src/shared/access.py` billing: **reads** follow `is_operational_read_allowed` (trialing/active/past_due/expired/cancelled/grandfathered known statuses). Creating notifications is a **side effect of already-authorized Exchange writes**, not a separate paid entitlement.
@@ -398,7 +398,7 @@ Session-only `addNotification` calls for local resource CRUD may remain until th
 | Item | Retention |
 |---|---|
 | Inbox rows | DynamoDB TTL attribute `expires_at` ≈ **90 days** from `created_at` |
-| Outbox EVENT rows | Same TTL **or** 120 days (slightly longer for delivery forensics) |
+| Outbox EVENT rows | Same 90-day `expires_at` |
 | Unread past TTL | Expire anyway (product accepts loss); critical ops remain in AuditEvents |
 | AuditEvents | **No TTL from notification design** |
 
@@ -412,7 +412,7 @@ TTL deletion is eventually consistent; design must tolerate ghost reads briefly.
 |---|---|
 | Exchange Transact success, notify emit fails | Exchange stays success; log `NOTIFICATION_EMIT_FAILED` with `event_id` + `request_id`; no user rollback |
 | Partial inbox fan-out | Outbox EVENT exists; retry emit is idempotent; missing users get Puts on retry |
-| DynamoDB throttle | Retry with jitter in emit helper (bounded); then log failure |
+| DynamoDB throttle | The emit helper does not retry inside the Exchange request. It logs `NOTIFICATION_EMIT_FAILED` with the exception class and DynamoDB error code, then returns. A later idempotent domain retry can finish fan-out. |
 | Duplicate Lambda invoke | ConditionExpression prevents duplicate EVENT/INBOX |
 | Stale event (request already COMPLETED when late retry) | Still ok if event_id matches original beat; do not invent new codes |
 | Missing recipients | Outbox only; metrics `notification_recipients_empty` |
@@ -439,7 +439,7 @@ TTL deletion is eventually consistent; design must tolerate ghost reads briefly.
 Structured logs (no tokens):
 
 - `notification_emit` — event_id, event_code, org_id, recipient_count, request_id, outcome
-- `notification_emit_failed` — error class only
+- `NOTIFICATION_EMIT_FAILED` — event code, subject, organization, request id, exception class, and DynamoDB error code. No tokens, secrets, or raw QR payloads.
 - `notification_read` / `notification_read_all`
 
 Metrics (CloudWatch, implementation phase):

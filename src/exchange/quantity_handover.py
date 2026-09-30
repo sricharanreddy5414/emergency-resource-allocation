@@ -240,6 +240,7 @@ def confirm_quantity_handover(
                 "SET #status = :completed, completed_at = :now, confirming_actor_sub = :actor, "
                 "completed_destination_location_id = :loc_id, "
                 "completed_destination_resource_id = :dest_resource, "
+                "completed_destination_created = :dest_created, "
                 "previous_owner_organization_id = :provider, "
                 "previous_location_id = :prev_loc, "
                 "quantity_transferred = :qty, "
@@ -256,6 +257,7 @@ def confirm_quantity_handover(
                     ":actor": actor_sub,
                     ":loc_id": new_location_id,
                     ":dest_resource": destination_resource_id,
+                    ":dest_created": destination_created,
                     ":provider": provider_org,
                     ":prev_loc": previous_location_id,
                     ":qty": quantity,

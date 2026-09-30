@@ -158,6 +158,8 @@ class ExchangeStore:
                 item["completed_destination_location_id"] = values[":loc_id"]
             if ":dest_resource" in values and "completed_destination_resource_id" in expr:
                 item["completed_destination_resource_id"] = values[":dest_resource"]
+            if ":dest_created" in values and "completed_destination_created" in expr:
+                item["completed_destination_created"] = values[":dest_created"]
             if ":qty" in values and "quantity_transferred" in expr:
                 item["quantity_transferred"] = values[":qty"]
             if ":provider" in values and "previous_owner_organization_id" in expr:
