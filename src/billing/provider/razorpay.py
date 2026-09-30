@@ -24,6 +24,7 @@ from ..errors import BillingError
 
 SUBSCRIPTIONS_URL = "https://api.razorpay.com/v1/subscriptions"
 TEST_SECRET_ID = "erap/billing/razorpay/test"
+PRODUCTION_SECRET_ID = "erap/billing/razorpay/production"
 TIMEOUT_SECONDS = 10
 
 # Razorpay rejects authorization when expire_at is more than 40 years away.
@@ -33,6 +34,26 @@ RAZORPAY_PLAN_LINKS = {
     "MONTHLY": {"razorpay_plan_id": "plan_ThiWT35Gf1jyio", "total_count": 468},
     "YEARLY": {"razorpay_plan_id": "plan_ThiWTXOzBHl2Qb", "total_count": 39},
 }
+TEST_PLAN_IDS = frozenset(link["razorpay_plan_id"] for link in RAZORPAY_PLAN_LINKS.values())
+
+
+def billing_mode(mode=None):
+    """Backend chooses test or production. A client value is never accepted."""
+    chosen = mode if mode is not None else os.environ.get("ERAP_BILLING_MODE") or "test"
+    chosen = str(chosen).strip().lower()
+
+    if chosen not in {"test", "production"}:
+        raise BillingError(500, "Billing is not configured")
+
+    return chosen
+
+
+def secret_id_for_mode(mode=None):
+    return TEST_SECRET_ID if billing_mode(mode) == "test" else PRODUCTION_SECRET_ID
+
+
+def key_prefix_for_mode(mode=None):
+    return "rzp_test_" if billing_mode(mode) == "test" else "rzp_live_"
 
 
 def provider_plan(plan_id, links=None):
@@ -64,11 +85,13 @@ def signatures_match(raw_body, supplied, secret):
     return hmac.compare_digest(digest, supplied)
 
 
-def load_webhook_secret(client=None, secret_id=None):
-    """Return only the webhook secret. Callers must not log it."""
-    secret_id = secret_id or os.environ.get("RAZORPAY_SECRET_ID") or TEST_SECRET_ID
+def load_billing_config(client=None, mode=None, secret_id=None, require_webhook=False):
+    """Read one mode's secret. The returned mapping must not be logged."""
+    mode = billing_mode(mode)
+    expected = secret_id_for_mode(mode)
+    secret_id = secret_id or os.environ.get("RAZORPAY_SECRET_ID") or expected
 
-    if secret_id != TEST_SECRET_ID or client is None:
+    if secret_id != expected or client is None:
         raise BillingError(500, "Billing is not configured")
 
     try:
@@ -79,9 +102,69 @@ def load_webhook_secret(client=None, secret_id=None):
     except Exception:
         raise BillingError(500, "Billing is not configured")
 
-    secret = parsed.get("webhook_secret") if isinstance(parsed, dict) else None
+    if not isinstance(parsed, dict):
+        raise BillingError(500, "Billing is not configured")
 
-    if not isinstance(secret, str) or not secret:
+    key_id = parsed.get("key_id")
+    key_secret = parsed.get("key_secret")
+    webhook_secret = parsed.get("webhook_secret")
+    prefix = key_prefix_for_mode(mode)
+
+    if not isinstance(key_id, str) or not key_id.startswith(prefix):
+        raise BillingError(500, "Billing is not configured")
+
+    if not isinstance(key_secret, str) or not key_secret:
+        raise BillingError(500, "Billing is not configured")
+
+    if not isinstance(webhook_secret, str):
+        webhook_secret = ""
+
+    if (require_webhook or mode == "production") and not webhook_secret:
+        raise BillingError(500, "Billing is not configured")
+
+    links = RAZORPAY_PLAN_LINKS if mode == "test" else _production_links(parsed)
+
+    return {
+        "mode": mode,
+        "secret_id": expected,
+        "key_id": key_id,
+        "key_secret": key_secret,
+        "webhook_secret": webhook_secret,
+        "links": links,
+    }
+
+
+def checkout_links(client=None, mode=None, client_factory=None):
+    """Test checkout keeps the in-code test plans. Production plans come from its secret."""
+    mode = billing_mode(mode)
+
+    if mode == "test":
+        return None
+
+    if client is None and client_factory is not None:
+        client = client_factory()
+
+    if client is None:
+        raise BillingError(500, "Billing is not configured")
+
+    return load_billing_config(client, mode)["links"]
+
+
+def open_provider(client, mode=None):
+    """Return the provider and the plan map for the backend-selected mode."""
+    config = load_billing_config(client, mode)
+    provider = RazorpaySubscriptionProvider(
+        lambda: (config["key_id"], config["key_secret"]),
+        mode=config["mode"],
+    )
+    return provider, config["links"]
+
+
+def load_webhook_secret(client=None, secret_id=None, mode=None):
+    """Return only the webhook secret. Callers must not log it."""
+    secret = load_billing_config(client, mode, secret_id, require_webhook=True)["webhook_secret"]
+
+    if not secret:
         raise BillingError(500, "Billing is not configured")
 
     return secret
@@ -164,44 +247,46 @@ def _unix(value):
     return datetime.fromtimestamp(value, timezone.utc).isoformat()
 
 
+def _production_links(parsed):
+    monthly = parsed.get("monthly_plan_id")
+    yearly = parsed.get("yearly_plan_id")
+    links = {
+        "MONTHLY": {"razorpay_plan_id": monthly, "total_count": 468},
+        "YEARLY": {"razorpay_plan_id": yearly, "total_count": 39},
+    }
+
+    for link in links.values():
+        plan_id = link["razorpay_plan_id"]
+
+        if not isinstance(plan_id, str) or not plan_id.startswith("plan_") or plan_id in TEST_PLAN_IDS:
+            raise BillingError(500, "Billing is not configured")
+
+    if links["MONTHLY"]["razorpay_plan_id"] == links["YEARLY"]["razorpay_plan_id"]:
+        raise BillingError(500, "Billing is not configured")
+
+    return links
+
+
 def load_test_secret(client=None, secret_id=None):
     """Read the test secret. The returned pair must not be logged."""
-    secret_id = secret_id or os.environ.get("RAZORPAY_SECRET_ID") or TEST_SECRET_ID
-
-    if secret_id != TEST_SECRET_ID:
-        raise BillingError(500, "Billing is not configured")
-
-    if client is None:
-        raise BillingError(500, "Billing is not configured")
-
-    try:
-        response = client.get_secret_value(SecretId=secret_id)
-        parsed = json.loads(response.get("SecretString") or "")
-    except BillingError:
-        raise
-    except Exception:
-        raise BillingError(500, "Billing is not configured")
-
-    key_id = parsed.get("key_id") if isinstance(parsed, dict) else None
-    key_secret = parsed.get("key_secret") if isinstance(parsed, dict) else None
-
-    if not isinstance(key_id, str) or not isinstance(key_secret, str) or not key_id or not key_secret:
-        raise BillingError(500, "Billing is not configured")
-
-    return key_id, key_secret
+    config = load_billing_config(client, "test", secret_id)
+    return config["key_id"], config["key_secret"]
 
 
 class RazorpaySubscriptionProvider:
-    def __init__(self, secret_loader, urlopen=None, timeout=TIMEOUT_SECONDS):
+    def __init__(self, secret_loader, urlopen=None, timeout=TIMEOUT_SECONDS, mode="test"):
         self.secret_loader = secret_loader
         self.urlopen = urlopen or urllib.request.urlopen
         self.timeout = timeout
+        self.mode = billing_mode(mode)
+
+    def _require_mode_key(self, key_id):
+        if not str(key_id).startswith(key_prefix_for_mode(self.mode)):
+            raise BillingError(500, "Billing is not configured")
 
     def create_subscription(self, *, razorpay_plan_id, total_count, organization_id):
         key_id, key_secret = self.secret_loader()
-
-        if not str(key_id).startswith("rzp_test_"):
-            raise BillingError(500, "Billing is not configured")
+        self._require_mode_key(key_id)
 
         payload = {
             "plan_id": razorpay_plan_id,
@@ -259,9 +344,7 @@ class RazorpaySubscriptionProvider:
     def subscription_status(self, provider_subscription_id):
         """Return only the provider status. The response body is not stored."""
         key_id, key_secret = self.secret_loader()
-
-        if not str(key_id).startswith("rzp_test_"):
-            raise BillingError(500, "Billing is not configured")
+        self._require_mode_key(key_id)
 
         if not isinstance(provider_subscription_id, str) or not provider_subscription_id.startswith("sub_"):
             raise BillingError(409, "A checkout is already in progress")
@@ -289,9 +372,7 @@ class RazorpaySubscriptionProvider:
         decide the ERAP status.
         """
         key_id, key_secret = self.secret_loader()
-
-        if not str(key_id).startswith("rzp_test_"):
-            raise BillingError(500, "Billing is not configured")
+        self._require_mode_key(key_id)
 
         if not isinstance(provider_subscription_id, str) or not provider_subscription_id.startswith("sub_"):
             raise BillingError(409, "Cancellation is not available")

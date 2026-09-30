@@ -27,11 +27,11 @@ The questions a launch has to answer:
 | Is observability sufficient for the current system? | Yes for investigation. Alert delivery is not. |
 | Is disaster recovery verified? | Yes for PITR, deletion protection, and schedules. A second restore was not run. |
 | Are support procedures ready? | Yes. `docs/production-support.md`. |
-| Are legal and commercial documents present? | No. BLOCKED. |
-| Is launch scope approved? | No. BLOCKED. |
-| Is production pricing approved? | No. The catalog amounts exist. A decision to charge them in production is not recorded. |
+| Are legal and commercial documents present? | Drafts are present. FINAL COMPANY/LEGAL APPROVAL is not. APPROVAL REQUIRED. |
+| Is launch scope approved? | Yes for this closure. Controlled limited beta. Organizations are onboarded deliberately. This is not a public launch. |
+| Is production pricing approved? | Yes for this closure. The catalog prices ₹999 monthly and ₹9,999 yearly are the production prices. Production provider plans for those prices are not created yet. |
 | Are there unresolved security issues that block launch? | The live cross-tenant read test passed. No new code vulnerability was found in this pass. |
-| Are there unresolved critical operational issues? | Production billing is absent. `ERAP-Production-Alarms` has one confirmed email subscription. That address is not named in the repository, so it is not an approved launch destination. |
+| Are there unresolved critical operational issues? | Production billing is absent. `ERAP-Production-Alarms` has one confirmed email subscription. This closure accepts that existing subscription as the operational alert destination. The address is not stored in the repository. |
 
 Paid production stays off until those blocked rows are actually satisfied. A later phase has to record the human decisions. This file cannot supply them.
 

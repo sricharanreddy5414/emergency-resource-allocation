@@ -170,29 +170,30 @@ Resolved in this pass: live cross-tenant read denial, and authenticated read-onl
 
 Still required before a launch decision can be GO:
 
-- PRODUCTION PRICING DECISION REQUIRED
-- LEGAL DOCUMENTS DECISION REQUIRED
-- CANCELLATION POLICY DECISION REQUIRED
-- LAUNCH SCOPE DECISION REQUIRED
-- ALERT DESTINATION DECISION REQUIRED
-- PAST_DUE POLICY DECISION REQUIRED
+- Production Razorpay plans, secret, and webhook. The catalog price is no longer the missing decision.
+- FINAL COMPANY/LEGAL APPROVAL of the V1 drafts
 - ONBOARDING VALIDATION BLOCKED
-- Production Razorpay plans, secret, and webhook, after the pricing decision
 
 Do not open ERAP to customers from this file.
 
 ## Final closure pass
 
-A later pass searched again for an approved production price, launch scope, legal text, alert destination, and `PAST_DUE` rule. None of those approvals exist. The catalog amounts in `src/billing/plans.py` remain ₹999 monthly and ₹9,999 yearly. `docs/saas-commercial-readiness.md` verifies that catalog. It does not approve those amounts for production charging. Production Razorpay plans, a production secret, and a production webhook were not created. The test secret and the test plan ids were not reused.
+This closure accepts the catalog in `src/billing/plans.py` as the production price: ₹999 monthly and ₹9,999 yearly. Production provider plans were not created.
 
-`docs/legal-launch-requirements.md` lists the missing terms, privacy policy, cancellation policy, and refund status. It does not supply those documents.
+Cancellation for launch is the implemented owner path: cancel at period end, status stays `ACTIVE`, writes continue, and the expiry worker later sets `CANCELLED`.
 
-Cancellation stays the implemented owner path: cancel at period end, status stays `ACTIVE`, writes continue, and the expiry worker later sets `CANCELLED`. That is not an approved policy.
+Refund automation is not implemented. A refund request is a manual support process. The provider record stays authoritative.
 
-Refund automation is still not implemented. No sentence in the repository accepts a manual refund process as the launch rule.
+`PAST_DUE` plus a provider cancellation does not block operational writes. That is the V1 policy. The code was not changed.
 
-`ERAP-Production-Alarms` still has one confirmed email subscription. The address is not named here and is not an approved destination.
+Launch scope is a controlled limited beta. Organizations are onboarded deliberately. Public registration was not opened.
 
-Organization creation still writes a permanent organization, owner membership, and trial. No delete path exists for that write, so no organization was created.
+`ERAP-Production-Alarms` keeps its existing confirmed email subscription. That subscription is the operational alert destination. The address is not written here.
+
+V1 drafts are in `docs/legal/`. Each one says `V1 DRAFT — REQUIRES FINAL COMPANY/LEGAL APPROVAL`. Final legal approval is not proven.
+
+Production mode can select `erap/billing/razorpay/production` and `rzp_live_` keys, and it rejects the test secret and the test plan ids. The default mode remains test. No production secret or production webhook was created, so deployed billing stays on the test integration.
+
+Organization creation still writes a permanent organization, owner membership, and trial. No delete path exists, so no organization was created. Live onboarding remains ONBOARDING VALIDATION BLOCKED.
 
 The launch decision remains NO-GO.

@@ -10,7 +10,7 @@ from billing.checkout import create_checkout
 from billing.errors import BillingError
 from billing.events import list_events
 from billing.plans import customer_plans
-from billing.provider.razorpay import RazorpaySubscriptionProvider, load_test_secret
+from billing.provider.razorpay import checkout_links, open_provider
 from billing.summary import read_billing
 from common import api_response, parse_json_body
 from observability import begin_request
@@ -43,11 +43,15 @@ def events_table():
     )
 
 
-def build_provider():
+def billing_client():
     import boto3
 
-    client = boto3.client("secretsmanager", region_name=os.environ.get("AWS_REGION", "eu-north-1"))
-    return RazorpaySubscriptionProvider(lambda: load_test_secret(client))
+    return boto3.client("secretsmanager", region_name=os.environ.get("AWS_REGION", "eu-north-1"))
+
+
+def build_provider():
+    provider, _links = open_provider(billing_client())
+    return provider
 
 
 def lambda_handler(event, context):
@@ -97,7 +101,14 @@ def _dispatch(method, path, body, organization_id):
         return {"plans": customer_plans()}
 
     if action == "checkout":
-        return create_checkout(body, organization_id, subscriptions_table(), build_provider, now=now)
+        return create_checkout(
+            body,
+            organization_id,
+            subscriptions_table(),
+            build_provider,
+            links=checkout_links(client_factory=billing_client),
+            now=now,
+        )
 
     if action == "cancel":
         return request_cancellation(body, organization_id, subscriptions_table(), build_provider, now=now)

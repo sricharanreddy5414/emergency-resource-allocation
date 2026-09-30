@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from access import AccessError, access_body, authorize
 from billing.checkout import create_checkout
 from billing.errors import BillingError
-from billing.provider.razorpay import RazorpaySubscriptionProvider, load_test_secret
+from billing.provider.razorpay import checkout_links, open_provider
 from common import api_response, parse_json_body
 from observability import begin_request
 
@@ -20,11 +20,15 @@ def subscriptions_table():
     )
 
 
-def build_provider():
+def billing_client():
     import boto3
 
-    client = boto3.client("secretsmanager", region_name=os.environ.get("AWS_REGION", "eu-north-1"))
-    return RazorpaySubscriptionProvider(lambda: load_test_secret(client))
+    return boto3.client("secretsmanager", region_name=os.environ.get("AWS_REGION", "eu-north-1"))
+
+
+def build_provider():
+    provider, _links = open_provider(billing_client())
+    return provider
 
 
 def lambda_handler(event, context):
@@ -52,6 +56,7 @@ def lambda_handler(event, context):
             membership["organization_id"],
             subscriptions_table(),
             build_provider,
+            links=checkout_links(client_factory=billing_client),
             now=datetime.now(timezone.utc),
         )
     except BillingError as error:

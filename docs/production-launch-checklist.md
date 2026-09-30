@@ -24,11 +24,11 @@ Status values are PASS, FAIL, BLOCKED, DEFERRED, or NOT APPLICABLE. A green test
 | DR | PASS | PITR and deletion protection on all 14 tables. `python scripts/verify_recovery.py`. No second restore in this phase. |
 | ROLLBACK | PASS | `restore_target` still refuses to move `live` when a newer version owns it. `tests/test_alias_restore.py`. No production rollback was performed. |
 | SUPPORT | PASS | `docs/production-support.md`. Support uses organization id, correlation id, and entity ids. |
-| LEGAL | BLOCKED | `docs/legal-launch-requirements.md` lists the missing terms, privacy policy, cancellation policy, and refund status. Those documents were not written. |
-| PRICING | BLOCKED | The catalog is ₹999 monthly and ₹9,999 yearly. No separate approval to charge those amounts in production is recorded. |
-| CUSTOMER SCOPE | BLOCKED | No internal, pilot, invited, beta, or public scope is approved in the repository. |
+| LEGAL | BLOCKED | V1 drafts exist under `docs/legal/`. FINAL COMPANY/LEGAL APPROVAL is not in the repository. |
+| PRICING | PASS | This closure uses the catalog: ₹999 monthly and ₹9,999 yearly. The amounts were not changed. |
+| CUSTOMER SCOPE | PASS | Controlled limited beta. Organizations are onboarded deliberately. Public registration was not opened. |
 | SMOKE TEST | PASS | Unauthenticated public GET returned 200 and unauthenticated organization GET returned 401. Signed-in reads for both non-pilot organizations returned 200. Live organization creation was not performed. |
-| MONITORING | BLOCKED | Alarms exist. `ERAP-Production-Alarms` has one confirmed email subscription. The address is not in the repository, and no decision accepts that subscription as the launch destination. |
+| MONITORING | PASS | `ERAP-Production-Alarms` keeps its one confirmed email subscription. This closure uses that destination. The address is not recorded here. No new subscription was created. |
 | APPROVAL | BLOCKED | Phase 15 decision is NO-GO. Paid production is not authorized. |
 
 Do not open ERAP to customers from this checklist.

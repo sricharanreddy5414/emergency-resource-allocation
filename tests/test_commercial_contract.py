@@ -1,5 +1,6 @@
 """Commercial contract. These tests do not call AWS or a payment provider."""
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,11 +12,17 @@ from billing.errors import BillingError
 from billing.models import PAYMENT_STATES, TRIAL_DAYS, trial_bounds
 from billing.plans import PLAN_RULES, PLANS, customer_plans
 from billing.provider.razorpay import (
+    PRODUCTION_SECRET_ID,
     RAZORPAY_PLAN_LINKS,
     TEST_SECRET_ID,
     _EVENT_TARGETS,
     _PAYMENT_STATES,
+    billing_mode,
+    key_prefix_for_mode,
+    load_billing_config,
     load_webhook_secret,
+    secret_id_for_mode,
+    RazorpaySubscriptionProvider,
 )
 from billing.summary import next_action
 from billing.transitions import SUBSCRIPTION_STATUSES, TRANSITIONS
@@ -106,6 +113,73 @@ def test_help_does_not_say_purchase_is_unavailable():
     assert "Purchase stays unavailable until a plan is offered" not in text
     assert "Checkout opens the provider page and does not by itself mark the subscription active." in text
     assert "Razorpay test integration" in text
+    assert "Controlled limited beta" in text
+    assert "manual support process" in text
+    assert "legal/terms.html" in text
+
+
+def test_provider_modes_cannot_share_secrets_or_plans():
+    assert billing_mode() == "test"
+    assert secret_id_for_mode("test") == TEST_SECRET_ID
+    assert secret_id_for_mode("production") == PRODUCTION_SECRET_ID
+    assert key_prefix_for_mode("test") == "rzp_test_"
+    assert key_prefix_for_mode("production") == "rzp_live_"
+    with pytest.raises(BillingError):
+        billing_mode("live")
+    with pytest.raises(BillingError):
+        load_billing_config(client=object(), mode="test", secret_id=PRODUCTION_SECRET_ID)
+    with pytest.raises(BillingError):
+        load_billing_config(client=object(), mode="production", secret_id=TEST_SECRET_ID)
+
+    class Client:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def get_secret_value(self, SecretId):
+            self.seen = SecretId
+            return {"SecretString": json.dumps(self.payload)}
+
+    with pytest.raises(BillingError):
+        load_billing_config(
+            Client({"key_id": "rzp_live_public", "key_secret": "x", "webhook_secret": "y"}),
+            "test",
+        )
+    with pytest.raises(BillingError):
+        load_billing_config(
+            Client({
+                "key_id": "rzp_test_public",
+                "key_secret": "x",
+                "webhook_secret": "y",
+                "monthly_plan_id": "plan_ThiWT35Gf1jyio",
+                "yearly_plan_id": "plan_ProdYearly0001",
+            }),
+            "production",
+        )
+    config = load_billing_config(
+        Client({
+            "key_id": "rzp_live_public",
+            "key_secret": "x",
+            "webhook_secret": "y",
+            "monthly_plan_id": "plan_ProdMonthly0001",
+            "yearly_plan_id": "plan_ProdYearly0001",
+        }),
+        "production",
+    )
+    assert config["links"]["MONTHLY"]["razorpay_plan_id"] == "plan_ProdMonthly0001"
+    assert config["links"]["MONTHLY"]["razorpay_plan_id"] not in {
+        "plan_ThiWT35Gf1jyio",
+        "plan_ThiWTXOzBHl2Qb",
+    }
+    provider = RazorpaySubscriptionProvider(lambda: ("rzp_test_public", "x"), mode="production")
+    with pytest.raises(BillingError):
+        provider.create_subscription(
+            razorpay_plan_id="plan_ProdMonthly0001",
+            total_count=1,
+            organization_id="ORG-MODECHECK",
+        )
+    with pytest.raises(BillingError) as error:
+        _plan_id({"plan_id": "MONTHLY", "billing_mode": "production", "razorpay_plan_id": "plan_ProdMonthly0001"})
+    assert error.value.status_code == 400
 
 
 def test_commercial_doc_states_the_launch_boundary():
