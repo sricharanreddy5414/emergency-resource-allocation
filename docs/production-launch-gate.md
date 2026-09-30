@@ -20,8 +20,8 @@ The questions a launch has to answer:
 | Are production provider plans configured? | No. The only plan ids in code are test plans `plan_ThiWT35Gf1jyio` and `plan_ThiWTXOzBHl2Qb`. |
 | Are production secrets configured? | No. The loader accepts only `erap/billing/razorpay/test`. A key id must start with `rzp_test_`. |
 | Is the webhook configured for production? | No. The existing public route checks the test webhook secret. |
-| Is tenant isolation live-tested with two sessions? | No. BLOCKED. Unit tests cover a foreign organization id. Two signed-in non-pilot sessions were not used. |
-| Did authenticated smoke pass? | No. Unauthenticated checks passed. Signed-in reads were not run in this phase. |
+| Is tenant isolation live-tested with two sessions? | Yes. Two signed-in non-pilot sessions each received HTTP 403, message `Organization access denied`, when reading the other organization's resources, requests, allocations, locations, exchange, notifications, billing, and members. No write was sent. |
+| Did authenticated smoke pass? | Yes for read-only GETs. Each signed-in non-pilot session received HTTP 200 for its own organization, resources, requests, allocations, locations, exchange, notifications, and billing. |
 | Is onboarding validated live? | No. Creating an organization writes a permanent trial. That write was not made. |
 | Is rollback verified? | Yes, by `tests/test_alias_restore.py` and the code in `scripts/set_live_version.py`. No alias was rolled back. |
 | Is observability sufficient for the current system? | Yes for investigation. Alert delivery is not. |
@@ -30,8 +30,8 @@ The questions a launch has to answer:
 | Are legal and commercial documents present? | No. BLOCKED. |
 | Is launch scope approved? | No. BLOCKED. |
 | Is production pricing approved? | No. The catalog amounts exist. A decision to charge them in production is not recorded. |
-| Are there unresolved security issues that block launch? | The live cross-tenant session test is still open. No new code vulnerability was found in this pass. |
-| Are there unresolved critical operational issues? | Production billing is absent. Alarm delivery has no destination. |
+| Are there unresolved security issues that block launch? | The live cross-tenant read test passed. No new code vulnerability was found in this pass. |
+| Are there unresolved critical operational issues? | Production billing is absent. `ERAP-Production-Alarms` has one confirmed email subscription. That address is not named in the repository, so it is not an approved launch destination. |
 
 Paid production stays off until those blocked rows are actually satisfied. A later phase has to record the human decisions. This file cannot supply them.
 
@@ -60,7 +60,7 @@ The running system is one account and one API. The stage name is `dev`. That sta
 
 - Whether a provider cancellation during `PAST_DUE` should end operational writes. The code still leaves writes allowed. It was not changed.
 - Whether refunds may stay a manual support process. Refund automation is not implemented.
-- Whether operators accept CloudWatch without an email subscriber.
+- Whether the one confirmed email subscription on `ERAP-Production-Alarms` is the approved launch destination. The address is not stored in this repository.
 - Who the first production customers are.
 - Whether ₹999 and ₹9,999 are the approved production prices.
 
@@ -69,9 +69,10 @@ The running system is one account and one API. The stage name is `dev`. That sta
 1. Provision production Razorpay plans, a production secret, and a production webhook outside this repository. Do not paste the values into chat or into source.
 2. Provide terms, a privacy policy, and a cancellation or refund statement. Do not treat this file as those documents.
 3. Name the launch scope: internal, invited, limited beta, or public.
-4. Run a two-session read test between the two non-pilot organizations already in the system. Do not use the pilot organization.
-5. Run signed-in read-only smoke for organization, resources, requests, allocations, locations, exchange, notifications, and billing.
-6. Decide alerting. There is still no email subscriber.
+4. Confirm the existing confirmed email subscription on `ERAP-Production-Alarms` as the launch destination, or name a different one outside this repository. Do not put the address in source.
+5. Validate live organization creation only when a disposable organization and a safe cleanup path exist. This pass did not create an organization.
+
+The two-session read test and the signed-in read-only smoke were completed during blocker closure. Details are in `docs/production-launch-blocker-closure.md`. The launch decision remains NO-GO.
 
 ## Earlier phase notes
 

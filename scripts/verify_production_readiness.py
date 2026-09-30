@@ -22,6 +22,11 @@ REQUIRED = {
         "NO-GO",
     ),
     "docs/production-launch-checklist.md": ("NO-GO", "BLOCKED"),
+    "docs/production-launch-blocker-closure.md": (
+        "NO-GO",
+        "PRODUCTION PRICING DECISION REQUIRED",
+        "ONBOARDING VALIDATION BLOCKED",
+    ),
     "docs/saas-commercial-readiness.md": ("Production launch is NOT authorized by Phase 14.",),
     "docs/security-posture.md": ("Authentication",),
     "docs/disaster-recovery.md": ("NEVER restore directly over a production table during routine testing.",),

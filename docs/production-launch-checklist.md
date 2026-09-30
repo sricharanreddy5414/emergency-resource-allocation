@@ -13,7 +13,7 @@ Status values are PASS, FAIL, BLOCKED, DEFERRED, or NOT APPLICABLE. A green test
 | AWS | PASS | Existing API, 15 aliases, 14 protected tables, schedules, and the public-access block were read. No new stack was created. |
 | COGNITO | PASS | Pool `eu-north-1_vv7adAAC9`. MFA remains OPTIONAL, software token on, SMS off. Users were not changed. |
 | API | PASS | API `4c6dni17l3`, stage `dev`, is the only deployed API. Authorizer `y0hzhr`. Public GET and unauthenticated rejection were checked by the smoke script. |
-| TENANT ISOLATION | BLOCKED | Server tests deny a cross-tenant selector. A live test with two signed-in non-pilot sessions was not run. |
+| TENANT ISOLATION | PASS | Two signed-in non-pilot sessions. Each cross-tenant GET returned HTTP 403 `Organization access denied`. No write was sent. |
 | BILLING | BLOCKED | Application billing works in Razorpay test mode. Production billing is not provisioned. |
 | RAZORPAY | BLOCKED | The provider client accepts only a key id that starts with `rzp_test_` and only secret `erap/billing/razorpay/test`. No production plans or secret exist in this repository. |
 | WEBHOOK | BLOCKED | The test webhook path verifies signatures. A production webhook secret and dashboard endpoint were not configured. |
@@ -27,8 +27,8 @@ Status values are PASS, FAIL, BLOCKED, DEFERRED, or NOT APPLICABLE. A green test
 | LEGAL | BLOCKED | No terms, privacy policy, or refund policy exist. None were invented. |
 | PRICING | BLOCKED | The catalog is ₹999 monthly and ₹9,999 yearly. No separate approval to charge those amounts in production is recorded. |
 | CUSTOMER SCOPE | BLOCKED | No internal, pilot, invited, beta, or public scope is approved in the repository. |
-| SMOKE TEST | BLOCKED | Unauthenticated smoke passed. Authenticated reads and a two-organization denial were not completed. |
-| MONITORING | BLOCKED | Alarms exist. No email subscriber is configured, and no decision accepts manual CloudWatch inspection as enough for launch. |
+| SMOKE TEST | PASS | Unauthenticated public GET returned 200 and unauthenticated organization GET returned 401. Signed-in reads for both non-pilot organizations returned 200. Live organization creation was not performed. |
+| MONITORING | BLOCKED | Alarms exist. `ERAP-Production-Alarms` has one confirmed email subscription. The address is not in the repository, and no decision accepts that subscription as the launch destination. |
 | APPROVAL | BLOCKED | Phase 15 decision is NO-GO. Paid production is not authorized. |
 
 Do not open ERAP to customers from this checklist.

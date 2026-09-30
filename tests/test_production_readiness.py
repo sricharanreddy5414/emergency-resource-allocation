@@ -33,6 +33,10 @@ def test_new_runbooks_do_not_name_the_pilot_organization():
         "docs/production-readiness-checklist.md",
         "docs/production-launch-gate.md",
         "docs/production-launch-checklist.md",
+        "docs/production-launch-blocker-closure.md",
     ):
         text = (ROOT / relative).read_text(encoding="utf-8")
         assert FORBIDDEN_ORG not in text
+    closure = (ROOT / "docs/production-launch-blocker-closure.md").read_text(encoding="utf-8")
+    assert "sub_TiEekQFpwByhkU" not in closure
+    assert "sub_Thke6MCZ8oT1A2" not in closure
