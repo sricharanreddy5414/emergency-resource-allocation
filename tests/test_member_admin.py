@@ -627,6 +627,24 @@ def test_unverified_email_cannot_accept(monkeypatch):
     assert not any(row["user_sub"] == MEMBER for row in members.rows)
 
 
+def test_projected_index_does_not_authorize_inactive_member(monkeypatch):
+    organizations, _projected, _audits = seed_projected(
+        monkeypatch,
+        [owner_row(status="INACTIVE")],
+    )
+    organizations.items[ORG] = {
+        "organization_id": ORG,
+        "name": "Org A",
+        "status": "ACTIVE",
+    }
+
+    with pytest.raises(AccessError) as error:
+        access.authorize(event(), {})
+
+    assert error.value.status_code == 403
+    assert error.value.message == "Organization membership is required"
+
+
 def test_inactive_membership_is_rejected(monkeypatch):
     seed(
         monkeypatch,

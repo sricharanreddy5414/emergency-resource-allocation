@@ -91,7 +91,17 @@ def list_memberships(user_sub, members=None, organizations=None):
         if not organization:
             continue
 
-        member_status = item.get("status") or "ACTIVE"
+        # UserSubIndex projects keys and role, not membership status.
+        # Read the base row so a deactivated member is not treated as active.
+        user_sub_key = item.get("user_sub") or user_sub
+        stored = members.get_item(
+            Key={"organization_id": organization_id, "user_sub": user_sub_key}
+        ).get("Item")
+
+        if not stored:
+            continue
+
+        member_status = stored.get("status") or "ACTIVE"
 
         if member_status != "ACTIVE":
             continue
@@ -100,7 +110,7 @@ def list_memberships(user_sub, members=None, organizations=None):
             {
                 "organization_id": organization_id,
                 "name": organization.get("name", ""),
-                "role": item.get("role", ""),
+                "role": stored.get("role", ""),
                 "status": organization.get("status", ""),
             }
         )

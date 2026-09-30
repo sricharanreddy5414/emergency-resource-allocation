@@ -397,6 +397,15 @@ class _Members:
     def query(self, **kwargs):
         return {"Items": list(self.rows)}
 
+    def get_item(self, Key):
+        for row in self.rows:
+            if (
+                row.get("organization_id") == Key.get("organization_id")
+                and row.get("user_sub") == Key.get("user_sub")
+            ):
+                return {"Item": dict(row)}
+        return {}
+
     def put_item(self, **kwargs):
         self.writes += 1
         raise AssertionError("invitation acceptance must not write when billing blocks it")

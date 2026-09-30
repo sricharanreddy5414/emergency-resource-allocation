@@ -54,6 +54,15 @@ class Members:
             rows = [row for row in rows if row.get(name) == value]
         return {"Items": rows}
 
+    def get_item(self, Key):
+        for row in self.rows:
+            if (
+                row.get("organization_id") == Key.get("organization_id")
+                and row.get("user_sub") == Key.get("user_sub")
+            ):
+                return {"Item": dict(row)}
+        return {}
+
 
 class Orgs:
     def __init__(self, items):

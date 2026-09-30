@@ -159,6 +159,22 @@ class MemberStore:
 
         return {"Items": rows}
 
+    def get_item(self, Key):
+        pools = list(self.rows)
+
+        if self.pages:
+            for page in self.pages:
+                pools.extend(page)
+
+        for row in pools:
+            if (
+                row.get("organization_id") == Key.get("organization_id")
+                and row.get("user_sub") == Key.get("user_sub")
+            ):
+                return {"Item": dict(row)}
+
+        return {}
+
     def scan(self, **kwargs):
         self.scans += 1
         raise AssertionError("membership lookup must not scan")
