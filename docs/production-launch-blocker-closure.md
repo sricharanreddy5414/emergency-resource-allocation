@@ -180,3 +180,19 @@ Still required before a launch decision can be GO:
 - Production Razorpay plans, secret, and webhook, after the pricing decision
 
 Do not open ERAP to customers from this file.
+
+## Final closure pass
+
+A later pass searched again for an approved production price, launch scope, legal text, alert destination, and `PAST_DUE` rule. None of those approvals exist. The catalog amounts in `src/billing/plans.py` remain ₹999 monthly and ₹9,999 yearly. `docs/saas-commercial-readiness.md` verifies that catalog. It does not approve those amounts for production charging. Production Razorpay plans, a production secret, and a production webhook were not created. The test secret and the test plan ids were not reused.
+
+`docs/legal-launch-requirements.md` lists the missing terms, privacy policy, cancellation policy, and refund status. It does not supply those documents.
+
+Cancellation stays the implemented owner path: cancel at period end, status stays `ACTIVE`, writes continue, and the expiry worker later sets `CANCELLED`. That is not an approved policy.
+
+Refund automation is still not implemented. No sentence in the repository accepts a manual refund process as the launch rule.
+
+`ERAP-Production-Alarms` still has one confirmed email subscription. The address is not named here and is not an approved destination.
+
+Organization creation still writes a permanent organization, owner membership, and trial. No delete path exists for that write, so no organization was created.
+
+The launch decision remains NO-GO.

@@ -74,6 +74,8 @@ The running system is one account and one API. The stage name is `dev`. That sta
 
 The two-session read test and the signed-in read-only smoke were completed during blocker closure. Details are in `docs/production-launch-blocker-closure.md`. The launch decision remains NO-GO.
 
+A later search did not find an approved production price, launch scope, legal text, alert destination, or `PAST_DUE` rule. `docs/legal-launch-requirements.md` names the missing documents. It is not those documents. Production Razorpay was not provisioned. No organization was created.
+
 ## Earlier phase notes
 
 Phase 15 is the launch decision. Phase 13 records whether the gates below can be checked with the current commands. A gate marked "check exists" means an operator can run it. It does not mean a launch is approved.

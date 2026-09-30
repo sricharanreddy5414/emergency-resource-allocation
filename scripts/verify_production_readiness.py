@@ -27,6 +27,12 @@ REQUIRED = {
         "PRODUCTION PRICING DECISION REQUIRED",
         "ONBOARDING VALIDATION BLOCKED",
     ),
+    "docs/legal-launch-requirements.md": (
+        "Terms required",
+        "Privacy policy required",
+        "Cancellation policy required",
+        "Refund policy/status required",
+    ),
     "docs/saas-commercial-readiness.md": ("Production launch is NOT authorized by Phase 14.",),
     "docs/security-posture.md": ("Authentication",),
     "docs/disaster-recovery.md": ("NEVER restore directly over a production table during routine testing.",),
