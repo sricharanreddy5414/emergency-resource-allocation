@@ -243,11 +243,17 @@ class RazorpaySubscriptionProvider:
         if not isinstance(subscription_id, str) or not subscription_id.startswith("sub_"):
             raise BillingError(502, "Billing provider rejected the request")
 
-        return {
+        result = {
             "provider": "razorpay",
             "provider_subscription_id": subscription_id,
             "public_key_id": key_id,
         }
+        hosted = _hosted_checkout_url(parsed.get("short_url") if isinstance(parsed, dict) else None)
+
+        if hosted:
+            result["hosted_checkout_url"] = hosted
+
+        return result
 
     def cancel_subscription(self, *, provider_subscription_id):
         """Ask Razorpay to cancel at the end of the current cycle.
@@ -305,6 +311,19 @@ def _read_json(urlopen, request, timeout):
         raise BillingError(502, "Billing provider rejected the request")
 
     return parsed
+
+
+def _hosted_checkout_url(value):
+    """Keep only an https payment page. Card data and secrets never qualify."""
+    if not isinstance(value, str):
+        return ""
+
+    parsed = urllib.parse.urlparse(value.strip())
+
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        return ""
+
+    return parsed.geturl()
 
 
 def _discard(error):

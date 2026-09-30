@@ -35,6 +35,9 @@ def test_checkout_and_cancel_do_not_send_client_authority():
     checkout = APP.split("async function startBillingCheckout", 1)[1].split("async function confirmBillingCancellation", 1)[0]
     cancel = APP.split("async function confirmBillingCancellation", 1)[1].split("function renderBilling", 1)[0]
     assert "plan_id: planId" in checkout
+    assert "hosted_checkout_url" in checkout
+    assert 'hostedCheckoutUrl.startsWith("https://")' in checkout
+    assert "window.location.assign(hostedCheckoutUrl)" in checkout
     assert "billingSelector()" in checkout
     assert "user_sub" not in checkout
     assert "subscription_status" not in checkout

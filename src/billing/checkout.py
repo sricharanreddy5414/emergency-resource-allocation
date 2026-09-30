@@ -53,11 +53,17 @@ def create_checkout(
         plan["plan_id"],
         now or datetime.now(timezone.utc),
     )
-    return {
+    result = {
         "provider": "razorpay",
         "provider_subscription_id": created["provider_subscription_id"],
         "public_key_id": created["public_key_id"],
     }
+    hosted = created.get("hosted_checkout_url")
+
+    if isinstance(hosted, str) and hosted.startswith("https://"):
+        result["hosted_checkout_url"] = hosted
+
+    return result
 
 
 def _plan_id(body):

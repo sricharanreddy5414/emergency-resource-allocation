@@ -506,6 +506,39 @@ def test_razorpay_request_uses_the_documented_subscription_call():
 
 
 @pytest.mark.parametrize(
+    "short_url,expected",
+    [
+        ("https://rzp.io/i/testcheckout", "https://rzp.io/i/testcheckout"),
+        ("http://rzp.io/i/testcheckout", ""),
+        ("javascript:alert(1)", ""),
+        ("https://user:secret@rzp.io/i/testcheckout", ""),
+    ],
+)
+def test_hosted_checkout_url_is_https_only(short_url, expected):
+    class Response:
+        def read(self):
+            return json.dumps({"id": "sub_Created000001", "short_url": short_url}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    result = RazorpaySubscriptionProvider(
+        lambda: ("rzp_test_public", "test-secret-value"),
+        urlopen=lambda request, timeout: Response(),
+    ).create_subscription(
+        razorpay_plan_id="plan_TestOnly000001",
+        total_count=1,
+        organization_id=ORG_A,
+    )
+
+    assert result.get("hosted_checkout_url", "") == expected
+    assert "test-secret-value" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
     "plan_id,total_count",
     [("MONTHLY", 1200), ("YEARLY", 100)],
 )

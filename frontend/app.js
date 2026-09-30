@@ -9451,6 +9451,15 @@ async function startBillingCheckout(planId, purchasable) {
 
     }
 
+    const hostedCheckoutUrl = result.payload && result.payload.hosted_checkout_url;
+
+    if (typeof hostedCheckoutUrl === "string" && hostedCheckoutUrl.startsWith("https://")) {
+
+        window.location.assign(hostedCheckoutUrl);
+        return;
+
+    }
+
     showToast("Checkout reference saved. Payment is confirmed only after the provider notifies ERAP.");
     billingCancelArmed = false;
     loadBilling();
