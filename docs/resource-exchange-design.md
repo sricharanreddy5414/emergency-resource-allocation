@@ -1150,8 +1150,9 @@ Phase 5F implements this inside the existing Operations shell (`frontend/index.h
 | **7A** | Lifecycle recovery: cancel / reject / withdraw / expiry / hold release (complete) |
 | **7B** | Quantity ownership transfer **design lock** (complete) |
 | **7C** | Implement quantity handover per 7B lock (complete) |
-| **8A** | Notifications architecture design lock — see `docs/notification-architecture.md` (no runtime yet) |
-| **Later** | QR / MFA; notification **implementation** after 8A |
+| **8A–8C** | In-app notifications: design, backend, and frontend (complete) |
+| **9A** | QR handover architecture lock — see `docs/qr-exchange-architecture.md` (design only; not implemented) |
+| **Later** | MFA |
 
 No implementation phase for quantity transfer starts until this 7B lock is approved.
 

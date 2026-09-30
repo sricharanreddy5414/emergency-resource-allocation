@@ -110,6 +110,10 @@ Target: replace session array with authenticated org-scoped inbox backed by API 
 
 `resource.exchange_allocated`, `resource.exchange_hold_released`, low-level quantity counter history, idempotent retry no-ops, billing entitlement denials.
 
+### 5.3 QR handover (Phase 9A)
+
+QR generation, validation failure, expiry, and revocation do **not** create notification events. A QR confirmation that completes handover emits the existing `exchange.handover.completed` event only. See `docs/qr-exchange-architecture.md`.
+
 ---
 
 ## 6. Recipient matrix

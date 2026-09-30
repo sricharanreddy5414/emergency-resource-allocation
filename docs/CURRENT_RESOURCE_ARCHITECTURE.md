@@ -184,7 +184,7 @@ Compatible direction:
 - Quantity resources need a conditional update so `quantity_on_hand` cannot go below zero. Individual resources keep the existing `Available` condition.
 - Reservation, direct allocation, return, transfer, maintenance, damage, and retire should be new operations on the existing resource function, not a second allocation table. Direct allocation must still write `Allocations` and `ResourceStatusHistory`. It must not require inventing a fake emergency request unless the existing allocator is reused unchanged.
 - `NETWORK` may be stored and rejected by the public index. It must not set `visibility_key`.
-- QR should encode the existing `resource_id` and open the authenticated resource panel. The public endpoint must keep omitting private fields and resource ids.
+- Exchange handover QR is specified in `docs/qr-exchange-architecture.md`. It is an opaque one-time handover session, not a `resource_id` barcode, and it does not authorize transfer by itself. The public endpoint must keep omitting private fields and resource ids.
 - Search and filters beyond the current query should use existing keys first. A new name or asset index needs its own access-pattern design before any table change.
 
 Do not replace `Available`, do not rename `Type` or `Location`, and do not change `ALLOC-{request_id}` for emergency allocations.
