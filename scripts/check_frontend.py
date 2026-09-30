@@ -29,9 +29,13 @@ def main():
         if not path.is_file():
             raise SystemExit(f"Missing frontend file {path.name}")
     subprocess.run([node, "--check", str(app)], check=True)
+    for extra in ("qr-code.js", "qr-handover.js"):
+        subprocess.run([node, "--check", str(ROOT / "frontend" / extra)], check=True)
     html = index.read_text(encoding="utf-8")
     if "app.js" not in html or "style.css" not in html:
         raise SystemExit("index.html does not reference app.js and style.css")
+    if "qr-code.js" not in html or "qr-handover.js" not in html:
+        raise SystemExit("index.html does not reference the QR handover scripts")
     if 'id="exchange"' not in html or 'data-section="exchange"' not in html:
         raise SystemExit("Exchange destination missing from index.html")
     js = app.read_text(encoding="utf-8")

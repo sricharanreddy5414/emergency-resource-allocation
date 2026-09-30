@@ -1428,6 +1428,10 @@ function refreshShellContext() {
 
 function navigateTo(sectionId) {
 
+    if (sectionId !== "exchange") {
+        stopQrHandoverUi();
+    }
+
     const sections =
         document.querySelectorAll(
             ".page-section"
@@ -2920,6 +2924,18 @@ function normalizeResources() {
                         resource.tracking_mode ??
                         resource.trackingMode ??
                         "INDIVIDUAL",
+
+                    quantity_total:
+                        resource.quantity_total ?? null,
+
+                    quantity_available:
+                        resource.quantity_available ?? null,
+
+                    quantity_reserved:
+                        resource.quantity_reserved ?? null,
+
+                    quantity_allocated:
+                        resource.quantity_allocated ?? null,
 
                     condition:
                         resource.condition || "",
@@ -9452,6 +9468,11 @@ let exchangeSelectedId = "";
 let exchangeDetailRequest = null;
 let exchangeDetailOffers = [];
 let exchangeBusy = false;
+let qrProviderSession = null;
+let qrRequesterToken = "";
+let qrPreviewResult = null;
+let qrCountdownTimer = 0;
+let qrCameraSession = null;
 
 function exchangeIdempotencyKey(prefix) {
     return prefix + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
@@ -9807,6 +9828,29 @@ function renderExchangeLifecycleActions(request) {
         `;
     }
 
+    if (canWriteExchange() && isProvider && status === "TRANSFER_PENDING") {
+        actions += `
+            <div class="exchange-action-block qr-handover-panel">
+                <h3>QR Handover</h3>
+                <p class="exchange-muted">Show this QR code to the authorized requester.</p>
+                <p class="exchange-muted">This QR code expires automatically. Generating a new QR invalidates the previous code.</p>
+                <p class="exchange-muted">Waiting for the requester to scan and confirm. Nothing transfers until they confirm.</p>
+                <div id="qrHandoverStage"></div>
+                <button class="primary-btn" type="button" id="exchangeGenerateQrBtn">Generate QR</button>
+            </div>
+        `;
+    }
+
+    if (canWriteExchange() && isRequester && status === "TRANSFER_PENDING") {
+        actions += `
+            <div class="exchange-action-block qr-handover-panel">
+                <h3>QR Handover</h3>
+                <p class="exchange-muted">Scan the provider QR code, review the preview, then confirm. Scanning does not transfer anything. Manual handover remains available below.</p>
+                <button class="secondary-btn" type="button" id="exchangeScanQrBtn">Scan QR</button>
+            </div>
+        `;
+    }
+
     if (canWriteExchange() && isRequester && status === "TRANSFER_PENDING") {
         const locationOptions = (currentUser.locations || [])
             .filter(item => String(item.status || "ACTIVE").toUpperCase() === "ACTIVE")
@@ -9815,12 +9859,7 @@ function renderExchangeLifecycleActions(request) {
         const acceptedOffer = (exchangeDetailOffers || []).find(item => item.offer_id === request.accepted_offer_id) || {};
         const quantityMode = String(request.tracking_mode || "").toUpperCase() === "QUANTITY";
         const offeredQty = acceptedOffer.quantity_offered || request.quantity_requested || "";
-        const qtyResources = (resources || [])
-            .filter(item => String(item.tracking_mode || "").toUpperCase() === "QUANTITY")
-            .filter(item => String(item.operational_status || "AVAILABLE").toUpperCase() === "AVAILABLE")
-            .filter(item => String(item.Type || item.resource_type_name || "").toUpperCase() === String(request.resource_type_name || "").toUpperCase())
-            .map(item => `<option value="${escapeHtml(item.resource_id)}">${escapeHtml(item.name || item.resource_id)} (${escapeHtml(String(item.quantity_available ?? "?"))} available)</option>`)
-            .join("");
+        const qtyResources = quantityPoolOptionMarkup(request);
         const quantityFields = quantityMode ? `
                 <div class="form-group">
                     <label for="exchangeHandoverQuantity">Quantity to transfer</label>
@@ -9925,6 +9964,7 @@ function renderExchangeDetail() {
         ${renderExchangeOfferComposer(request)}
         ${renderExchangeLifecycleActions(request)}
     `;
+    paintProviderQr();
 }
 
 async function loadExchangeWorkspace() {
@@ -9985,6 +10025,13 @@ async function loadExchangeWorkspace() {
 async function openExchangeRequest(requestId, options = {}) {
     if (!requestId) {
         return;
+    }
+    if (requestId !== exchangeSelectedId) {
+        closeQrScanModal();
+        if (qrProviderSession && qrProviderSession.requestId !== requestId) {
+            qrProviderSession = null;
+            stopQrCountdown();
+        }
     }
     exchangeSelectedId = requestId;
     renderExchangeList();
@@ -10292,6 +10339,382 @@ async function confirmExchangeHandover() {
     }
 }
 
+function qrHelpers() {
+    return window.ErapQrHandover || null;
+}
+
+function quantityPoolOptionMarkup(request) {
+    const wanted = String(request.resource_type_name || "").toUpperCase();
+    const locationId = String(request.destination_location_id || "");
+    return (resources || [])
+        .filter(item => String(item.tracking_mode || "").toUpperCase() === "QUANTITY")
+        .filter(item => String(item.operational_status || "AVAILABLE").toUpperCase() === "AVAILABLE")
+        .filter(item => {
+            const typeName = String(item.Type || item.type || item.resource_type_name || "").toUpperCase();
+            return !wanted || typeName === wanted;
+        })
+        .filter(item => !locationId || String(item.location_id || "") === locationId)
+        .map(item => {
+            const id = item.resource_id || item.id || "";
+            return `<option value="${escapeHtml(id)}">${escapeHtml(item.name || id)} (${escapeHtml(String(item.quantity_available ?? "?"))} available)</option>`;
+        })
+        .join("");
+}
+
+function stopQrCountdown() {
+    if (qrCountdownTimer) {
+        window.clearInterval(qrCountdownTimer);
+        qrCountdownTimer = 0;
+    }
+}
+
+function stopQrHandoverUi() {
+    stopQrCountdown();
+    if (qrCameraSession) {
+        qrCameraSession.stop();
+    }
+    const modal = $("qrScanModal");
+    if (modal && !modal.hidden) {
+        closeQrScanModal();
+    }
+}
+
+function paintProviderQr() {
+    const stage = $("qrHandoverStage");
+    const helpers = qrHelpers();
+    const request = exchangeDetailRequest;
+    if (!stage || !helpers || !request || !qrProviderSession || qrProviderSession.requestId !== request.exchange_request_id) {
+        return;
+    }
+    if (String(request.status || "").toUpperCase() !== "TRANSFER_PENDING") {
+        qrProviderSession = null;
+        return;
+    }
+    const session = qrProviderSession;
+    const quantityMode = String(request.tracking_mode || "").toUpperCase() === "QUANTITY";
+    const lines = [
+        "Request " + (request.exchange_request_id || ""),
+        "Destination " + (request.destination_location_name || request.destination_location_id || "")
+    ];
+    if (quantityMode) {
+        lines.push("Quantity " + String(request.quantity_requested ?? ""));
+    }
+    if (request.requester_organization_display_name) {
+        lines.push("Requester " + request.requester_organization_display_name);
+    }
+    if (request.accepted_provider_organization_id) {
+        lines.push("Provider organization " + request.accepted_provider_organization_id);
+    }
+    stage.innerHTML = `
+        <div class="qr-handover-frame">
+            <canvas id="qrHandoverCanvas" role="img" aria-label="One-time handover QR code"></canvas>
+        </div>
+        <p id="qrHandoverCountdown" role="status"></p>
+        <p class="exchange-muted">Session ${escapeHtml(session.sessionId || "")} is active until it expires.</p>
+        ${lines.map(line => `<p class="exchange-muted">${escapeHtml(line)}</p>`).join("")}
+        <button class="secondary-btn" type="button" id="exchangeRegenerateQrBtn">Regenerate QR</button>
+    `;
+    if (window.ErapQrCode) {
+        window.ErapQrCode.renderHandoverQr($("qrHandoverCanvas"), session.payload);
+    }
+    const generate = $("exchangeGenerateQrBtn");
+    if (generate) {
+        generate.hidden = true;
+    }
+    const countdown = $("qrHandoverCountdown");
+    const tick = () => {
+        if (countdown) {
+            countdown.textContent = helpers.qrCountdownLabel(session.expiresAt, Date.now());
+        }
+    };
+    stopQrCountdown();
+    tick();
+    qrCountdownTimer = window.setInterval(tick, 1000);
+}
+
+function qrFailure(error) {
+    const helpers = qrHelpers();
+    const status = error && error.status;
+    const message = error && error.message;
+    if (!helpers) {
+        return { kind: "error", text: "This handover action could not be completed." };
+    }
+    return helpers.qrUxMessage(status, message);
+}
+
+async function issueExchangeQr(regenerating) {
+    if (exchangeBusy || !exchangeDetailRequest || !canWriteExchange() || !qrHelpers()) {
+        return;
+    }
+    const requestId = exchangeDetailRequest.exchange_request_id;
+    const button = regenerating ? $("exchangeRegenerateQrBtn") : $("exchangeGenerateQrBtn");
+    setExchangeBusy(button, true, regenerating ? "Regenerating..." : "Generating...", regenerating ? "Regenerate QR" : "Generate QR");
+    try {
+        const payload = await exchangeRequest(qrHelpers().qrIssuePath(requestId), { method: "POST", body: {} });
+        const code = payload && payload.qr_payload;
+        if (!qrHelpers().isHandoverQrPayload(code)) {
+            showToast("QR handover could not be started.");
+            return;
+        }
+        qrProviderSession = {
+            requestId: requestId,
+            payload: code,
+            expiresAt: payload.expires_at,
+            sessionId: payload.session_id || ""
+        };
+        renderExchangeDetail();
+        showToast(regenerating
+            ? "The previous QR code is no longer valid."
+            : "QR code is ready. Show it to the authorized requester.");
+    } catch (error) {
+        const failure = qrFailure(error);
+        showToast(failure.text);
+    } finally {
+        setExchangeBusy(button, false, regenerating ? "Regenerating..." : "Generating...", regenerating ? "Regenerate QR" : "Generate QR");
+    }
+}
+
+function clearQrRequesterSecret() {
+    qrRequesterToken = "";
+    qrPreviewResult = null;
+    const input = $("qrScanManual");
+    if (input) {
+        input.value = "";
+    }
+}
+
+function closeQrScanModal() {
+    if (qrCameraSession) {
+        qrCameraSession.stop();
+    }
+    clearQrRequesterSecret();
+    const modal = $("qrScanModal");
+    if (modal) {
+        modal.hidden = true;
+    }
+    const preview = $("qrScanPreview");
+    if (preview) {
+        preview.hidden = true;
+        preview.innerHTML = "";
+    }
+    const message = $("qrScanMessage");
+    if (message) {
+        message.textContent = "";
+    }
+    if ($("qrScanConfirmBtn")) $("qrScanConfirmBtn").hidden = true;
+    if ($("qrScanRetryBtn")) $("qrScanRetryBtn").hidden = true;
+    const video = $("qrScanVideo");
+    if (video) {
+        video.hidden = true;
+    }
+}
+
+function setQrScanMessage(text, retry) {
+    const message = $("qrScanMessage");
+    if (message) {
+        message.textContent = text || "";
+    }
+    if ($("qrScanRetryBtn")) {
+        $("qrScanRetryBtn").hidden = !retry;
+    }
+}
+
+function openQrScanModal() {
+    if (!canWriteExchange() || !qrHelpers()) {
+        return;
+    }
+    const modal = $("qrScanModal");
+    if (!modal) {
+        return;
+    }
+    clearQrRequesterSecret();
+    const preview = $("qrScanPreview");
+    if (preview) {
+        preview.hidden = true;
+        preview.innerHTML = "";
+    }
+    setQrScanMessage("");
+    if ($("qrScanConfirmBtn")) $("qrScanConfirmBtn").hidden = true;
+    const cameraOk = qrHelpers().createQrCameraSession(window).supported();
+    if ($("qrScanStartCamera")) $("qrScanStartCamera").hidden = !cameraOk;
+    if ($("qrCameraUnsupported")) $("qrCameraUnsupported").hidden = cameraOk;
+    modal.hidden = false;
+    $("qrScanClose")?.focus();
+}
+
+async function startQrCamera() {
+    const helpers = qrHelpers();
+    if (!helpers) {
+        return;
+    }
+    if (!qrCameraSession) {
+        qrCameraSession = helpers.createQrCameraSession(window);
+    }
+    if (!qrCameraSession.supported()) {
+        if ($("qrCameraUnsupported")) $("qrCameraUnsupported").hidden = false;
+        if ($("qrScanStartCamera")) $("qrScanStartCamera").hidden = true;
+        setQrScanMessage("Use QR payload manually. This browser cannot scan with the camera.");
+        return;
+    }
+    try {
+        await qrCameraSession.start($("qrScanVideo"), value => {
+            previewQrToken(value);
+        });
+    } catch (_error) {
+        qrCameraSession.stop();
+        if ($("qrCameraUnsupported")) $("qrCameraUnsupported").hidden = false;
+        setQrScanMessage("Camera permission was not granted. Enter the QR payload manually.");
+    }
+}
+
+function previewEnteredQr() {
+    previewQrToken($("qrScanManual")?.value || "");
+}
+
+async function previewQrToken(token) {
+    const helpers = qrHelpers();
+    if (!helpers || exchangeBusy) {
+        return;
+    }
+    if (qrCameraSession) {
+        qrCameraSession.stop();
+    }
+    const input = $("qrScanManual");
+    if (input) {
+        input.value = "";
+    }
+    if (!helpers.isHandoverQrPayload(token)) {
+        clearQrRequesterSecret();
+        setQrScanMessage("This QR code is not an ERAP handover code.");
+        return;
+    }
+    qrRequesterToken = token;
+    setExchangeBusy($("qrScanPreviewBtn"), true, "Previewing...", "Preview handover");
+    try {
+        const preview = await exchangeRequest(helpers.qrPreviewPath(), {
+            method: "POST",
+            body: helpers.qrPreviewBody(token)
+        });
+        qrPreviewResult = preview;
+        renderQrPreview(preview);
+        setQrScanMessage("Review the handover. Nothing has been transferred.");
+    } catch (error) {
+        const failure = qrFailure(error);
+        if (failure.kind === "expired" || failure.kind === "invalid" || failure.kind === "completed") {
+            clearQrRequesterSecret();
+        }
+        if (failure.kind === "completed") {
+            setQrScanMessage("Handover completed");
+            await refreshExchangeAfterQr();
+            return;
+        }
+        setQrScanMessage(failure.text, failure.kind === "retry");
+        if (failure.kind === "billing") {
+            showToast(failure.text);
+        }
+    } finally {
+        setExchangeBusy($("qrScanPreviewBtn"), false, "Previewing...", "Preview handover");
+    }
+}
+
+function renderQrPreview(preview) {
+    const host = $("qrScanPreview");
+    const helpers = qrHelpers();
+    if (!host || !preview) {
+        return;
+    }
+    const quantityMode = String(preview.tracking_mode || "").toUpperCase() === "QUANTITY";
+    const request = exchangeDetailRequest || {};
+    const pools = quantityMode ? quantityPoolOptionMarkup(request) : "";
+    host.hidden = false;
+    host.innerHTML = `
+        <h3>Review handover</h3>
+        <p>Nothing is transferred until you confirm.</p>
+        <p>Exchange request ${escapeHtml(preview.exchange_request_id || "")}</p>
+        <p>Tracking ${escapeHtml(preview.tracking_mode || "")}</p>
+        <p>Resource type ${escapeHtml(preview.resource_type_name || "")}</p>
+        ${quantityMode ? `<p>Quantity to receive: ${escapeHtml(String(preview.quantity ?? ""))}</p>` : ""}
+        <p>Destination location ${escapeHtml(preview.destination_location_id || request.destination_location_name || "")}</p>
+        <p>Destination mode ${escapeHtml(preview.destination_mode || "Locked to this exchange")}</p>
+        ${preview.expires_at ? `<p>Expires ${escapeHtml(String(preview.expires_at))}</p>` : ""}
+        ${quantityMode ? `
+            <div class="form-group">
+                <label for="qrScanDestination">Destination quantity pool</label>
+                <select id="qrScanDestination">
+                    <option value="">Create new PRIVATE pool at destination</option>
+                    ${pools}
+                </select>
+            </div>
+            <p id="qrScanDestinationCopy"></p>
+        ` : ""}
+    `;
+    if ($("qrScanConfirmBtn")) {
+        $("qrScanConfirmBtn").hidden = false;
+    }
+    const select = $("qrScanDestination");
+    const copy = $("qrScanDestinationCopy");
+    const writeCopy = () => {
+        if (!copy || !helpers) return;
+        const option = select?.selectedOptions?.[0];
+        copy.textContent = helpers.quantityDestinationCopy(select?.value || "", option ? option.textContent : "");
+    };
+    if (select) {
+        select.addEventListener("change", writeCopy);
+        writeCopy();
+    }
+}
+
+async function confirmScannedQr() {
+    const helpers = qrHelpers();
+    if (!helpers || exchangeBusy || !qrRequesterToken || !qrPreviewResult) {
+        return;
+    }
+    const button = $("qrScanConfirmBtn");
+    setExchangeBusy(button, true, "Confirming Handover...", "Confirm handover");
+    const token = qrRequesterToken;
+    const preview = qrPreviewResult;
+    try {
+        const result = await exchangeRequest(helpers.qrConfirmPath(), {
+            method: "POST",
+            body: helpers.qrConfirmBody(token, preview, $("qrScanDestination")?.value || "")
+        });
+        clearQrRequesterSecret();
+        const completed = result && (result.message === "Handover already completed" || result.message === "Handover completed");
+        setQrScanMessage(completed ? "Handover completed" : (result && result.message) || "Handover completed");
+        if (button) button.hidden = true;
+        showToast("Handover completed");
+        await refreshExchangeAfterQr();
+    } catch (error) {
+        const failure = qrFailure(error);
+        if (failure.kind === "completed") {
+            clearQrRequesterSecret();
+            setQrScanMessage("Handover completed");
+            showToast("Handover completed");
+            await refreshExchangeAfterQr();
+            return;
+        }
+        if (failure.kind === "expired" || failure.kind === "invalid") {
+            clearQrRequesterSecret();
+            if (button) button.hidden = true;
+        }
+        setQrScanMessage(failure.text, failure.kind === "retry");
+        showToast(failure.text);
+    } finally {
+        setExchangeBusy(button, false, "Confirming Handover...", "Confirm handover");
+    }
+}
+
+async function refreshExchangeAfterQr() {
+    const requestId = exchangeDetailRequest && exchangeDetailRequest.exchange_request_id;
+    await loadExchangeWorkspace();
+    if (requestId) {
+        await openExchangeRequest(requestId);
+    }
+    await loadResources();
+    await loadAllocations();
+    await refreshNotificationBadge();
+}
+
 function initializeExchange() {
     document.querySelectorAll("[data-exchange-view]").forEach(button => {
         button.addEventListener("click", () => {
@@ -10374,8 +10797,48 @@ function initializeExchange() {
         }
         if (event.target?.id === "exchangeConfirmHandoverBtn") {
             confirmExchangeHandover();
+            return;
+        }
+        if (event.target?.id === "exchangeGenerateQrBtn") {
+            issueExchangeQr(false);
+            return;
+        }
+        if (event.target?.id === "exchangeRegenerateQrBtn") {
+            issueExchangeQr(true);
+            return;
+        }
+        if (event.target?.id === "exchangeScanQrBtn") {
+            openQrScanModal();
         }
     });
+
+    $("qrScanClose")?.addEventListener("click", closeQrScanModal);
+    $("qrScanStartCamera")?.addEventListener("click", startQrCamera);
+    $("qrScanPreviewBtn")?.addEventListener("click", previewEnteredQr);
+    $("qrScanConfirmBtn")?.addEventListener("click", confirmScannedQr);
+    $("qrScanRetryBtn")?.addEventListener("click", () => {
+        if ($("qrScanRetryBtn")) $("qrScanRetryBtn").hidden = true;
+        if ($("qrScanConfirmBtn") && !$("qrScanConfirmBtn").hidden) {
+            setQrScanMessage("Press Confirm handover to try again. Confirmation is not repeated automatically.");
+            $("qrScanConfirmBtn").focus();
+            return;
+        }
+        if (qrRequesterToken) {
+            previewQrToken(qrRequesterToken);
+        }
+    });
+    $("qrScanModal")?.addEventListener("click", event => {
+        if (event.target?.id === "qrScanModal") {
+            closeQrScanModal();
+        }
+    });
+    document.addEventListener("keydown", event => {
+        const modal = $("qrScanModal");
+        if (event.key === "Escape" && modal && !modal.hidden) {
+            closeQrScanModal();
+        }
+    });
+    window.addEventListener("pagehide", stopQrHandoverUi);
 }
 
 

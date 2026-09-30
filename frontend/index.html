@@ -2431,6 +2431,29 @@
 
 </div>
 
+<div id="qrScanModal" class="modal-overlay qr-scan-modal" hidden>
+    <div class="modal-card qr-scan-card" role="dialog" aria-modal="true" aria-labelledby="qrScanTitle">
+        <button type="button" class="modal-close" id="qrScanClose" aria-label="Close QR scan">×</button>
+        <h2 id="qrScanTitle">Scan the provider's QR code</h2>
+        <p class="modal-description">Scanning only previews the handover. Nothing is transferred until you confirm.</p>
+        <p class="modal-description" id="qrCameraNote">Camera access is requested only after you choose Start camera. Frames stay on this device.</p>
+        <button class="secondary-btn" type="button" id="qrScanStartCamera">Start camera</button>
+        <p class="exchange-muted" id="qrCameraUnsupported" hidden>Use QR payload manually. This browser cannot scan with the camera.</p>
+        <video id="qrScanVideo" playsinline muted autoplay hidden></video>
+        <div class="form-group">
+            <label for="qrScanManual">Enter QR payload manually</label>
+            <input id="qrScanManual" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="erap-handover-code">
+        </div>
+        <button class="secondary-btn" type="button" id="qrScanPreviewBtn">Preview handover</button>
+        <div id="qrScanPreview" hidden></div>
+        <p id="qrScanMessage" role="status"></p>
+        <div class="modal-actions">
+            <button class="primary-btn" type="button" id="qrScanConfirmBtn" hidden>Confirm handover</button>
+            <button class="secondary-btn" type="button" id="qrScanRetryBtn" hidden>Try again</button>
+        </div>
+    </div>
+</div>
+
 
 <!-- =====================================================
      REQUEST MODAL JAVASCRIPT
@@ -2620,6 +2643,8 @@
      APP JAVASCRIPT
 ===================================================== -->
 
+<script src="qr-code.js"></script>
+<script src="qr-handover.js"></script>
 <script src="app.js"></script>
 
 

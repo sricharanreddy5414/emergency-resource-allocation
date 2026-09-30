@@ -1178,3 +1178,59 @@ td {
         text-align: center;
     }
 }
+
+.qr-handover-panel,
+.qr-scan-card,
+.qr-handover-frame,
+#qrScanPreview,
+#qrScanMessage {
+    max-width: 100%;
+    min-width: 0;
+}
+
+.qr-handover-frame {
+    width: min(240px, 100%);
+}
+
+.qr-handover-frame canvas,
+#qrScanVideo {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    background: #fff;
+}
+
+#qrScanModal[hidden] {
+    display: none !important;
+}
+
+.qr-scan-card {
+    width: min(440px, 100%);
+    max-height: 100%;
+    overflow: auto;
+    box-sizing: border-box;
+}
+
+#qrScanPreview {
+    display: grid;
+    gap: 8px;
+}
+
+#qrScanPreview[hidden] {
+    display: none;
+}
+
+#qrScanMessage {
+    min-height: 1.2em;
+}
+
+@media (max-width: 390px) {
+    .qr-scan-card {
+        padding: 20px 16px 32px;
+    }
+
+    .qr-handover-frame {
+        width: 100%;
+    }
+}
