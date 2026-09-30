@@ -87,7 +87,7 @@ const COGNITO_CLIENT_ID =
 const REDIRECT_URI = window.location.origin;
 
 const COGNITO_SCOPES =
-    "openid";
+    "openid aws.cognito.signin.user.admin";
 
 /* =========================================================
    APPLICATION STATE
@@ -1040,6 +1040,293 @@ function updateUserInterface() {
 
 }
 
+
+/* =========================================================
+   OPTIONAL AUTHENTICATOR MFA
+   Cognito owns the secret. This page keeps it only while
+   the setup panel is open.
+========================================================= */
+
+let mfaSetupSecret = "";
+let mfaBusy = false;
+
+function mfaFailureMessage(errorName, errorMessage) {
+
+    const name = String(errorName || "");
+    const text = String(errorMessage || "").toLowerCase();
+
+    if (text.includes("scope")) {
+        return "Sign out and sign in again to set up an authenticator.";
+    }
+
+    if (name.includes("CodeMismatch") || name.includes("EnableSoftwareToken")) {
+        return "Incorrect verification code. Try again.";
+    }
+
+    if (name.includes("NotAuthorized") || name.includes("Expired")) {
+        return "Your verification session expired. Please sign in again.";
+    }
+
+    return "Authenticator setup could not be completed. Try again.";
+
+}
+
+function setMfaMessage(message) {
+
+    const node = $("mfaMessage");
+
+    if (node) {
+        node.textContent = message || "";
+    }
+
+}
+
+function clearMfaSetupSecret() {
+
+    mfaSetupSecret = "";
+
+    const key = $("mfaSetupKey");
+
+    if (key) {
+        key.textContent = "";
+    }
+
+    const canvas = $("mfaSetupCanvas");
+
+    if (canvas) {
+        const context = canvas.getContext && canvas.getContext("2d");
+        if (context) {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        canvas.width = 0;
+        canvas.height = 0;
+    }
+
+    const input = $("mfaCode");
+
+    if (input) {
+        input.value = "";
+    }
+
+    const setup = $("mfaSetup");
+
+    if (setup) {
+        setup.hidden = true;
+    }
+
+}
+
+function mfaSetupUri(secret, account) {
+
+    const label = "ERAP:" + String(account || "account");
+    const params = new URLSearchParams({
+        secret: String(secret || ""),
+        issuer: "ERAP",
+        algorithm: "SHA1",
+        digits: "6",
+        period: "30"
+    });
+
+    return "otpauth://totp/" + encodeURIComponent(label) + "?" + params.toString();
+
+}
+
+async function cognitoIdentityCall(action, body) {
+
+    const response = await originalFetch(
+        "https://cognito-idp.eu-north-1.amazonaws.com/",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-amz-json-1.1",
+                "X-Amz-Target": "AWSCognitoIdentityProviderService." + action
+            },
+            body: JSON.stringify(body)
+        }
+    );
+
+    let payload = {};
+
+    try {
+        payload = await response.json();
+    } catch (_error) {
+        payload = {};
+    }
+
+    if (!response.ok) {
+        const error = new Error(mfaFailureMessage(payload.__type, payload.message));
+        error.code = String(payload.__type || "");
+        throw error;
+    }
+
+    return payload;
+
+}
+
+function showMfaReady(enabled) {
+
+    const status = $("mfaStatus");
+    const start = $("mfaStartBtn");
+
+    if (status) {
+        status.textContent = enabled
+            ? "Authenticator is on. The next sign-in asks for a verification code."
+            : "Authenticator is off. Password sign-in still works until you set one up.";
+    }
+
+    if (start) {
+        start.hidden = Boolean(enabled);
+    }
+
+}
+
+async function refreshMfaStatus() {
+
+    const status = $("mfaStatus");
+    const token = getAccessToken();
+
+    if (!token) {
+        if (status) {
+            status.textContent = "Sign in again to manage your authenticator.";
+        }
+        return;
+    }
+
+    try {
+        const user = await cognitoIdentityCall("GetUser", { AccessToken: token });
+        const settings = Array.isArray(user.UserMFASettingList) ? user.UserMFASettingList : [];
+        const enabled = settings.indexOf("SOFTWARE_TOKEN_MFA") !== -1
+            || user.PreferredMfaSetting === "SOFTWARE_TOKEN_MFA";
+        showMfaReady(enabled);
+    } catch (error) {
+        if (status) {
+            status.textContent = error.message || mfaFailureMessage(error.code, "");
+        }
+    }
+
+}
+
+async function startMfaSetup() {
+
+    if (mfaBusy) {
+        return;
+    }
+
+    const token = getAccessToken();
+
+    if (!token) {
+        setMfaMessage("Sign out and sign in again to set up an authenticator.");
+        return;
+    }
+
+    mfaBusy = true;
+    clearMfaSetupSecret();
+    setMfaMessage("");
+
+    try {
+        const result = await cognitoIdentityCall("AssociateSoftwareToken", { AccessToken: token });
+        const secret = String(result.SecretCode || "");
+        if (!secret) {
+            setMfaMessage("Authenticator setup could not be completed. Try again.");
+            return;
+        }
+        mfaSetupSecret = secret;
+        const key = $("mfaSetupKey");
+        if (key) {
+            key.textContent = secret;
+        }
+        const canvas = $("mfaSetupCanvas");
+        if (canvas && window.ErapQrCode) {
+            try {
+                window.ErapQrCode.renderHandoverQr(
+                    canvas,
+                    mfaSetupUri(secret, currentUser.email)
+                );
+            } catch (_error) {
+                canvas.width = 0;
+                canvas.height = 0;
+            }
+        }
+        const setup = $("mfaSetup");
+        if (setup) {
+            setup.hidden = false;
+        }
+        $("mfaCode")?.focus();
+    } catch (error) {
+        clearMfaSetupSecret();
+        setMfaMessage(error.message || mfaFailureMessage(error.code, ""));
+    } finally {
+        mfaBusy = false;
+    }
+
+}
+
+async function enableSoftwareTokenPreference(token) {
+
+    await cognitoIdentityCall("SetUserMFAPreference", {
+        AccessToken: token,
+        SoftwareTokenMfaSettings: {
+            Enabled: true,
+            PreferredMfa: true
+        }
+    });
+
+}
+
+async function verifyMfaSetup() {
+
+    if (mfaBusy || !mfaSetupSecret) {
+        return;
+    }
+
+    const token = getAccessToken();
+    const code = String($("mfaCode")?.value || "").replace(/\s+/g, "");
+
+    if (!token) {
+        setMfaMessage("Your verification session expired. Please sign in again.");
+        return;
+    }
+
+    if (!/^\d{6}$/.test(code)) {
+        setMfaMessage("Incorrect verification code. Try again.");
+        return;
+    }
+
+    mfaBusy = true;
+    setMfaMessage("");
+
+    let verified = false;
+
+    try {
+        await cognitoIdentityCall("VerifySoftwareToken", {
+            AccessToken: token,
+            UserCode: code,
+            FriendlyDeviceName: "ERAP authenticator"
+        });
+        verified = true;
+        await enableSoftwareTokenPreference(token);
+        clearMfaSetupSecret();
+        showMfaReady(true);
+        showToast("Authenticator is on for the next sign-in.");
+    } catch (error) {
+        if (verified) {
+            try {
+                await enableSoftwareTokenPreference(token);
+                clearMfaSetupSecret();
+                showMfaReady(true);
+                showToast("Authenticator is on for the next sign-in.");
+                return;
+            } catch (preferenceError) {
+                setMfaMessage(preferenceError.message || mfaFailureMessage(preferenceError.code, ""));
+                return;
+            }
+        }
+        setMfaMessage(error.message || mfaFailureMessage(error.code, ""));
+    } finally {
+        mfaBusy = false;
+    }
+
+}
 
 /* =========================================================
    LOGOUT
@@ -5075,6 +5362,8 @@ function openProfile() {
         "hidden"
     );
 
+    refreshMfaStatus();
+
 }
 
 
@@ -5086,6 +5375,8 @@ function closeProfile() {
 
     if (!modal) return;
 
+
+    clearMfaSetupSecret();
 
     modal.classList.add(
         "hidden"
@@ -6187,6 +6478,27 @@ function initializeEvents() {
         ?.addEventListener(
             "click",
             openEditProfile
+        );
+
+    $("mfaStartBtn")
+        ?.addEventListener(
+            "click",
+            startMfaSetup
+        );
+
+    $("mfaCancelBtn")
+        ?.addEventListener(
+            "click",
+            () => {
+                clearMfaSetupSecret();
+                setMfaMessage("");
+            }
+        );
+
+    $("mfaVerifyBtn")
+        ?.addEventListener(
+            "click",
+            verifyMfaSetup
         );
 
 

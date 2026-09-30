@@ -1820,6 +1820,24 @@
         </button>
 
 
+        <section class="mfa-panel" id="mfaPanel" aria-labelledby="mfaTitle">
+            <h3 id="mfaTitle">Authenticator</h3>
+            <p id="mfaStatus">Checking authenticator status.</p>
+            <div id="mfaSetup" hidden>
+                <p>Add ERAP to an authenticator app, then enter the 6-digit code. This setup key is shown only during setup.</p>
+                <canvas id="mfaSetupCanvas" aria-hidden="true"></canvas>
+                <p class="mfa-key" id="mfaSetupKey"></p>
+                <label for="mfaCode">Verification code</label>
+                <input id="mfaCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false">
+                <p id="mfaMessage" role="status"></p>
+                <div class="text-actions">
+                    <button class="primary-btn" id="mfaVerifyBtn" type="button">Verify and enable</button>
+                    <button class="secondary-btn" id="mfaCancelBtn" type="button">Cancel</button>
+                </div>
+            </div>
+            <button class="secondary-btn" id="mfaStartBtn" type="button">Set up authenticator</button>
+        </section>
+
         <button
             class="logout-btn"
             id="modalLogoutBtn"

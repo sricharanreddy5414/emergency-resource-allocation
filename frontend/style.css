@@ -764,6 +764,37 @@ td {
     color: var(--wait);
 }
 
+.mfa-panel {
+    margin: 18px 0 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+
+.mfa-panel h3 {
+    font-size: 16px;
+    margin-bottom: 8px;
+}
+
+.mfa-panel canvas {
+    display: block;
+    width: min(220px, 100%);
+    height: auto;
+    margin: 12px 0;
+    background: #fff;
+}
+
+.mfa-key {
+    font-family: ui-monospace, Consolas, monospace;
+    word-break: break-all;
+    margin-bottom: 12px;
+}
+
+.mfa-panel .text-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
 .form-group,
 .setting-row,
 .profile-details div {
