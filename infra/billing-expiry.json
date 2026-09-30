@@ -1,7 +1,7 @@
 {
-  "applied": false,
+  "applied": true,
   "region": "eu-north-1",
-  "note": "Specification only. Do not create the function, the schedule, or the index. The expiry job does not use Cognito, Secrets Manager, or Razorpay.",
+  "note": "The function, LifecycleDueIndex, and daily schedule already exist. Do not recreate them. The expiry job does not use Cognito, Secrets Manager, or Razorpay.",
   "function": {
     "name": "erap-billing-expiry",
     "handler": "handler.lambda_handler",
@@ -20,7 +20,7 @@
     "name": "erap-billing-expiry-daily",
     "schedule_expression": "cron(0 2 * * ? *)",
     "timezone": "UTC",
-    "intended_state_after_a_later_deploy": "ENABLED",
+    "state": "ENABLED",
     "target": "erap-billing-expiry",
     "alias": "live"
   },

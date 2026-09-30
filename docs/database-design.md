@@ -6,7 +6,9 @@ The Emergency Resource Allocation Platform uses Amazon DynamoDB as its primary d
 
 DynamoDB is a fully managed NoSQL database that provides low-latency data access and integrates directly with AWS Lambda.
 
-The project uses three separate DynamoDB tables:
+The live table list, including `OrganizationSubscriptions` and `BillingEvents` and their indexes, is in `docs/CURRENT_RESOURCE_ARCHITECTURE.md`. Billing rules are in `docs/billing-architecture.md`.
+
+The original allocation model uses these tables:
 
 1. `Resources`
 2. `EmergencyRequests`

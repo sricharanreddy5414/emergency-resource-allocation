@@ -1,7 +1,7 @@
 {
-  "applied": false,
+  "applied": true,
   "region": "eu-north-1",
-  "note": "Specification only. Do not create the Lambda, routes, or secret. The existing API and the nine deployed functions stay unchanged. Authenticated billing routes use authorizer y0hzhr. The webhook route has no Cognito authorizer.",
+  "note": "The billing routes, functions, and test secret already exist on API 4c6dni17l3 stage dev. Do not create a second API or stage. Authenticated billing routes use authorizer y0hzhr. The webhook route has no Cognito authorizer. deploy-backend.yml still publishes only PACKAGES, so billing aliases are updated by their own deploy.",
   "route": {
     "restApiId": "4c6dni17l3",
     "stage": "dev",

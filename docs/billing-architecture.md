@@ -1,16 +1,26 @@
 # Billing architecture
 
-Phase A defines the billing domain. It does not charge anyone, create tables, or change who can use ERAP today.
+The billing resources below are deployed in `eu-north-1` on API `4c6dni17l3`, stage `dev`, deployment `tr1rz2`. `infra/billing-tables.json`, `infra/billing-checkout.json`, and `infra/billing-expiry.json` record `"applied": true`. Do not recreate those resources.
+
+`OrganizationSubscriptions` and `BillingEvents` use on-demand billing, point-in-time recovery, and deletion protection. Neither table uses TTL. `ProviderSubscriptionIndex`, `LifecycleDueIndex`, and `OrganizationBillingEventsIndex` project all attributes. `erap-billing` alias `live` is version 6 from commit `c375842`. `erap-billing-webhook` and `erap-billing-expiry` alias `live` are version 1 from commit `3a38da8`; later checkout changes did not change their handlers. `deploy-backend.yml` still publishes only `PACKAGES`, so those three aliases are deployed separately.
+
+Razorpay stays in test mode. Monthly plan `plan_ThiWT35Gf1jyio` is ₹999 (`99900` paise) for 468 cycles. Yearly plan `plan_ThiWTXOzBHl2Qb` is ₹9,999 (`999900` paise) for 39 cycles. Both counts stay inside Razorpay's 40-year authorization limit. The test secret id is `erap/billing/razorpay/test`. Live keys are rejected.
+
+Webhook `ThZihd32AsjaX2` posts to `/dev/billing/webhook` with no Cognito authorizer. Signature verification stays on. Enabled events are `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, and `payment.failed`. An eMandate registration can remain `created` until Razorpay completes its documented T+1 activation. ERAP stays `TRIALING` until a verified `subscription.activated` or `subscription.charged` event arrives. The current test subscription `sub_TiEekQFpwByhkU` for `ORG-17D0E2939B2D` is that case: the invoice is paid and the ERAP row is still `TRIALING`.
+
+`erap-billing-expiry-daily` is enabled at `cron(0 2 * * ? *)` UTC and targets `erap-billing-expiry:live`. Billing function logs are kept for 30 days. The shared ERAP alarm set does not include separate billing-function alarms.
+
+Phase A defines the billing domain. Later sections describe the rules that are now deployed.
 
 ## Organization-level billing
 
-The customer is the organization. Members do not have their own subscriptions. `OWNER` will manage billing. `ADMIN` will be able to view it later. `OPERATOR` and `MEMBER` will not view or manage it. Those role checks are not wired to an API in this phase.
+The customer is the organization. Members do not have their own subscriptions. `OWNER` views billing and can start or cancel checkout. `ADMIN` can view billing. `OPERATOR` and `MEMBER` cannot view or manage it. Those checks run in the billing API.
 
 Subscription state is not stored in `Organizations.status`. That field remains the organization lifecycle (`ACTIVE`, `SUSPENDED`, `ARCHIVED`). Authorization still requires `ACTIVE`.
 
 ## Trial lifecycle
 
-A new organization, when a later phase writes the row, receives:
+A new organization receives:
 
 - `trial_start`: server UTC time at creation
 - `trial_end`: `trial_start` plus 15 days
@@ -31,7 +41,7 @@ Organization creation does not use `TransactWriteItems`. The existing flow write
 
 A missing subscription row still means legacy access through `access_when_subscription_missing`. Creating one organization does not scan or update any other organization. Pilot and other existing rows are not backfilled. One trial per owner is not enforced: each new organization created through this flow receives its own 15-day trial.
 
-`OrganizationSubscriptions` is still not deployed. `infra/billing-tables.json` remains `"applied": false`. The create-organization package includes the billing modules so the function can write the row once the table exists.
+`OrganizationSubscriptions` is deployed. The create-organization package writes the trial row when a new organization is created.
 
 ## Subscription states
 
@@ -72,7 +82,7 @@ INR 999.00 is `99900` paise, and INR 9,999.00 is `999900` paise. `amount_minor` 
 
 ## Event model
 
-`BillingEvents` will use partition key `provider_event_id`. A row records `provider`, `event_type`, `organization_id`, `provider_payment_id`, `payment_state`, `received_at`, `processed_at`, and `processing_status`.
+`BillingEvents` uses partition key `provider_event_id`. A row records `provider`, `event_type`, `organization_id`, `provider_payment_id`, `payment_state`, `received_at`, `processed_at`, and `processing_status`.
 
 Processing statuses: `RECEIVED`, `PROCESSED`, `IGNORED`, `REJECTED`.
 
@@ -88,24 +98,24 @@ A missing `OrganizationSubscriptions` row means the same legacy access. `access_
 
 ## Future Razorpay integration
 
-Razorpay is the intended first provider. The `provider` value `razorpay` is reserved on events. Checkout uses `require_purchasable` for the priced plans, then `provider_plan`. Monthly checkout sends `total_count` 1200. Yearly checkout sends `total_count` 100. Those are the documented 100-year maximums, not an unlimited subscription.
+Razorpay is the intended first provider. The `provider` value `razorpay` is reserved on events. Checkout uses `require_purchasable` for the priced plans, then `provider_plan`. Monthly checkout sends `total_count` 468. Yearly checkout sends `total_count` 39. Those counts stay inside Razorpay's 40-year authorization limit. They are not an unlimited subscription.
 
 ## Webhook architecture
 
-Phase D implements `POST /billing/webhook` in code and tests. The route specification is in `infra/billing-checkout.json` with authorization `NONE`. Cognito is not used, because Razorpay calls the route. The route and the `erap-billing-webhook` function are not deployed. Live Razorpay is not enabled.
+Phase D implements `POST /billing/webhook` in code and tests. The route specification is in `infra/billing-checkout.json` with authorization `NONE`. Cognito is not used, because Razorpay calls the route. The route and `erap-billing-webhook` are deployed. Razorpay live mode is not enabled.
 
 See Phase D below. A browser redirect or a checkout response still does not activate a subscription.
 
-## Future expiry architecture
+## Expiry architecture
 
-A later daily job will move `TRIALING` to `EXPIRED` after `trial_end`, and close cancelled or past-due periods when their paid window ends. It will not reuse the allocation auto-release function. No schedule is created in this phase.
+`erap-billing-expiry` moves `TRIALING` to `EXPIRED` after `trial_end`, and moves `ACTIVE` with `cancel_at_period_end` to `CANCELLED` at `current_period_end`. It does not reuse the allocation auto-release function. The enabled schedule is `erap-billing-expiry-daily`.
 
 ## Security principles
 
 - Subscription status changes go through the state machine.
-- Organization identity for a later billing API must come from the Cognito subject and membership, not from a client-supplied role.
+- Organization identity for the billing API comes from the Cognito subject and membership, not from a client-supplied role.
 - Payment instruments and provider secrets are not fields on these records.
-- Runtime IAM for the future billing role allows get, put, and update on the two new tables only. It does not allow delete.
+- Billing roles do not allow `Scan`, `DeleteItem`, or `BatchWriteItem`. `erap-create-organization` is the function that puts a trial row. The webhook and `erap-billing` update an existing subscription. They do not put one.
 
 ## Migration strategy
 
@@ -113,19 +123,19 @@ Do not scan or update production organizations in Phase A. When a later phase ba
 
 ## Tables
 
-`infra/billing-tables.json` specifies `OrganizationSubscriptions` (partition key `organization_id`) and `BillingEvents` (partition key `provider_event_id`) in `eu-north-1`, with point-in-time recovery and deletion protection. `"applied": false`. These tables were not created.
+`infra/billing-tables.json` matches the deployed `OrganizationSubscriptions` table (partition key `organization_id`) and `BillingEvents` table (partition key `provider_event_id`) in `eu-north-1`, with point-in-time recovery and deletion protection.
 
 ## Phase C — Razorpay test checkout foundation
 
-`POST /billing/checkout` is specified for the existing API `4c6dni17l3`, with the existing Cognito authorizer. The route, the `erap-billing` function, and the Secrets Manager secret are not created. `infra/billing-checkout.json` is `"applied": false`. `BILLING_PACKAGES` describes the zip. It is not in `PACKAGES`, so the deploy, alias, and route scripts still touch only the nine existing functions.
+`POST /billing/checkout` is deployed on API `4c6dni17l3` with Cognito authorizer `y0hzhr`. `erap-billing` and the test secret exist. `BILLING_PACKAGES` is separate from `PACKAGES`, so the main deploy workflow does not move the billing aliases.
 
 Only an `OWNER` membership can call checkout. `ADMIN`, `OPERATOR`, and `MEMBER` receive 403. A missing token receives 401. `organization_id` in the body is only a selector. The write uses the organization from `authorize`. Organization A cannot open checkout for Organization B.
 
-The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` sends test plan `plan_ThiWT35Gf1jyio` with `total_count` 1200. `YEARLY` sends test plan `plan_ThiWTXOzBHl2Qb` with `total_count` 100. A customer can cancel before that maximum. `subscription.completed` stays ignored because the current statuses cannot represent the end of a fully paid term without ending the last paid period early.
+The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` sends test plan `plan_ThiWT35Gf1jyio` with `total_count` 468. `YEARLY` sends test plan `plan_ThiWTXOzBHl2Qb` with `total_count` 39. A customer can cancel before that maximum. `subscription.completed` stays ignored because the current statuses cannot represent the end of a fully paid term without ending the last paid period early.
 
-When a later configuration makes a plan purchasable and sets a Razorpay plan id plus `total_count`, the provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty. The test key id must start with `rzp_test_`. The secret id must be `erap/billing/razorpay/test`, holding `key_id`, `key_secret`, and `webhook_secret`. Checkout uses the key pair. Phase D uses `webhook_secret` only to verify signatures. The secret value is not in git and is not created by this repository. A live key or any other secret id fails closed.
+The provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty until then. The test key id must start with `rzp_test_`. The secret id must be `erap/billing/razorpay/test`, holding `key_id`, `key_secret`, and `webhook_secret`. Checkout uses the key pair. The webhook uses `webhook_secret` only to verify signatures. The secret value is not in git. A live key or any other secret id fails closed.
 
-Eligible stored states are `TRIALING`, `EXPIRED`, `CANCELLED`, and `GRANDFATHERED`. `ACTIVE` and `PAST_DUE` do not start another subscription. A `TRIALING` or `EXPIRED` row that already has `provider_subscription_id` is left unchanged. `CANCELLED` may start a new provider subscription. A missing row stays grandfathered and is not created here. The conditional update sets `provider`, `provider_subscription_id`, and `updated_at` only. It does not set `subscription_status` to `ACTIVE` and does not set the billing period. Razorpay does not document an idempotency key for this call, so ERAP does not invent one.
+Eligible stored states are `TRIALING`, `EXPIRED`, `CANCELLED`, and `GRANDFATHERED`. `ACTIVE` and `PAST_DUE` do not start another subscription. A stored provider subscription is replaced only when Razorpay still reports it as `created`. Any other existing provider subscription returns 409. `CANCELLED` may start a new provider subscription. A missing row stays grandfathered and is not created here. The conditional update sets `provider`, `provider_subscription_id`, and `updated_at` only. It does not set `subscription_status` to `ACTIVE` and does not set the billing period. Razorpay does not document an idempotency key for this call, so ERAP does not invent one.
 
 The response may contain `provider`, `provider_subscription_id`, and `public_key_id`. It does not contain the key secret. Provider failures become `Billing provider rejected the request` or `Billing provider is unavailable`.
 
@@ -133,18 +143,18 @@ Checkout success does not activate a subscription. Only a verified webhook can d
 
 ## Phase D — Verified Razorpay webhooks
 
-This phase is code and tests only. `POST /billing/webhook` is not deployed. Live Razorpay is not enabled. The test secret is not created. No organization is charged, and pilot data is not modified.
+`POST /billing/webhook` is deployed without Cognito. The test secret exists. Live Razorpay is not enabled. Pilot data is not modified by billing deployment.
 
 Razorpay authenticates the call with `X-Razorpay-Signature`. The signature is HMAC-SHA256 of the exact raw body, hex-encoded, compared with `hmac.compare_digest` against `webhook_secret` from `erap/billing/razorpay/test`. The body is not parsed and reserialized before the check. A missing or invalid signature returns 401, writes no `BillingEvents` row, and does not read `organization_id` from the payload. The response and logs do not contain the secret or the calculated signature.
 
 `X-Razorpay-Event-Id` is `provider_event_id`. A missing id returns 400 and is not invented. The first verified delivery writes the event with `attribute_not_exists(provider_event_id)` and status `RECEIVED`. A later delivery of a `PROCESSED` or `IGNORED` id returns 200 and does not change the subscription or `processed_at`.
 
-The organization comes from `OrganizationSubscriptions.provider_subscription_id` through `ProviderSubscriptionIndex`. That index is specified and not created. The webhook does not scan. `organization_id` in the payload, including Razorpay notes, is ignored. An unknown subscription id or an unknown event type is stored as `IGNORED` and returns 200, so Razorpay does not retry it. No organization or subscription is created.
+The organization comes from `OrganizationSubscriptions.provider_subscription_id` through the deployed `ProviderSubscriptionIndex`. The webhook does not scan. `organization_id` in the payload, including Razorpay notes, is ignored. An unknown subscription id or an unknown event type is stored as `IGNORED` and returns 200, so Razorpay does not retry it. No organization or subscription is created.
 
 Supported events call `change_subscription_status` and do not carry their own transition table:
 
 - `subscription.activated` and `subscription.charged` move `TRIALING` or `PAST_DUE` to `ACTIVE` when that change is legal. A `CANCELLED` row stays cancelled when the event time is missing or not newer than `cancelled_at`.
-- `payment.failed`, `subscription.pending`, and `subscription.halted` move `ACTIVE` to `PAST_DUE`. They do not set `EXPIRED`.
+- `payment.failed`, `subscription.pending`, and `subscription.halted` move `ACTIVE` to `PAST_DUE`. They do not set `EXPIRED`. While the row is `TRIALING`, those events and `subscription.cancelled` are stored as `IGNORED` and the trial stays in place.
 - `subscription.cancelled` moves `ACTIVE` to `CANCELLED` and sets `cancelled_at` from the provider. `cancel_at_period_end` changes only when the payload contains `cancel_at_cycle_end`. `PAST_DUE` to `CANCELLED` is not in the Phase A state machine, so that event is `IGNORED`.
 
 `current_period_start` and `current_period_end` change only when the payload contains those unix times. Payment state stays on the event: `PENDING`, `PAID`, `FAILED`, or `REFUNDED`. `REFUNDED` is not a subscription status.
@@ -153,11 +163,11 @@ If the signature and event are valid but DynamoDB fails, the handler returns 500
 
 A later phase may repair a subscription by fetching it from Razorpay. This phase does not.
 
-`erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. Deploy, alias, and route scripts still skip it. Its specified IAM is get and update on `OrganizationSubscriptions`, query only on `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test secret. It has no delete, no scan, and no access to operational tables.
+`erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. `deploy-backend.yml` does not publish it. The function, alias, and route already exist. Its IAM is get and update on `OrganizationSubscriptions`, query only on `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test secret. It has no delete, no scan, and no access to operational tables.
 
 ## Phase E — Billing API
 
-The authenticated billing API is code and tests only. The routes are specified on API `4c6dni17l3`, stage `dev`, with Cognito authorizer `y0hzhr`. `"applied"` stays false. `erap-billing` serves the authenticated routes. `erap-billing-webhook` stays separate and is still signature-authenticated. Neither function is deployed. The billing workspace is Phase G and is not deployed. Subscription enforcement is Phase F and is not deployed. `MONTHLY` and `YEARLY` remain `purchasable: false`.
+The authenticated billing routes are deployed on API `4c6dni17l3`, stage `dev`, with Cognito authorizer `y0hzhr`. `erap-billing` serves them. `erap-billing-webhook` stays separate and signature-authenticated. The billing page is deployed. Subscription enforcement is deployed. `MONTHLY` and `YEARLY` are purchasable.
 
 `organization_id` is only a selector. `authorize` checks the Cognito subject, an `ACTIVE` membership, and that organization. One membership and no selector uses that organization. Several memberships and no selector still require a selection. Organization A cannot read or change Organization B. The role in the body is ignored. `GET /organization` is unchanged.
 
@@ -179,7 +189,7 @@ A missing token is 401. Errors use the existing `message` and `error.code` shape
 
 `POST /billing/cancel` is owner-only. The body cannot set status, timestamps, or the provider subscription id. The state machine must allow `CANCELLED` from the current status, which today means `ACTIVE`. The server subscription id is sent to `POST /v1/subscriptions/{id}/cancel` with Razorpay's `cancel_at_cycle_end: true`, so cancellation is at the end of the current cycle rather than immediate. After Razorpay accepts it, ERAP sets `cancel_at_period_end` and leaves `subscription_status` unchanged. The webhook later applies `ACTIVE` to `CANCELLED`. The call does not set `EXPIRED`. A second request does not call Razorpay again. A provider failure does not change the row.
 
-`GET /billing/events` queries `OrganizationBillingEventsIndex` (`organization_id`, `received_at`) for the authorized organization, newest first, at most 50 items. It does not scan. The response contains the normalized event fields only. That index is specified in `infra/billing-tables.json` and is not created.
+`GET /billing/events` queries the deployed `OrganizationBillingEventsIndex` (`organization_id`, `received_at`) for the authorized organization, newest first, at most 50 items. It does not scan. The response contains the normalized event fields only.
 
 The authenticated function's specified IAM is membership get and query, get and update on `OrganizationSubscriptions`, query on `OrganizationBillingEventsIndex`, and `GetSecretValue` on the test secret. It has no delete and no scan. The webhook policy is unchanged.
 
@@ -219,7 +229,7 @@ An operational response with `error.code` `BILLING_REQUIRED` shows "Subscription
 
 ## Phase H — Production-readiness audit
 
-Nothing in Phases A–G is deployed. `infra/billing-tables.json` and `infra/billing-checkout.json` stay `"applied": false`. `MONTHLY` and `YEARLY` stay `purchasable: false`. No Razorpay plan id is configured. The browser does not call the webhook.
+The billing tables, routes, functions, plans, and workspace are deployed. The browser opens the hosted checkout URL and does not call the webhook. The page does not mark a payment successful by itself.
 
 A trial row omits a blank `provider_subscription_id`. A billing event omits a blank `organization_id`. Those attributes are index keys, and DynamoDB rejects an empty string key. The in-memory value remains `""`. Checkout still treats a missing provider subscription id as "no checkout in progress."
 
@@ -229,11 +239,11 @@ Invitation acceptance uses the same write check as other membership changes. The
 
 `entitlement_iam` is GetItem on `OrganizationSubscriptions` for operational writes. `trial_iam` is GetItem and PutItem for `erap-create-organization` only. The webhook may get, update, and query the provider index. It may not put a subscription. Authenticated billing may get and update a subscription and query billing events. It may not put a subscription.
 
-Deploying the current operational code before the subscription table and the GetItem permission exist makes operational writes fail closed with HTTP 500 `Unable to verify billing`. Reads do not query the subscription table, so the pilot can still be viewed. Writes, including the pilot, stay locked until the table exists and the operational role can `GetItem` it. A missing row is then grandfathered and writes work again. Do not push the operational functions before that permission and table exist.
+The subscription table and the operational `GetItem` permission exist. A missing row is grandfathered. A lookup failure on a write still returns 500 `Unable to verify billing` and does not treat the organization as grandfathered. Reads do not query the subscription table.
 
 ## Phase I — Lifecycle expiry and purchase readiness
 
-`erap-billing-expiry` is a separate scheduled function. It is packaged in `BILLING_PACKAGES` and is not one of the nine deployed functions. It does not use Cognito, Secrets Manager, or Razorpay. `infra/billing-expiry.json` describes a daily EventBridge Scheduler rule at 02:00 UTC. `"applied"` is false. The rule does not exist in AWS.
+`erap-billing-expiry` is deployed separately from the nine main functions. It does not use Cognito, Secrets Manager, or Razorpay. `erap-billing-expiry-daily` runs at 02:00 UTC and is enabled.
 
 The job queries `LifecycleDueIndex`. A trialing row stores `lifecycle_partition` `TRIAL#` plus a shard of `organization_id`, and `lifecycle_due_at` equal to `trial_end`. An active row with `cancel_at_period_end` and a period end stores `CANCEL#` plus the same style of shard, and `lifecycle_due_at` equal to `current_period_end`. There are 16 shards. Other rows omit those attributes. Each run queries every shard for `lifecycle_due_at` less than or equal to now. The timestamp, not a lookback window, decides what is due. An outage does not leave an older due row behind. It does not scan.
 

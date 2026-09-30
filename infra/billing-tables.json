@@ -1,7 +1,7 @@
 {
-  "applied": false,
+  "applied": true,
   "region": "eu-north-1",
-  "note": "Specification only. Do not create these tables until a later reviewed phase. Existing tables are not modified. ProviderSubscriptionIndex is the webhook lookup and is not deployed. Blank provider_subscription_id and blank BillingEvents.organization_id must be omitted so DynamoDB does not reject an empty index key. The combined runtime_iam below is not a role to attach: the webhook must not receive PutItem on OrganizationSubscriptions, and erap-billing must not receive PutItem.",
+  "note": "These tables and indexes already exist in eu-north-1. Do not recreate them. Blank provider_subscription_id and blank BillingEvents.organization_id must be omitted so DynamoDB does not reject an empty index key. The combined runtime_iam below is not a role to attach: the webhook must not receive PutItem on OrganizationSubscriptions, and erap-billing must not receive PutItem.",
   "tables": [
     {
       "TableName": "OrganizationSubscriptions",

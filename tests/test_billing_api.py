@@ -668,10 +668,10 @@ def test_cancel_request_uses_cycle_end():
     assert "test-secret-value" not in json.dumps(result)
 
 
-def test_route_specification_is_not_deployed():
+def test_route_specification_matches_the_live_api():
     checkout = json.loads((ROOT / "infra" / "billing-checkout.json").read_text(encoding="utf-8"))
     tables = json.loads((ROOT / "infra" / "billing-tables.json").read_text(encoding="utf-8"))
-    assert checkout["applied"] is False
+    assert checkout["applied"] is True
     assert checkout["webhook"]["authorization"] == "NONE"
     paths = {(item["method"], item["path"], item["authorization"]) for item in checkout["routes"]}
     assert paths == {
@@ -688,4 +688,4 @@ def test_route_specification_is_not_deployed():
     assert "OrganizationBillingEventsIndex" in policy
     index = tables["tables"][1]["GlobalSecondaryIndexes"][0]["IndexName"]
     assert index == "OrganizationBillingEventsIndex"
-    assert tables["applied"] is False
+    assert tables["applied"] is True

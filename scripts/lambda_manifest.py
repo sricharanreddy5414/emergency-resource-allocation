@@ -95,6 +95,8 @@ TABLES = [
     "AuditEvents",
     "ResourceExchanges",
     "Notifications",
+    "OrganizationSubscriptions",
+    "BillingEvents",
 ]
 
 

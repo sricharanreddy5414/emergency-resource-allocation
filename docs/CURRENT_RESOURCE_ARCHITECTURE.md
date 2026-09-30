@@ -97,6 +97,17 @@ Existing tables that must stay:
 - Primary key: `request_id`
 - Status is `PENDING`, `ALLOCATED`, or `RELEASED`
 
+`OrganizationSubscriptions`:
+
+- Primary key: `organization_id`
+- `ProviderSubscriptionIndex`: `provider_subscription_id`
+- `LifecycleDueIndex`: `lifecycle_partition` + `lifecycle_due_at`
+
+`BillingEvents`:
+
+- Primary key: `provider_event_id`
+- `OrganizationBillingEventsIndex`: `organization_id` + `received_at`
+
 `AuditEvents` records `resource.create`, `resource.update`, `visibility.change`, `resource.release`, and `allocation.create`.
 
 Lists query an organization index. They do not scan the table. Release still reads every allocation in the organization and filters by `resource_id` in memory. Public discovery queries `visibility_key = PUBLIC` and filters city, state, and availability in memory after the key condition.
@@ -209,7 +220,7 @@ Do not recreate these.
 - Cognito pool `eu-north-1_vv7adAAC9`, authorizer `y0hzhr`
 - Amplify app `d3enpe7opotop5`, branch `main`
 - Operational Lambdas and `live` aliases: `get-resources`, `create-request`, `emergency-resource-allocation`, `emergency-resource-auto-release`, `erap-catalog`, `erap-public-resources`, `erap-locations`, `erap-create-organization`, `erap-get-organization`
-- Billing Lambdas, which are packaged but not deployed by the main workflow: `erap-billing`, `erap-billing-webhook`, `erap-billing-expiry`
+- Billing Lambdas, deployed on alias `live` but not published by `deploy-backend.yml`: `erap-billing`, `erap-billing-webhook`, `erap-billing-expiry`
 - DynamoDB tables listed in section 3, including their current indexes
 - GitHub Actions workflows `ci.yml`, `deploy-backend.yml`, `rollback.yml`, `release.yml`
 

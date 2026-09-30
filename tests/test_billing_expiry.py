@@ -366,13 +366,14 @@ def test_cancel_replaces_or_removes_the_lifecycle_entry():
     assert scheduled_row.row["cancel_at_period_end"] is True
 
 
-def test_expiry_specification_is_not_applied():
+def test_expiry_specification_matches_the_live_schedule():
     spec = json.loads((ROOT / "infra" / "billing-expiry.json").read_text(encoding="utf-8"))
     tables = json.loads((ROOT / "infra" / "billing-tables.json").read_text(encoding="utf-8"))
     indexes = tables["tables"][0]["GlobalSecondaryIndexes"]
     policy = json.dumps(spec["iam"])
 
-    assert spec["applied"] is False
+    assert spec["applied"] is True
+    assert spec["schedule"]["state"] == "ENABLED"
     assert spec["schedule"]["timezone"] == "UTC"
     assert spec["schedule"]["schedule_expression"] == "cron(0 2 * * ? *)"
     assert indexes[1]["IndexName"] == "LifecycleDueIndex"

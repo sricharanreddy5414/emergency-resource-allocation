@@ -685,7 +685,7 @@ def test_handler_does_not_use_cognito(monkeypatch):
 def test_route_specs_keep_checkout_authenticated_and_webhook_public():
     checkout = json.loads((ROOT / "infra" / "billing-checkout.json").read_text(encoding="utf-8"))
     tables = json.loads((ROOT / "infra" / "billing-tables.json").read_text(encoding="utf-8"))
-    assert checkout["applied"] is False
+    assert checkout["applied"] is True
     assert checkout["route"]["authorization"] == "COGNITO_USER_POOLS"
     assert checkout["webhook"]["authorization"] == "NONE"
     assert checkout["webhook"]["path"] == "/billing/webhook"
@@ -693,7 +693,7 @@ def test_route_specs_keep_checkout_authenticated_and_webhook_public():
     assert "dynamodb:DeleteItem" not in actions
     assert "dynamodb:Scan" not in actions
     assert "EmergencyRequests" not in actions
-    assert tables["applied"] is False
+    assert tables["applied"] is True
     index = tables["tables"][0]["GlobalSecondaryIndexes"][0]
     assert index["IndexName"] == "ProviderSubscriptionIndex"
 
