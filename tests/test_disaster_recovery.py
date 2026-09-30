@@ -75,6 +75,22 @@ def test_runbook_forbids_overwrite_and_covers_required_sections():
     assert "ORG-D13B30D99127" in text
 
 
+def test_deploy_role_can_describe_every_table_and_cannot_restore():
+    policy = json.loads((ROOT / "infra" / "github-deploy-policy.json").read_text(encoding="utf-8"))
+    described = set()
+    actions = set()
+    for statement in policy["Statement"]:
+        action = statement.get("Action")
+        values = {action} if isinstance(action, str) else set(action or [])
+        actions.update(values)
+        if "dynamodb:DescribeTable" in values:
+            for resource in statement.get("Resource") or []:
+                described.add(resource.rsplit("/", 1)[-1])
+    assert set(TABLES) <= described
+    assert "dynamodb:RestoreTableToPointInTime" not in actions
+    assert "AdministratorAccess" not in actions
+
+
 def test_runtime_infra_does_not_grant_restore():
     infra = ROOT / "infra"
     for path in infra.glob("*.json"):

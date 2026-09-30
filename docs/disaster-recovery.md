@@ -206,7 +206,8 @@ Code recovery is a `live` alias move when the version already exists, or a deplo
 
 ## 21. Validation checklist
 
-- `python scripts/verify_hardening.py` reports every table protected, both expiry schedules, the auto-release rule, and a `live` alias on every packaged function.
+- `python scripts/verify_hardening.py` reports every table protected. The GitHub deploy role is allowed to describe all 14 tables and is not allowed to restore them.
+- `python scripts/verify_recovery.py` reports both expiry schedules, the auto-release rule, and a `live` alias on every packaged function. The deploy role cannot read EventBridge, so that script stays on operator credentials.
 - Restored table status is `ACTIVE`.
 - Key schema and GSIs match the source.
 - TTL matches the source, or it has been set again on purpose.

@@ -59,7 +59,11 @@
         "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceStatusHistory",
         "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceTypes",
         "arn:aws:dynamodb:eu-north-1:481838970142:table/RequestTypes",
-        "arn:aws:dynamodb:eu-north-1:481838970142:table/AuditEvents"
+        "arn:aws:dynamodb:eu-north-1:481838970142:table/AuditEvents",
+        "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceExchanges",
+        "arn:aws:dynamodb:eu-north-1:481838970142:table/Notifications",
+        "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationSubscriptions",
+        "arn:aws:dynamodb:eu-north-1:481838970142:table/BillingEvents"
       ]
     },
     {
