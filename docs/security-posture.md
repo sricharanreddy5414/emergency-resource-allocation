@@ -58,7 +58,7 @@ Phase 11B structured logs drop authorization headers, bearer tokens, JWTs, passw
 
 ## 13. GitHub Actions
 
-Workflows set `contents: read`. Deploy and rollback also set `id-token: write` so they can assume the GitHub OIDC roles. Actions are pinned to major versions: `actions/checkout@v4`, `actions/setup-python@v5`, `actions/setup-node@v4`, and `aws-actions/configure-aws-credentials@v4`. A failed deploy runs `scripts/set_live_version.py --from-summary`, which points `live` at the versions recorded at the start of that job. Two deploys at the same time, one local and one from GitHub, can therefore move an alias to an older version. GitHub jobs in the same concurrency group do not cancel each other; they wait.
+Workflows set `contents: read`. Deploy and rollback also set `id-token: write` so they can assume the GitHub OIDC roles. Actions are pinned to major versions: `actions/checkout@v4`, `actions/setup-python@v5`, `actions/setup-node@v4`, and `aws-actions/configure-aws-credentials@v4`. A failed deploy runs `scripts/set_live_version.py --from-summary`. That restore moves `live` back only when the alias is still the version that same job published. If a later deploy already moved the alias, the restore leaves it. GitHub jobs in the concurrency group `erap-backend-deploy` wait for each other. A local `deploy_backend.py` run during that wait is the case the ownership check covers.
 
 ## 14. Dependencies
 
@@ -84,7 +84,7 @@ Git was not overwritten from AWS, and AWS was not rebuilt from Git, except the S
 
 ## 17. Known limitations
 
-The shared operational role can still write the original resource, request, allocation, and history tables. A failed GitHub deploy can move `live` backward when another deploy changed the alias during that job. Client `ValueError` text is returned on HTTP 400. Those strings are validation messages, not stack traces. Unexpected errors return a fixed message and log only the exception class. There is no vulnerability feed for dependencies. S3 object contents were not inspected.
+The shared operational role can still write the original resource, request, allocation, and history tables. Manual rollback with one `--version` still applies that number to every function in `PACKAGES`, and those functions do not share one version number. Client `ValueError` text is returned on HTTP 400. Those strings are validation messages, not stack traces. Unexpected errors return a fixed message and log only the exception class. There is no vulnerability feed for dependencies. S3 object contents were not inspected.
 
 ## 18. Deferred improvements
 

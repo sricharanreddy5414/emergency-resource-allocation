@@ -11,11 +11,11 @@ python scripts/set_live_version.py --version <previous-version>
 python scripts/smoke_test.py
 ```
 
-This was exercised from version 2 to version 1 and back to version 2. Both versions served the same application behavior on the public and unauthenticated checks.
+The nine functions in `PACKAGES` do not share one version number. `--version` moves every one of them to that same number. Use it only when you have checked `get-alias` and that number is the intended version for each function. Exchange, notifications, and billing aliases are outside `PACKAGES` and this command does not move them.
 
 From GitHub, open **Rollback backend**, run it from `main`, and enter the version number. Leave the commit empty. Use a full SHA only when the good code has no published version. The workflow then uploads that commit and points `live` at the new version.
 
-A failed **Deploy backend** job runs `python scripts/set_live_version.py --from-summary`, which moves `live` back to the recorded previous version when that summary exists.
+A failed **Deploy backend** job runs `python scripts/set_live_version.py --from-summary`. For each function in `dist/deploy-summary.json`, it reads the current `live` version and moves it to `previous_version` only when `live` is still the `version` that job published. If `live` is already a different version, the script prints `left <function>` and does not change that alias. GitHub deploy, release, and rollback jobs share the concurrency group `erap-backend-deploy` and wait instead of overlapping. Do not run `scripts/deploy_backend.py` on a workstation while that job is still verifying.
 
 ## API Gateway
 

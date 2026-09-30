@@ -1,89 +1,78 @@
 # Production readiness checklist
 
-## Current launch gate — 28 September 2026
+Phase 13. Status is READY, BLOCKED, DEFERRED, or NOT APPLICABLE. READY means the control was inspected and a check passed in this phase, or the deployed behavior is covered by the test suite and a live read-only verifier. A live mutation was not repeated here. The 28 September 2026 snapshot that used to live in this file is history in Git.
 
-Commit `b5d72cf1ad7f300800810971bb8c165302f56998`. Gate: PENDING HUMAN ACTION.
+Production launch is not decided by this list. See `docs/production-launch-gate.md`.
 
-The authenticated pilot is complete and no application defect was found in this recheck. Local pytest is 91 passed. Security scan, frontend check, workflow check, package check, and smoke test passed locally. GitHub Deploy backend run 36347114518 succeeded, including Verify hardening, so table protection, throttles, CORS, alarms, the Cognito authorizer, and the public `live` alias were checked through OIDC. The local AWS CLI session is expired, so DynamoDB rows, Cognito settings, Lambda log retention, and the SNS subscription count were not re-read in this pass.
+## SECURITY
 
-Pending human action: confirm an alarm email, create the GitHub `production` environment with a required reviewer, verify a second user for tenant isolation and non-owner roles, and rehearse restore. A restore rehearsal has not been executed.
+| Item | Status | Evidence |
+|---|---|---|
+| Authentication configuration | READY | Authorizer `y0hzhr`. MFA OPTIONAL, software token on, SMS off. `verify_security_posture.py`. |
+| Signed-in application shell | READY | `https://main.d3enpe7opotop5.amplifyapp.com` loaded the operations page with the organization selector. It was not the login form. |
+| Organization selection this phase | DEFERRED | The selector was still disabled and showed awaiting organization. No organization was chosen, and no write was made. |
+| Authorization | READY | `src/shared/access.py` and existing tests. Model unchanged. |
+| Tenant isolation live cross-read | DEFERRED | Needs two signed-in sessions. Tests cover denial. Pilot was not queried. |
+| IAM | READY | Runtime roles have no administrator or restore permissions. `verify_security_posture.py`. |
+| Secrets | READY | Secret name only. Scan passed. Value not printed. |
+| CORS | READY | Amplify origin only. `verify_hardening.py`. |
 
-The sections below are the earlier Phase 8 snapshot. Where they say no organization exists or the public list is empty, the current pilot section above replaces them.
+## DATA
 
-Status values are PASS, PARTIAL, NOT READY, or DEFERRED. This records the system after the Phase 8 alias, alarm, and log-retention changes.
+| Item | Status | Evidence |
+|---|---|---|
+| PITR | READY | All 14 tables. `verify_hardening.py`. |
+| Deletion protection | READY | Same check. |
+| Recovery procedure | READY | `docs/disaster-recovery.md`. Notifications restore was done in Phase 11C and was not repeated. |
 
-## A. Architecture
+## APPLICATION
 
-PASS. The existing API, Cognito pool, tables, and Amplify app remain. API Gateway now invokes alias `live`. Auto-release uses the same alias.
+| Item | Status | Evidence |
+|---|---|---|
+| Resources | READY | Deployed aliases and tests. No new live write. |
+| Requests | READY | Same. |
+| Allocation | READY | Same. Auto-release rule verified. |
+| Exchange | READY | Alias and hourly schedule verified. No exchange row edited. |
+| Notifications | READY | Alias, TTL design, unread index documented. No new event type. |
+| QR | READY | Covered by tests. No new QR session. |
+| Billing | READY | Status sets and webhook rejection covered by code and tests. No payment and no edit of the existing test subscription. |
 
-## B. Authentication
+## INFRASTRUCTURE
 
-PARTIAL. Protected routes use Cognito authorizer `y0hzhr`. Missing tokens return 401. The web client allows SRP, not admin password auth, so this phase did not complete a scripted login. MFA is off. Impact: a bad client change could weaken login, and live sign-in was not repeated here. Next action: sign in once with a real operator through the Amplify site before inviting another organization. Do not turn on a password flow just for a script.
+| Item | Status | Evidence |
+|---|---|---|
+| API Gateway | READY | API `4c6dni17l3` stage `dev`, deployment `tr1rz2` at baseline. |
+| Lambda | READY | 15 functions, Python 3.14, alias `live`. |
+| Cognito | READY | Pool exists. Users and MFA unchanged. |
+| DynamoDB | READY | 14 tables protected. |
+| EventBridge | READY | Two schedules and the auto-release rule. |
+| CloudWatch | READY | 30-day retention from Phase 11B. Structured fields in `docs/observability.md`. |
+| S3 | READY | Public access block on. Bucket is not on the request path. |
+| Alarm email | DEFERRED | SNS has no email subscriber. |
+| Dashboards and custom metrics | NOT APPLICABLE | Out of scope for this phase. |
 
-## C. Authorization
+## DEPLOYMENT
 
-PARTIAL. The backend checks membership and role. Unit tests cover member and operator limits. A live role test needs a signed-in user. Impact: a regression in the deployed package would not be caught by the public smoke test. Next action: the first real organization should try one operator action and one member denial.
+| Item | Status | Evidence |
+|---|---|---|
+| Tests | READY | `python -m pytest -q` at baseline, 627 passed, before Phase 13 files. |
+| Package check | READY | `python scripts/package_lambdas.py --check`. |
+| Security check | READY | `python scripts/security_scan.py` and posture script. |
+| Hardening | READY | `python scripts/verify_hardening.py`. |
+| Recovery | READY | `python scripts/verify_recovery.py`. |
+| Readiness script | READY | `python scripts/verify_production_readiness.py` after this commit's checks. |
+| Automatic deploy of nine functions | READY | Push to `main` runs Deploy backend. |
+| Alias verification | READY | `get-alias` plus recovery script. |
+| Smoke test | READY | `python scripts/smoke_test.py` and `python scripts/smoke_test_production.py`. |
+| Owned-alias restore | READY | `scripts/set_live_version.py` restores only the version that job published. |
+| One version number for every function | DEFERRED | `--version` still applies one number to all of `PACKAGES`. |
 
-## D. Multi-tenancy
+## OPERATIONS
 
-PARTIAL. Queries are organization-scoped and cross-tenant reads return 404 in tests. No organization rows exist, so two live tenants were not created. Impact: the first tenants are the first live proof. Next action: create two organizations only as a deliberate test, or treat the first customer as a monitored pilot.
-
-## E. Multi-location
-
-PARTIAL. Location writes require an admin role and the location must belong to the organization. Live location create was not run. Next action: same as the first organization pilot.
-
-## F. Resources
-
-PARTIAL. Create, update, visibility, and release are implemented and covered by tests. Live create was not run. Public discovery of the four legacy resources stays empty.
-
-## G. Requests
-
-PARTIAL. Create and update require a member role and a pending state. Live create was not run.
-
-## H. Matching
-
-PASS for the code path. Same-organization matching and the conditional allocation write are tested. Live matching was not run because there is no tenant.
-
-## I. Public discovery
-
-PASS. `GET /public/resources` returns 200 and an empty list. Oversized pages and bad tokens return 400. The body does not include `organization_id`.
-
-## J. Data protection
-
-PASS. Point-in-time recovery and deletion protection are enabled on all ten tables. Legacy rows were not modified.
-
-## K. AWS security
-
-PARTIAL. GitHub uses OIDC and no access keys. The deploy roles cannot write DynamoDB or delete functions. The four operational Lambdas still share one role that can write all four operational tables. Impact: one function can call an action it does not need. Next action: split that role only with a test that allocation, release, and auto-release still work.
-
-## L. CI/CD
-
-PARTIAL. Pull requests run tests only. `main` deploys the live backend because there is one API. Release and rollback are manual and can use the `production` environment, but that environment has no required reviewer yet. Impact: a push to `main` changes the site the public URL calls. Next action: add a required reviewer on `production` before using Release or Rollback. That does not stop the automatic `main` deploy.
-
-## M. Monitoring
-
-PARTIAL. The five `ERAP-*` alarms publish to `ERAP-Production-Alarms`. Nothing is subscribed, so nobody is paged. The older allocation alarm still uses `EmergencyResourceNotifications`. Lambda logs are kept for 30 days. Next action: subscribe an operator endpoint to `ERAP-Production-Alarms`.
-
-## N. Backup and recovery
-
-PARTIAL. PITR is on and `docs/disaster-recovery.md` describes restore to a new table. A restore was not executed. Impact: the procedure is untested. Next action: rehearse a restore only into a new table name when a maintenance window exists.
-
-## O. Rollback
-
-PASS. Alias `live` was moved from version 2 to version 1 and back. Public, invalid, and unauthenticated checks passed on both versions. Version 1 and version 2 contain the same application code.
-
-## P. Frontend
-
-PASS. Amplify `main` serves `https://main.d3enpe7opotop5.amplifyapp.com`. The page, `app.js`, and `style.css` return 200. The API base is the existing `dev` stage. Source has no access keys, no localhost API, and no payload logs.
-
-## Q. API
-
-PASS. Throttling remains 20 per second with burst 40, and public GET remains 5 per second with burst 10. CORS is the Amplify origin. Authorizer `y0hzhr` is still attached.
-
-## R. Documentation
-
-PASS. Operations are described in the runbook, the OIDC note, the rollback note, and this checklist.
-
-## Deferred
-
-Isolated staging is DEFERRED. The platform has no production tenant data. A second full stack would add cost and a second set of tables without a current isolation benefit.
+| Item | Status | Evidence |
+|---|---|---|
+| Incident response | READY | `docs/incident-response.md`. |
+| Rollback | READY | `docs/rollback.md`. |
+| Failure handling | READY | `docs/failure-runbook.md`. |
+| Support | READY | `docs/production-support.md`. |
+| On-call vendor and status page | NOT APPLICABLE | Not part of ERAP. |

@@ -35,18 +35,47 @@ def point(name, version):
     print(f"{name} live {version}")
 
 
-def from_summary():
-    path = ROOT / "dist" / "deploy-summary.json"
-    if not path.is_file():
+def restore_target(current_version, published_version, previous_version):
+    """Return the owned previous version, or empty when this job must not move live.
+
+    A failed deploy may restore only the version it published. If live has
+    already moved to another version, that newer deploy keeps the alias.
+    """
+    current = str(current_version or "")
+    published = str(published_version or "")
+    previous = str(previous_version or "")
+    if not previous.isdigit() or previous == "0":
+        return ""
+    if not published.isdigit() or published == "0":
+        return ""
+    if current != published or current == previous:
+        return ""
+    return previous
+
+
+def current_alias_version(name):
+    found = aws(["lambda", "get-alias", "--function-name", name, "--name", ALIAS], region=REGION)
+    return str(found.get("FunctionVersion") or "")
+
+
+def from_summary(path=None, read_version=None, move=None):
+    summary_path = path or (ROOT / "dist" / "deploy-summary.json")
+    if not summary_path.is_file():
         print("no deploy summary to restore")
         return 0
-    summary = json.loads(path.read_text(encoding="utf-8"))
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    reader = read_version or current_alias_version
+    mover = move or point
     restored = 0
     for item in summary.get("functions") or []:
-        previous = str(item.get("previous_version") or "")
-        if not previous:
+        name = str(item.get("name") or "")
+        if not name:
             continue
-        point(item["name"], previous)
+        target = restore_target(reader(name), item.get("version"), item.get("previous_version"))
+        if not target:
+            print(f"left {name}")
+            continue
+        mover(name, target)
         restored += 1
     print(f"restored {restored}")
     return 0
