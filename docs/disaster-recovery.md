@@ -148,7 +148,7 @@ A notification failure must still not roll back an exchange.
 
 `python scripts/package_lambdas.py --check` rebuilds every function zip from `scripts/lambda_manifest.py`. Runtimes and handlers are in the deploy scripts and `infra/*.json`. API Gateway and the schedules invoke alias `live`.
 
-`scripts/deploy_backend.py` publishes the nine `PACKAGES` functions. Exchange, notifications, expiry, and billing functions are published by their own deploy scripts. Moving `live` with `scripts/set_live_version.py --version <n>` restores a published version without uploading code. A failed deploy workflow runs that script with `--from-summary`, which points `live` at the previous versions in that job's summary. Confirm the alias description is the intended `commit=` value after any rollback.
+`scripts/deploy_backend.py` publishes the nine `PACKAGES` functions and the three billing functions. Exchange and notification functions are published by their own deploy scripts. Moving `live` with `scripts/set_live_version.py --version <n>` restores a published version of `PACKAGES` only, without uploading code. A failed deploy workflow runs that script with `--from-summary`, which points `live` at the previous versions in that job's summary, including billing when that job published it. Confirm the alias description is the intended `commit=` value after any rollback.
 
 No Lambda was published in Phase 11C.
 

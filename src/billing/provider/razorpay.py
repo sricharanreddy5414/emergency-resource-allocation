@@ -150,6 +150,23 @@ def checkout_links(client=None, mode=None, client_factory=None):
     return load_billing_config(client, mode)["links"]
 
 
+def checkout_binding(client_factory, provider_factory, mode=None):
+    """Return the provider factory and plan map for checkout.
+
+    Test mode returns the injected factory immediately. It does not call
+    client_factory, so a unit test never opens Secrets Manager or Razorpay.
+    Production loads only the production secret and never substitutes test plans.
+    """
+    if billing_mode(mode) == "test":
+        return provider_factory, None
+
+    if client_factory is None:
+        raise BillingError(500, "Billing is not configured")
+
+    provider, links = open_provider(client_factory(), mode)
+    return (lambda: provider), links
+
+
 def open_provider(client, mode=None):
     """Return the provider and the plan map for the backend-selected mode."""
     config = load_billing_config(client, mode)

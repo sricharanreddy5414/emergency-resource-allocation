@@ -203,6 +203,17 @@ def test_owner_monthly_checkout_sends_the_authorization_limit(monkeypatch):
     assert "plan_Thi" not in result["body"]
 
 
+def test_inactive_organization_cannot_checkout(monkeypatch):
+    table, provider, organizations, _before = wire(monkeypatch, subscription=row())
+    organizations[ORG_A]["status"] = "INACTIVE"
+
+    result = checkout_handler.lambda_handler(event({"plan_id": "MONTHLY"}), None)
+
+    assert result["statusCode"] == 403
+    assert provider.calls == []
+    assert "pending_plan_id" not in table.items[ORG_A]
+
+
 @pytest.mark.parametrize("role", ["ADMIN", "OPERATOR", "MEMBER"])
 def test_non_owner_cannot_checkout(monkeypatch, role):
     _table, provider, _organizations, _before = wire(monkeypatch, role=role, subscription=row())

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from access import AccessError, access_body, authorize
 from billing.checkout import create_checkout
 from billing.errors import BillingError
-from billing.provider.razorpay import checkout_links, open_provider
+from billing.provider.razorpay import checkout_binding, open_provider
 from common import api_response, parse_json_body
 from observability import begin_request
 
@@ -51,12 +51,13 @@ def lambda_handler(event, context):
         return api_response(error.status_code, access_body(error))
 
     try:
+        provider_factory, links = checkout_binding(billing_client, build_provider)
         result = create_checkout(
             body,
             membership["organization_id"],
             subscriptions_table(),
-            build_provider,
-            links=checkout_links(client_factory=billing_client),
+            provider_factory,
+            links=links,
             now=datetime.now(timezone.utc),
         )
     except BillingError as error:

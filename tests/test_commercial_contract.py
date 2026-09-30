@@ -14,10 +14,12 @@ from billing.plans import PLAN_RULES, PLANS, customer_plans
 from billing.provider.razorpay import (
     PRODUCTION_SECRET_ID,
     RAZORPAY_PLAN_LINKS,
+    TEST_PLAN_IDS,
     TEST_SECRET_ID,
     _EVENT_TARGETS,
     _PAYMENT_STATES,
     billing_mode,
+    checkout_binding,
     key_prefix_for_mode,
     load_billing_config,
     load_webhook_secret,
@@ -180,6 +182,154 @@ def test_provider_modes_cannot_share_secrets_or_plans():
     with pytest.raises(BillingError) as error:
         _plan_id({"plan_id": "MONTHLY", "billing_mode": "production", "razorpay_plan_id": "plan_ProdMonthly0001"})
     assert error.value.status_code == 400
+
+
+def _secret_client(payload, secret_id, error=None):
+    class Client:
+        def get_secret_value(self, SecretId):
+            self.seen = SecretId
+            if error is not None:
+                raise error
+            if payload is None:
+                return {"SecretString": "{"}
+            return {"SecretString": json.dumps(payload)}
+
+    client = Client()
+    client.expected = secret_id
+    return client
+
+
+def _production_payload(**overrides):
+    payload = {
+        "key_id": "rzp_live_public",
+        "key_secret": "live-key-secret",
+        "webhook_secret": "live-webhook-secret",
+        "monthly_plan_id": "plan_ProdMonthly0001",
+        "yearly_plan_id": "plan_ProdYearly0001",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_production_configuration_fails_closed_without_using_test():
+    with pytest.raises(BillingError, match="Billing is not configured"):
+        load_billing_config(_secret_client({}, PRODUCTION_SECRET_ID, RuntimeError("missing")), "production")
+    with pytest.raises(BillingError, match="Billing is not configured"):
+        load_billing_config(_secret_client(None, PRODUCTION_SECRET_ID), "production")
+
+    for overrides in (
+        {"monthly_plan_id": ""},
+        {"yearly_plan_id": ""},
+        {"webhook_secret": ""},
+        {"key_id": "rzp_test_public"},
+        {"monthly_plan_id": "plan_ThiWT35Gf1jyio"},
+        {"yearly_plan_id": "plan_ThiWTXOzBHl2Qb"},
+        {"yearly_plan_id": "plan_ProdMonthly0001"},
+    ):
+        with pytest.raises(BillingError, match="Billing is not configured"):
+            load_billing_config(_secret_client(_production_payload(**overrides), PRODUCTION_SECRET_ID), "production")
+
+    client = _secret_client(_production_payload(), PRODUCTION_SECRET_ID)
+    config = load_billing_config(client, "production")
+    assert client.seen == PRODUCTION_SECRET_ID
+    assert config["links"]["MONTHLY"]["razorpay_plan_id"] == "plan_ProdMonthly0001"
+    assert config["links"]["YEARLY"]["razorpay_plan_id"] == "plan_ProdYearly0001"
+    assert TEST_PLAN_IDS.isdisjoint(
+        {
+            config["links"]["MONTHLY"]["razorpay_plan_id"],
+            config["links"]["YEARLY"]["razorpay_plan_id"],
+        }
+    )
+    assert "live-key-secret" not in json.dumps(
+        {
+            "mode": config["mode"],
+            "secret_id": config["secret_id"],
+            "plans": list(config["links"]),
+        }
+    )
+
+    test_client = _secret_client(
+        {"key_id": "rzp_test_public", "key_secret": "test-key-secret"},
+        TEST_SECRET_ID,
+    )
+    test_config = load_billing_config(test_client, "test")
+    assert test_client.seen == TEST_SECRET_ID
+    assert test_config["links"] == RAZORPAY_PLAN_LINKS
+    assert test_config["links"]["MONTHLY"]["razorpay_plan_id"] == "plan_ThiWT35Gf1jyio"
+    assert test_config["links"]["YEARLY"]["razorpay_plan_id"] == "plan_ThiWTXOzBHl2Qb"
+
+
+def test_webhook_secrets_stay_on_their_own_mode():
+    test_client = _secret_client(
+        {
+            "key_id": "rzp_test_public",
+            "key_secret": "test-key-secret",
+            "webhook_secret": "test-webhook-secret",
+        },
+        TEST_SECRET_ID,
+    )
+    production_client = _secret_client(_production_payload(), PRODUCTION_SECRET_ID)
+    assert load_webhook_secret(test_client, mode="test") == "test-webhook-secret"
+    assert test_client.seen == TEST_SECRET_ID
+    assert load_webhook_secret(production_client, mode="production") == "live-webhook-secret"
+    assert production_client.seen == PRODUCTION_SECRET_ID
+    with pytest.raises(BillingError, match="Billing is not configured"):
+        load_webhook_secret(production_client, mode="production", secret_id=TEST_SECRET_ID)
+
+
+def test_checkout_binding_uses_the_injected_provider_before_aws():
+    def opened():
+        raise AssertionError("secrets")
+
+    factory, links = checkout_binding(opened, lambda: "stand-in", mode="test")
+    assert links is None
+    assert factory() == "stand-in"
+
+    factory, links = checkout_binding(
+        lambda: _secret_client(_production_payload(), PRODUCTION_SECRET_ID),
+        lambda: "unused",
+        mode="production",
+    )
+    provider = factory()
+    assert provider.mode == "production"
+    assert links["MONTHLY"]["razorpay_plan_id"] == "plan_ProdMonthly0001"
+    assert links["YEARLY"]["razorpay_plan_id"] == "plan_ProdYearly0001"
+    assert links["MONTHLY"]["razorpay_plan_id"] not in TEST_PLAN_IDS
+    assert links["YEARLY"]["razorpay_plan_id"] not in TEST_PLAN_IDS
+
+
+def test_billing_deploy_separates_billing_from_exchange():
+    deploy = (ROOT / "scripts" / "deploy_backend.py").read_text(encoding="utf-8")
+    rollback = (ROOT / "scripts" / "set_live_version.py").read_text(encoding="utf-8")
+    policy = json.loads((ROOT / "infra" / "github-deploy-policy.json").read_text(encoding="utf-8"))
+    checkout = json.loads((ROOT / "infra" / "billing-checkout.json").read_text(encoding="utf-8"))
+    assert "BILLING_PACKAGES" in deploy
+    assert "EXCHANGE_PACKAGES" not in deploy
+    assert "NOTIFICATION_PACKAGES" not in deploy
+    assert "for name in PACKAGES:" in rollback
+    resources = []
+    for statement in policy["Statement"]:
+        resource = statement.get("Resource")
+        if isinstance(resource, list):
+            resources.extend(resource)
+        elif isinstance(resource, str):
+            resources.append(resource)
+    joined = "\n".join(resources)
+    for name in ("erap-billing", "erap-billing-webhook", "erap-billing-expiry"):
+        assert f"function:{name}\n" in joined or f"function:{name}\"" in json.dumps(resources)
+        assert f"function:{name}:" in joined
+    assert "function:erap-exchange:" not in joined
+    assert "function:erap-notifications:" not in joined
+    assert "secretsmanager:*" not in json.dumps(policy)
+    runtime = json.dumps(checkout["runtime_iam"])
+    webhook = json.dumps(checkout["webhook_iam"])
+    assert "erap/billing/razorpay/test" in runtime
+    assert "erap/billing/razorpay/production" in runtime
+    assert "erap/billing/razorpay/test" in webhook
+    assert "erap/billing/razorpay/production" in webhook
+    assert "secretsmanager:*" not in runtime
+    assert "secretsmanager:*" not in webhook
+    assert "AdministratorAccess" not in runtime
 
 
 def test_commercial_doc_states_the_launch_boundary():

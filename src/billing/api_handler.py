@@ -10,7 +10,7 @@ from billing.checkout import create_checkout
 from billing.errors import BillingError
 from billing.events import list_events
 from billing.plans import customer_plans
-from billing.provider.razorpay import checkout_links, open_provider
+from billing.provider.razorpay import checkout_binding, open_provider
 from billing.summary import read_billing
 from common import api_response, parse_json_body
 from observability import begin_request
@@ -101,12 +101,13 @@ def _dispatch(method, path, body, organization_id):
         return {"plans": customer_plans()}
 
     if action == "checkout":
+        provider_factory, links = checkout_binding(billing_client, build_provider)
         return create_checkout(
             body,
             organization_id,
             subscriptions_table(),
-            build_provider,
-            links=checkout_links(client_factory=billing_client),
+            provider_factory,
+            links=links,
             now=now,
         )
 

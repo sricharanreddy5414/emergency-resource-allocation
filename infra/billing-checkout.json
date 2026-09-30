@@ -1,7 +1,7 @@
 {
   "applied": true,
   "region": "eu-north-1",
-  "note": "The billing routes, functions, and test secret already exist on API 4c6dni17l3 stage dev. Do not create a second API or stage. Authenticated billing routes use authorizer y0hzhr. The webhook route has no Cognito authorizer. deploy-backend.yml still publishes only PACKAGES, so billing aliases are updated by their own deploy.",
+  "note": "The billing routes, functions, and secrets already exist on API 4c6dni17l3 stage dev. Do not create a second API or stage. Authenticated billing routes use authorizer y0hzhr. The webhook route has no Cognito authorizer. deploy-backend.yml publishes PACKAGES and the three billing functions. Exchange and notifications stay out of that deploy.",
   "route": {
     "restApiId": "4c6dni17l3",
     "stage": "dev",
@@ -86,6 +86,12 @@
         "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/test*"
       },
       {
+        "Sid": "ProductionRazorpaySecret",
+        "Effect": "Allow",
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/production*"
+      },
+      {
         "Sid": "BillingEventsByOrganization",
         "Effect": "Allow",
         "Action": "dynamodb:Query",
@@ -153,6 +159,12 @@
         "Effect": "Allow",
         "Action": "secretsmanager:GetSecretValue",
         "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/test*"
+      },
+      {
+        "Sid": "ProductionWebhookSecret",
+        "Effect": "Allow",
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": "arn:aws:secretsmanager:eu-north-1:481838970142:secret:erap/billing/razorpay/production*"
       }
     ]
   }

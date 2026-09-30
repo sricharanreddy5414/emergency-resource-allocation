@@ -100,8 +100,10 @@ TABLES = [
 ]
 
 
-# Packaged for a later deploy. Not in PACKAGES, so the existing nine functions
-# stay the only ones the deploy, alias, and route scripts touch.
+# Exchange stays outside PACKAGES and outside deploy_backend.py.
+# set_live_version.py --version still moves only PACKAGES.
+# Billing is published by deploy_backend.py but stays out of PACKAGES so one
+# shared version number cannot move the billing aliases.
 EXCHANGE_PACKAGES = {
     "erap-exchange": {
         **SHARED,

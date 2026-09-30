@@ -2,7 +2,9 @@
 
 API Gateway invokes alias live, so traffic changes when that alias moves.
 This script updates code, publishes a version, and points live at it.
-It does not change API routes, DynamoDB, Cognito, or Amplify.
+It publishes PACKAGES and the three billing functions. Exchange and
+notification functions stay on their current aliases.
+It does not change API routes, DynamoDB, Cognito, Amplify, or environment variables.
 """
 
 import json
@@ -13,7 +15,7 @@ import time
 from pathlib import Path
 
 from aws_cli import aws
-from lambda_manifest import ALIAS, PACKAGES, REGION, ROOT
+from lambda_manifest import ALIAS, BILLING_PACKAGES, PACKAGES, REGION, ROOT
 from package_lambdas import build_zip, check_zip
 
 
@@ -134,7 +136,7 @@ def main():
     folder.mkdir(exist_ok=True)
     results = []
     summary_path = folder / "deploy-summary.json"
-    for name in PACKAGES:
+    for name in list(PACKAGES) + list(BILLING_PACKAGES):
         print(f"deploying {name}")
         results.append(deploy_one(folder, name, commit))
         print(f"published {name} version {results[-1]['version']}")

@@ -30,7 +30,13 @@
         "arn:aws:lambda:eu-north-1:481838970142:function:erap-create-organization",
         "arn:aws:lambda:eu-north-1:481838970142:function:erap-create-organization:*",
         "arn:aws:lambda:eu-north-1:481838970142:function:erap-get-organization",
-        "arn:aws:lambda:eu-north-1:481838970142:function:erap-get-organization:*"
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-get-organization:*",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-billing",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-billing:*",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-billing-webhook",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-billing-webhook:*",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-billing-expiry",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-billing-expiry:*"
       ]
     },
     {
