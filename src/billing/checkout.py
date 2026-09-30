@@ -27,8 +27,9 @@ def create_checkout(
     """Return the public checkout reference for one organization.
 
     organization_id must already be the membership selected by authorize.
-    plans and links are injection points for tests. Production links use
-    the 100-year cycle counts. Checkout still does not activate the plan.
+    plans and links are injection points for tests. Production links stay
+    inside Razorpay's 40-year authorization limit. Checkout still does not
+    activate the plan.
     """
     plan_id = _plan_id(body)
     plan = _plan(plan_id, plans)
@@ -40,6 +41,7 @@ def create_checkout(
     current = _load(subscriptions, organization_id)
     _require_checkout_state(current)
     provider = provider_factory()
+    previous = _replaceable_subscription(provider, current)
     created = provider.create_subscription(
         razorpay_plan_id=razorpay_plan_id,
         total_count=total_count,
@@ -52,6 +54,7 @@ def create_checkout(
         current.get("subscription_status"),
         plan["plan_id"],
         now or datetime.now(timezone.utc),
+        previous,
     )
     result = {
         "provider": "razorpay",
@@ -120,13 +123,30 @@ def _require_checkout_state(current):
     if status not in CHECKOUT_STATUSES:
         raise BillingError(409, "Checkout is not available for this subscription")
 
-    provider_subscription_id = current.get("provider_subscription_id") or ""
 
-    if provider_subscription_id and status != "CANCELLED":
-        raise BillingError(409, "A checkout is already in progress")
+def _replaceable_subscription(provider, current):
+    """Return a provider id that checkout may replace.
+
+    Only a subscription Razorpay still reports as created can be replaced.
+    That status means the payer never authorized it. Any other status keeps
+    the existing checkout reference.
+    """
+    previous = str(current.get("provider_subscription_id") or "")
+    status = str(current.get("subscription_status") or "")
+
+    if not previous or status == "CANCELLED":
+        return ""
+
+    status_fn = getattr(provider, "subscription_status", None)
+    remote = status_fn(previous) if status_fn else ""
+
+    if remote == "created":
+        return previous
+
+    raise BillingError(409, "A checkout is already in progress")
 
 
-def _save_reference(subscriptions, organization_id, provider_subscription_id, status, plan_id, now):
+def _save_reference(subscriptions, organization_id, provider_subscription_id, status, plan_id, now, previous=""):
     """Remember the provider subscription and the plan waiting for confirmation.
 
     plan_id on the row stays unchanged until a verified webhook activates it.
@@ -144,6 +164,7 @@ def _save_reference(subscriptions, organization_id, provider_subscription_id, st
                 "subscription_status = :status AND "
                 "(attribute_not_exists(provider_subscription_id) OR "
                 "provider_subscription_id = :empty OR "
+                "provider_subscription_id = :previous OR "
                 "subscription_status = :cancelled)"
             ),
             ExpressionAttributeValues={
@@ -153,6 +174,7 @@ def _save_reference(subscriptions, organization_id, provider_subscription_id, st
                 ":updated": format_utc(now),
                 ":status": status,
                 ":empty": "",
+                ":previous": previous,
                 ":cancelled": "CANCELLED",
             },
         )

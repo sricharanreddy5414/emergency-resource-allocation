@@ -369,10 +369,10 @@ def test_plans_follow_the_billing_role_policy(monkeypatch):
     assert PLANS["MONTHLY"]["purchasable"] is True
     assert RAZORPAY_PLAN_LINKS["MONTHLY"]["razorpay_plan_id"].startswith("plan_")
     assert RAZORPAY_PLAN_LINKS["YEARLY"]["razorpay_plan_id"].startswith("plan_")
-    assert RAZORPAY_PLAN_LINKS["MONTHLY"]["total_count"] == 1200
-    assert RAZORPAY_PLAN_LINKS["YEARLY"]["total_count"] == 100
-    assert "1200" not in rendered
-    assert "100" not in rendered
+    assert RAZORPAY_PLAN_LINKS["MONTHLY"]["total_count"] == 468
+    assert RAZORPAY_PLAN_LINKS["YEARLY"]["total_count"] == 39
+    assert "468" not in rendered
+    assert "39" not in rendered
     refused, _body, _table, _history, _provider = call(monkeypatch, "GET", "/billing/plans", role="MEMBER")
     assert refused["statusCode"] == 403
 
@@ -391,7 +391,7 @@ def test_checkout_permissions_and_unavailable_plan(monkeypatch):
         "create",
         {
             "razorpay_plan_id": "plan_ThiWT35Gf1jyio",
-            "total_count": 1200,
+            "total_count": 468,
             "organization_id": ORG_A,
         },
     )]

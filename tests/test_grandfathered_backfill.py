@@ -205,6 +205,6 @@ def test_grandfathered_row_passes_the_checkout_row_prerequisite():
     )
 
     assert item["subscription_status"] in CHECKOUT_STATUSES
-    assert provider.calls[0]["total_count"] == 1200
+    assert provider.calls[0]["total_count"] == 468
     assert provider.calls[0]["razorpay_plan_id"].startswith("plan_")
     assert result["provider_subscription_id"] == "sub_TestCheckout01"

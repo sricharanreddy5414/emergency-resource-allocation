@@ -95,8 +95,9 @@ class SubscriptionTable:
             )
 
         current = item.get("provider_subscription_id") or ""
+        previous = values.get(":previous") or ""
 
-        if current and values[":status"] != "CANCELLED":
+        if current and values[":status"] != "CANCELLED" and current != previous:
             raise ClientError(
                 {"Error": {"Code": "ConditionalCheckFailedException", "Message": "conflict"}},
                 "UpdateItem",
@@ -185,7 +186,7 @@ def body_of(result):
     return json.loads(result["body"])
 
 
-def test_owner_monthly_checkout_sends_the_hundred_year_count(monkeypatch):
+def test_owner_monthly_checkout_sends_the_authorization_limit(monkeypatch):
     table, provider, _organizations, _before = wire(monkeypatch, subscription=row())
 
     result = checkout_handler.lambda_handler(event({"plan_id": "MONTHLY"}), None)
@@ -193,7 +194,7 @@ def test_owner_monthly_checkout_sends_the_hundred_year_count(monkeypatch):
     assert result["statusCode"] == 200
     assert provider.calls == [{
         "razorpay_plan_id": "plan_ThiWT35Gf1jyio",
-        "total_count": 1200,
+        "total_count": 468,
         "organization_id": ORG_A,
     }]
     assert table.items[ORG_A]["subscription_status"] == "TRIALING"
@@ -361,7 +362,7 @@ def test_unknown_plan_is_rejected():
     assert error.value.status_code == 400
 
 
-def test_owner_yearly_checkout_sends_the_hundred_year_count(monkeypatch):
+def test_owner_yearly_checkout_sends_the_authorization_limit(monkeypatch):
     table, provider, _organizations, _before = wire(monkeypatch, subscription=row())
 
     result = checkout_handler.lambda_handler(event({"plan_id": "YEARLY"}), None)
@@ -369,7 +370,7 @@ def test_owner_yearly_checkout_sends_the_hundred_year_count(monkeypatch):
     assert result["statusCode"] == 200
     assert provider.calls == [{
         "razorpay_plan_id": "plan_ThiWTXOzBHl2Qb",
-        "total_count": 100,
+        "total_count": 39,
         "organization_id": ORG_A,
     }]
     assert table.items[ORG_A]["pending_plan_id"] == "YEARLY"
@@ -437,6 +438,52 @@ def test_pending_provider_subscription_is_not_overwritten():
     assert provider.calls == []
     assert table.items[ORG_A]["provider_subscription_id"] == "sub_AlreadyOpen01"
     assert table.items[ORG_A]["name_marker"] == "leave-operational-data"
+
+
+def test_created_provider_subscription_can_be_replaced_without_activation():
+    table = SubscriptionTable(row(provider_subscription_id="sub_AlreadyOpen01"))
+    provider = FakeProvider()
+    provider.subscription_status = lambda subscription_id: "created" if subscription_id == "sub_AlreadyOpen01" else ""
+
+    result = create_checkout(
+        {"plan_id": "MONTHLY"},
+        ORG_A,
+        table,
+        lambda: provider,
+        links=LINKS,
+        plans=purchasable_plans("MONTHLY"),
+        now=NOW,
+    )
+
+    saved = table.items[ORG_A]
+    assert result["provider_subscription_id"] == "sub_TestCheckout01"
+    assert saved["subscription_status"] == "TRIALING"
+    assert saved["plan_id"] == "FREE_TRIAL"
+    assert saved["provider_subscription_id"] == "sub_TestCheckout01"
+    assert saved["pending_plan_id"] == "MONTHLY"
+    assert provider.calls[0]["organization_id"] == ORG_A
+
+
+def test_authenticated_provider_subscription_is_not_replaced():
+    table = SubscriptionTable(row(provider_subscription_id="sub_AlreadyOpen01"))
+    provider = FakeProvider()
+    provider.subscription_status = lambda subscription_id: "authenticated"
+
+    with pytest.raises(BillingError) as error:
+        create_checkout(
+            {"plan_id": "MONTHLY"},
+            ORG_A,
+            table,
+            lambda: provider,
+            links=LINKS,
+            plans=purchasable_plans("MONTHLY"),
+            now=NOW,
+        )
+
+    assert error.value.status_code == 409
+    assert provider.calls == []
+    assert table.items[ORG_A]["subscription_status"] == "TRIALING"
+    assert table.items[ORG_A]["provider_subscription_id"] == "sub_AlreadyOpen01"
 
 
 def test_conditional_conflict_does_not_activate(monkeypatch):
@@ -540,9 +587,9 @@ def test_hosted_checkout_url_is_https_only(short_url, expected):
 
 @pytest.mark.parametrize(
     "plan_id,total_count",
-    [("MONTHLY", 1200), ("YEARLY", 100)],
+    [("MONTHLY", 468), ("YEARLY", 39)],
 )
-def test_production_checkout_body_uses_the_hundred_year_count(plan_id, total_count):
+def test_production_checkout_body_stays_inside_the_authorization_limit(plan_id, total_count):
     seen = {}
 
     class Response:
@@ -590,6 +637,40 @@ def test_production_checkout_body_uses_the_hundred_year_count(plan_id, total_cou
     assert "test-secret-value" not in json.dumps(seen["body"])
 
 
+def test_subscription_status_returns_only_the_provider_status():
+    seen = {}
+
+    class Response:
+        def read(self):
+            return json.dumps({
+                "id": "sub_Created000001",
+                "status": "created",
+                "customer_id": "cust_hidden",
+            }).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def urlopen(request, timeout):
+        seen["method"] = request.get_method()
+        seen["url"] = request.full_url
+        return Response()
+
+    status = RazorpaySubscriptionProvider(
+        lambda: ("rzp_test_public", "test-secret-value"),
+        urlopen=urlopen,
+    ).subscription_status("sub_Created000001")
+
+    assert status == "created"
+    assert seen["method"] == "GET"
+    assert seen["url"].endswith("/subscriptions/sub_Created000001")
+    assert "cust_hidden" not in status
+    assert "test-secret-value" not in status
+
+
 def test_live_key_is_rejected_before_the_subscription_call():
     def urlopen(request, timeout):
         raise AssertionError("live key must not call Razorpay")
@@ -599,7 +680,7 @@ def test_live_key_is_rejected_before_the_subscription_call():
     with pytest.raises(BillingError) as error:
         provider.create_subscription(
             razorpay_plan_id="plan_ThiWT35Gf1jyio",
-            total_count=1200,
+            total_count=468,
             organization_id=ORG_A,
         )
 
@@ -654,7 +735,7 @@ def test_live_key_and_wrong_secret_id_are_refused():
 def test_unconfigured_provider_plan_helper_fails_closed():
     plan_id, total_count = provider_plan("MONTHLY")
     assert plan_id == "plan_ThiWT35Gf1jyio"
-    assert total_count == 1200
+    assert total_count == 468
 
     with pytest.raises(BillingError):
         provider_plan("MONTHLY", links={"MONTHLY": {"razorpay_plan_id": None, "total_count": None}})

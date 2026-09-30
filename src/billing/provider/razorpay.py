@@ -26,11 +26,12 @@ SUBSCRIPTIONS_URL = "https://api.razorpay.com/v1/subscriptions"
 TEST_SECRET_ID = "erap/billing/razorpay/test"
 TIMEOUT_SECONDS = 10
 
-# 1200 monthly cycles and 100 yearly cycles are Razorpay's documented
-# 100-year maximum. A customer can cancel earlier. This is not unlimited.
+# Razorpay rejects authorization when expire_at is more than 40 years away.
+# 468 monthly cycles and 39 yearly cycles stay inside that limit.
+# A customer can cancel earlier. This is not unlimited.
 RAZORPAY_PLAN_LINKS = {
-    "MONTHLY": {"razorpay_plan_id": "plan_ThiWT35Gf1jyio", "total_count": 1200},
-    "YEARLY": {"razorpay_plan_id": "plan_ThiWTXOzBHl2Qb", "total_count": 100},
+    "MONTHLY": {"razorpay_plan_id": "plan_ThiWT35Gf1jyio", "total_count": 468},
+    "YEARLY": {"razorpay_plan_id": "plan_ThiWTXOzBHl2Qb", "total_count": 39},
 }
 
 
@@ -254,6 +255,31 @@ class RazorpaySubscriptionProvider:
             result["hosted_checkout_url"] = hosted
 
         return result
+
+    def subscription_status(self, provider_subscription_id):
+        """Return only the provider status. The response body is not stored."""
+        key_id, key_secret = self.secret_loader()
+
+        if not str(key_id).startswith("rzp_test_"):
+            raise BillingError(500, "Billing is not configured")
+
+        if not isinstance(provider_subscription_id, str) or not provider_subscription_id.startswith("sub_"):
+            raise BillingError(409, "A checkout is already in progress")
+
+        subscription_id = urllib.parse.quote(provider_subscription_id, safe="")
+        token = b64encode(f"{key_id}:{key_secret}".encode("utf-8")).decode("ascii")
+        request = urllib.request.Request(
+            f"{SUBSCRIPTIONS_URL}/{subscription_id}",
+            method="GET",
+            headers={"Authorization": f"Basic {token}"},
+        )
+        parsed = _read_json(self.urlopen, request, self.timeout)
+        status = parsed.get("status") if isinstance(parsed, dict) else None
+
+        if not isinstance(status, str) or not status.strip():
+            raise BillingError(502, "Billing provider rejected the request")
+
+        return status.strip()
 
     def cancel_subscription(self, *, provider_subscription_id):
         """Ask Razorpay to cancel at the end of the current cycle.
