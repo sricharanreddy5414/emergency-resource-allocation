@@ -6732,6 +6732,20 @@ initializeRequestControls();
         );
 
 
+    $("locationModalClose")
+        ?.addEventListener(
+            "click",
+            dismissLocationPrompt
+        );
+
+
+    $("locationNotNowBtn")
+        ?.addEventListener(
+            "click",
+            dismissLocationPrompt
+        );
+
+
     /* Mark inbox notifications read */
 
     $("clearNotificationsBtn")
@@ -7778,6 +7792,24 @@ function renderLocationWorkspace() {
 }
 
 
+function dismissLocationPrompt() {
+
+    const organizationId = selectedOrganizationId();
+
+    if (organizationId) {
+
+        sessionStorage.setItem(
+            "erap_location_prompt_" + organizationId,
+            "dismissed"
+        );
+
+    }
+
+    $("locationModal")?.classList.add("hidden");
+
+}
+
+
 async function loadLocations() {
 
     const organizationId = selectedOrganizationId();
@@ -7865,9 +7897,21 @@ async function loadLocations() {
 
     if (currentUser.locations.length === 0) {
 
-        $("locationModal")?.classList.remove("hidden");
+        const dismissed = sessionStorage.getItem(
+            "erap_location_prompt_" + organizationId
+        ) === "dismissed";
+
+        if (!dismissed) {
+
+            $("locationModal")?.classList.remove("hidden");
+
+        }
 
     } else {
+
+        sessionStorage.removeItem(
+            "erap_location_prompt_" + organizationId
+        );
 
         $("locationModal")?.classList.add("hidden");
 

@@ -27,6 +27,9 @@ def test_onboarding_explains_the_organization_and_hides_the_id():
     assert "You are creating an organization." in app
     assert "15-day trial" in html
     assert 'organization.name || "Organization"' in app
+    assert 'id="locationModalClose"' in html
+    assert 'id="locationNotNowBtn"' in html
+    assert "function dismissLocationPrompt()" in app
 
 
 def test_beta_runbooks_stay_operational_and_do_not_name_protected_records():
