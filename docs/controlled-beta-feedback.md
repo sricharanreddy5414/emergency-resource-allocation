@@ -149,3 +149,15 @@ Phase 21 fixed the operations timeline so a RELEASED allocation shows `released_
 The overview heading could still say "All locations" after the location selector had selected Beta Test Location. The list filter followed the selected location. The heading is refreshed from the active location context.
 
 "Return" and "Emergency release" stay as separate actions. Return closes an open everyday allocation and records `EVERYDAY_RESOURCE_RETURNED`. Emergency release closes an allocated emergency allocation, sets the request and allocation to RELEASED, and records `RESOURCE_RELEASED`. No user statement says these labels were confusing.
+
+## Phase 24 participants
+
+Only an identified real workflow is listed. No additional person was available to create another organization through onboarding. Existing test organizations were not counted, and their data was not changed.
+
+| Organization | Real users | Workflow | Result | Feedback | Issues |
+|---|---|---|---|---|---|
+| ERAP First User Beta (`ORG-4708B62B1B9C`) | 1 OWNER | Location, resource, request, allocation, release, history, sign-out and sign-in | SUCCESS | The eight feedback questions were not answered. | None open. The release timeline uses `released_at`. The overview heading follows the selected location. |
+
+The operator reports that a second real person used ERAP and that the experience was very good. Overall feedback was positive; no specific issue was reported. No organization id, role, or workflow record was available for that person, so that person is not listed as another organization.
+
+No additional real beta organizations were available.
