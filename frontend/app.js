@@ -2835,10 +2835,15 @@ function renderRecentOperations() {
 
     allocations.forEach(item => {
         const status = String(item.status || "").toUpperCase();
+        const released = status === "RELEASED";
         events.push({
-            title: status === "RELEASED" ? "Resource released" : "Allocation completed",
+            title: released ? "Resource released" : "Allocation completed",
             detail: String(item.request_id || "") + " · " + String(item.resource_id || ""),
-            time: String(item.created_at || item.allocated_at || item.updated_at || "")
+            time: String(
+                released
+                    ? (item.released_at || "")
+                    : (item.created_at || item.allocated_at || item.updated_at || "")
+            )
         });
     });
 
