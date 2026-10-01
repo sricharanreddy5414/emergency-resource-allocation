@@ -1,0 +1,25 @@
+body {
+    margin: 0;
+    padding: 32px 20px 64px;
+    background: #efe8dc;
+    color: #1c1915;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+}
+
+body > * {
+    max-width: 680px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+h1 {
+    font-size: 32px;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+}
+
+a {
+    color: #8d4b24;
+}

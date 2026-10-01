@@ -1,0 +1,330 @@
+/* ERAP design system.
+   Paper operations ledger. Ink for structure, color only for state. */
+
+:root {
+    --bg: #efe8dc;
+    --surface: #f7f1e6;
+    --surface-elevated: #fffaf2;
+    --surface-strong: #241f1a;
+    --ink: #1c1915;
+    --muted: #5e564c;
+    --line: #d9cfc0;
+    --line-strong: #1c1915;
+    --band: #241f1a;
+    --band-text: #f6f1e8;
+    --ready: #1d6a43;
+    --hold: #3e5168;
+    --wait: #8a5a12;
+    --signal: #8d4b24;
+    --danger: #8f2d24;
+    --info: #3e5168;
+    --focus: #8d4b24;
+    --font: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --radius: 2px;
+    --shadow: 0 18px 40px rgba(28, 25, 21, 0.12);
+    --motion: 160ms ease;
+    --rail: 228px;
+}
+
+body {
+    background:
+        linear-gradient(180deg, rgba(141, 75, 36, 0.05), transparent 220px),
+        var(--bg);
+    color: var(--ink);
+}
+
+:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+.sidebar {
+    background: var(--band);
+    border-right: 1px solid #3a332c;
+}
+
+.nav-label {
+    color: rgba(246, 241, 232, 0.48);
+}
+
+.nav-item {
+    border-radius: var(--radius);
+    transition: background var(--motion), color var(--motion);
+}
+
+.nav-item.active {
+    background: transparent;
+    box-shadow: inset 2px 0 0 var(--signal);
+    color: var(--band-text);
+}
+
+.status-dot {
+    background: var(--ready);
+}
+
+.main-content {
+    padding: var(--space-5) var(--space-6) 80px;
+}
+
+.topbar {
+    align-items: flex-end;
+    margin: 0 0 var(--space-6);
+    padding: 0 0 var(--space-4);
+    background: transparent;
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
+}
+
+.context-line,
+.context-field,
+.where-block h1,
+.welcome,
+.ops-state {
+    color: var(--ink);
+}
+
+.context-line {
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+}
+
+.ops-state {
+    color: var(--ready);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.context-select,
+input,
+select,
+textarea {
+    background: var(--surface-elevated);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+
+.notification-count {
+    background: var(--signal);
+    color: #fffaf2;
+}
+
+.profile-icon,
+.modal-avatar {
+    background: var(--band);
+    color: var(--band-text);
+}
+
+.desk-mast h2 {
+    font-size: 34px;
+    font-weight: 650;
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+}
+
+.desk-kicker,
+.panel-label {
+    color: var(--signal);
+    letter-spacing: 0.16em;
+}
+
+.situation-ready span {
+    color: var(--ink);
+}
+
+.situation-ready em {
+    color: var(--ready);
+}
+
+.situation-notes li {
+    border-top-color: var(--line);
+}
+
+.desk-now {
+    gap: var(--space-7);
+}
+
+.ops-item,
+.notification-item,
+.tally-line,
+.ops-timeline li {
+    border-top-color: var(--line);
+}
+
+.ops-item-high {
+    box-shadow: inset 3px 0 0 var(--signal);
+}
+
+.ops-timeline {
+    position: relative;
+}
+
+.ops-timeline li {
+    position: relative;
+}
+
+.ops-timeline li::before {
+    content: "";
+    position: absolute;
+    left: 152px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line);
+}
+
+.tally-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+}
+
+.tally-share {
+    grid-column: 1 / -1;
+    display: block;
+    height: 2px;
+    margin-top: 6px;
+    background: linear-gradient(90deg, var(--ink) var(--share), var(--line) var(--share));
+}
+
+.ops-empty,
+.analytics-empty {
+    padding: var(--space-4) 0;
+    color: var(--muted);
+}
+
+.ops-empty h3 {
+    color: var(--ink);
+    font-size: 18px;
+}
+
+.primary-btn,
+.allocate-btn,
+.edit-profile-btn {
+    background: var(--ink);
+    border-radius: var(--radius);
+}
+
+.secondary-btn,
+.text-action,
+.refresh-btn {
+    color: var(--ink);
+}
+
+table.ops-table,
+.table-container table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+td,
+th {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+
+tr:hover td {
+    background: rgba(255, 250, 242, 0.7);
+}
+
+.status-badge {
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 11px;
+}
+
+.modal-card,
+.signup-card {
+    background: var(--surface-elevated);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    padding: var(--space-5);
+}
+
+.signup-screen:not([hidden]) {
+    background: var(--bg);
+}
+
+.exchange-card,
+.panel,
+.billing-plan {
+    background: transparent;
+}
+
+.exchange-card.active {
+    box-shadow: inset 2px 0 0 var(--signal);
+}
+
+@media (min-width: 1024px) {
+    .sidebar {
+        transform: none;
+        width: var(--rail);
+    }
+
+    .drawer-close,
+    .mobile-menu-btn,
+    .nav-overlay,
+    .dock {
+        display: none;
+    }
+
+    .main-content {
+        margin-left: var(--rail);
+    }
+
+    .topbar .erap-logo {
+        display: none;
+    }
+}
+
+@media (max-width: 1023px) {
+    .dock {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        background: var(--band);
+    }
+
+    .dock .nav-item {
+        font-size: 11px;
+        padding: 10px 2px;
+    }
+
+    .ops-timeline li,
+    .ops-timeline li::before {
+        left: auto;
+    }
+
+    .ops-timeline li::before {
+        display: none;
+    }
+
+    .desk-mast h2 {
+        font-size: 28px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tally-share,
+    .nav-item,
+    .ops-timeline li::before {
+        transition: none;
+    }
+}

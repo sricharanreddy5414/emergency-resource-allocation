@@ -3608,8 +3608,9 @@ function renderAnalyticsBars(
 
                     return `
                         <p class="tally-line">
-                            <span>${item.label}</span>
+                            <span>${escapeHtml(item.label)}</span>
                             <b>${item.value}</b>
+                            <i class="tally-share" style="--share:${percentage}%"></i>
                         </p>
                     `;
 
