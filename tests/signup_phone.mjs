@@ -102,11 +102,22 @@ context.document = {
     createTextNode(text) { return { textContent: text }; },
     addEventListener() {},
 };
-["signupScreen", "signupDialButton", "signupDialFlag", "signupDialLabel", "signupDialList", "signupDialPanel", "signupDialSearch", "signupMessage"].forEach(makeElement);
+["accountEntry", "signupScreen", "signupDialButton", "signupDialFlag", "signupDialLabel", "signupDialList", "signupDialPanel", "signupDialSearch", "signupMessage"].forEach(makeElement);
 elements.signupDialButton.setAttribute = function (name, value) { this.attributes[name] = value; };
 elements.signupDialPanel.hidden = true;
 
 vm.runInContext(fs.readFileSync(path.join(root, "frontend", "signup-ui.js"), "utf8"), context);
+assert.match(context.signupErrorText({ __type: "UsernameExistsException" }), /already exists/);
+assert.equal(context.signupErrorText({ __type: "CodeMismatchException" }), "That confirmation code is not valid.");
+assert.equal(context.signupErrorText({ __type: "ExpiredCodeException" }), "That confirmation code has expired.");
+assert.match(context.validateSignupAccount({ name: "A", email: "not-an-email", password: "Example1!", confirmPassword: "Example1!", dial: "+91", national: "9876543210" }).message, /email/i);
+assert.match(context.validateSignupAccount({ name: "A", email: "a@example.com", password: "short", confirmPassword: "short", dial: "+91", national: "9876543210" }).message, /Password/);
+assert.match(context.validateSignupAccount({ name: "A", email: "a@example.com", password: "Example1!", confirmPassword: "Example2!", dial: "+91", national: "9876543210" }).message, /do not match/i);
+context.showAccountEntry();
+assert.equal(elements.accountEntry.hidden, false);
+context.showSignupScreen();
+assert.equal(elements.accountEntry.hidden, true);
+assert.equal(elements.signupScreen.hidden, false);
 context.applyDialCountry(byIso("IN"));
 assert.equal(elements.signupDialLabel.textContent, "India +91");
 assert.match(elements.signupDialButton.attributes["aria-label"], /India \+91/);

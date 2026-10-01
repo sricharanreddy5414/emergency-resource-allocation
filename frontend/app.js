@@ -1386,8 +1386,8 @@ async function initializeAuthentication() {
 
 
     /*
-       If there is no access token,
-       send the user to Cognito Managed Login.
+       A new visit can sign in through Cognito or create an account
+       on the ERAP signup screen. Cognito Hosted UI is unchanged.
     */
 
     if (!getAccessToken() && !sessionStorage.getItem("erap_refresh_token")) {
@@ -1400,7 +1400,7 @@ async function initializeAuthentication() {
 
         }
 
-        await loginWithCognito();
+        showAccountEntry();
 
         return false;
 

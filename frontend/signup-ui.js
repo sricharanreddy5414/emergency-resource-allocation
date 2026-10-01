@@ -17,6 +17,38 @@ function signupRequested() {
 }
 
 
+function hideAccountScreen(id) {
+
+    const screen = document.getElementById(id);
+
+    if (!screen) {
+
+        return;
+
+    }
+
+    screen.hidden = true;
+
+}
+
+
+function showAccountEntry() {
+
+    hideAccountScreen("signupScreen");
+    const screen = document.getElementById("accountEntry");
+
+    if (!screen) {
+
+        return;
+
+    }
+
+    screen.hidden = false;
+    screen.classList.remove("hidden");
+
+}
+
+
 function showSignupScreen() {
 
     const screen = document.getElementById("signupScreen");
@@ -27,6 +59,7 @@ function showSignupScreen() {
 
     }
 
+    hideAccountScreen("accountEntry");
     screen.hidden = false;
     screen.classList.remove("hidden");
 
@@ -232,9 +265,21 @@ function signupErrorText(error) {
 
     }
 
-    if (name === "CodeMismatchException" || name === "ExpiredCodeException") {
+    if (name === "CodeMismatchException") {
 
         return "That confirmation code is not valid.";
+
+    }
+
+    if (name === "ExpiredCodeException") {
+
+        return "That confirmation code has expired.";
+
+    }
+
+    if (name === "UserNotConfirmedException") {
+
+        return "Confirm the account before signing in.";
 
     }
 
@@ -464,6 +509,20 @@ function initializeSignupScreen() {
 
     form?.addEventListener("submit", submitSignupAccount);
     confirm?.addEventListener("submit", submitSignupConfirmation);
+    document.getElementById("accountSignIn")?.addEventListener("click", () => {
+
+        if (typeof loginWithCognito === "function") {
+
+            loginWithCognito();
+
+        }
+
+    });
+    document.getElementById("accountCreate")?.addEventListener("click", () => {
+
+        showSignupScreen();
+
+    });
     signIn?.addEventListener("click", () => {
 
         if (typeof loginWithCognito === "function") {

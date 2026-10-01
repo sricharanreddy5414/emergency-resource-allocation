@@ -29,3 +29,21 @@ def test_signup_phone_country_selector():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_normal_visit_offers_create_account_before_cognito():
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    html = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    block = app.split(
+        'if (!getAccessToken() && !sessionStorage.getItem("erap_refresh_token"))',
+        1,
+    )[1].split("if (idTokenNeedsRefresh()", 1)[0]
+    assert "showAccountEntry()" in block
+    assert "showSignupScreen()" in block
+    assert "loginWithCognito()" not in block
+    assert 'id="accountSignIn"' in html
+    assert 'id="accountCreate"' in html
+    assert "Create account" in html
+    style = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+    assert "flex-wrap: wrap" in style
+    assert "@media (max-width: 560px)" in style
