@@ -84,6 +84,8 @@ const COGNITO_DOMAIN =
 const COGNITO_CLIENT_ID =
     "3je7latr22bqhggoavlva00hp5";
 
+window.ERAP_COGNITO_CLIENT_ID = COGNITO_CLIENT_ID;
+
 const REDIRECT_URI = window.location.origin;
 
 const COGNITO_SCOPES =
@@ -1389,6 +1391,14 @@ async function initializeAuthentication() {
     */
 
     if (!getAccessToken() && !sessionStorage.getItem("erap_refresh_token")) {
+
+        if (signupRequested()) {
+
+            showSignupScreen();
+
+            return false;
+
+        }
 
         await loginWithCognito();
 

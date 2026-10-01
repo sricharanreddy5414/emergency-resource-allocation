@@ -30,6 +30,61 @@
 <body>
 
 
+<div id="signupScreen" class="signup-screen" hidden>
+    <div class="signup-card">
+        <img class="erap-logo" src="brand/ERAP-logo-4K.png" alt="ERAP">
+        <h1>Create an account</h1>
+        <p class="signup-note">The country code and mobile number are separate. Sign-in still uses the existing ERAP login.</p>
+        <form id="signupForm">
+            <div id="signupDetails">
+                <label class="signup-field-label" for="signupName">Name</label>
+                <input id="signupName" name="name" autocomplete="name" required>
+                <label class="signup-field-label" for="signupEmail">Email</label>
+                <input id="signupEmail" name="email" type="email" autocomplete="username" required>
+                <div class="signup-phone">
+                    <div class="signup-dial">
+                        <span class="signup-field-label" id="signupDialCaption">Country code</span>
+                        <button
+                            type="button"
+                            id="signupDialButton"
+                            class="signup-dial-button"
+                            aria-haspopup="listbox"
+                            aria-expanded="false"
+                            aria-controls="signupDialList"
+                        >
+                            <span id="signupDialFlag" aria-hidden="true"></span>
+                            <span id="signupDialLabel">Country code</span>
+                        </button>
+                        <div id="signupDialPanel" class="signup-dial-panel" hidden>
+                            <input id="signupDialSearch" type="search" aria-label="Search by country name, country code, or dial code" autocomplete="off">
+                            <ul id="signupDialList" role="listbox" aria-label="Countries"></ul>
+                        </div>
+                    </div>
+                    <div class="signup-national">
+                        <label class="signup-field-label" for="signupNational">Mobile number</label>
+                        <input id="signupNational" name="national" inputmode="numeric" autocomplete="tel-national" required>
+                    </div>
+                </div>
+                <label class="signup-field-label" for="signupPassword">Password</label>
+                <input id="signupPassword" name="password" type="password" autocomplete="new-password" required>
+                <label class="signup-field-label" for="signupConfirmPassword">Confirm password</label>
+                <input id="signupConfirmPassword" name="confirm" type="password" autocomplete="new-password" required>
+                <button id="signupSubmit" class="primary-btn" type="submit">Create account</button>
+            </div>
+        </form>
+        <form id="signupConfirmForm">
+            <div id="signupConfirm" hidden>
+                <label class="signup-field-label" for="signupCode">Email confirmation code</label>
+                <input id="signupCode" name="code" inputmode="numeric" autocomplete="one-time-code">
+                <button class="primary-btn" type="submit">Confirm account</button>
+            </div>
+        </form>
+        <p id="signupMessage" class="signup-message" role="status"></p>
+        <button id="signupSignIn" class="secondary-btn" type="button">Sign in</button>
+    </div>
+</div>
+
+
 <!-- =====================================================
      SIDEBAR
 ====================================================== -->
@@ -2694,6 +2749,9 @@
      APP JAVASCRIPT
 ===================================================== -->
 
+<script src="country-dial-codes.js"></script>
+<script src="signup-phone.js"></script>
+<script src="signup-ui.js"></script>
 <script src="qr-code.js"></script>
 <script src="qr-handover.js"></script>
 <script src="app.js"></script>

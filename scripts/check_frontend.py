@@ -29,7 +29,7 @@ def main():
         if not path.is_file():
             raise SystemExit(f"Missing frontend file {path.name}")
     subprocess.run([node, "--check", str(app)], check=True)
-    for extra in ("qr-code.js", "qr-handover.js"):
+    for extra in ("country-dial-codes.js", "signup-phone.js", "signup-ui.js", "qr-code.js", "qr-handover.js"):
         subprocess.run([node, "--check", str(ROOT / "frontend" / extra)], check=True)
     html = index.read_text(encoding="utf-8")
     if "app.js" not in html or "style.css" not in html:
