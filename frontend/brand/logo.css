@@ -1,13 +1,36 @@
+erap-logo {
+    display: inline-block;
+    line-height: 0;
+}
+
 .erap-logo {
     display: block;
-    height: 40px;
+    height: 36px;
     width: auto;
     max-width: 100%;
     object-fit: contain;
+    object-position: left center;
+}
+
+erap-logo[size="signup"] .erap-logo {
+    height: 56px;
+}
+
+erap-logo[size="onboarding"] .erap-logo {
+    height: 44px;
+}
+
+erap-logo[size="footer"] .erap-logo {
+    height: 28px;
 }
 
 @media (max-width: 780px) {
-    .erap-logo {
+    erap-logo[size="header"] .erap-logo,
+    erap-logo:not([size]) .erap-logo {
         height: 32px;
+    }
+
+    erap-logo[size="signup"] .erap-logo {
+        height: 44px;
     }
 }

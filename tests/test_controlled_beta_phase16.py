@@ -4,20 +4,27 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LOGO = "brand/ERAP-logo-4K.png"
+SOURCE = "brand/ERAP-logo-4K.png"
+DISPLAY = "brand/erap-logo.png"
 
 
 def test_official_logo_is_the_shared_mark():
     css = (ROOT / "frontend" / "brand" / "logo.css").read_text(encoding="utf-8")
+    script = (ROOT / "frontend" / "brand" / "logo.js").read_text(encoding="utf-8")
     html = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
-    assert (ROOT / "frontend" / LOGO).is_file()
+    assert (ROOT / "frontend" / SOURCE).is_file()
+    assert (ROOT / "frontend" / DISPLAY).is_file()
+    assert "erap-logo.png" in script
     assert "object-fit: contain" in css
-    assert html.count(LOGO) >= 3
+    assert html.count("<erap-logo") >= 3
+    assert "ERAP-logo-4K.png" not in html
     assert "logo-icon" not in html
     for name in ("terms.html", "privacy.html", "cancellation.html", "refund.html"):
         page = (ROOT / "frontend" / "legal" / name).read_text(encoding="utf-8")
-        assert "../brand/ERAP-logo-4K.png" in page
+        assert "<erap-logo" in page
+        assert "logo.js" in page
         assert "logo.css" in page
+        assert "ERAP-logo-4K.png" not in page
 
 
 def test_onboarding_explains_the_organization_and_hides_the_id():
