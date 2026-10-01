@@ -1,6 +1,6 @@
 # Controlled beta operations
 
-Launch scope is a controlled limited beta. Public registration is not open. Organizations are created by a signed-in person through the existing onboarding flow. This runbook does not add a cleanup endpoint.
+Launch scope is a controlled limited beta. Public registration is not open. Organizations are created by a signed-in person through the existing onboarding flow. Invite specific people. Do not publish this site as open registration. The feedback and onboarding checklist is `docs/controlled-beta-feedback.md`. This runbook does not add a cleanup endpoint.
 
 Account `481838970142`. API `4c6dni17l3`, stage `dev`, region `eu-north-1`. Site `https://main.d3enpe7opotop5.amplifyapp.com`. Alias `live`.
 

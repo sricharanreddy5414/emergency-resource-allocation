@@ -4,6 +4,8 @@ ERAP is in a controlled limited beta. Support identifies a case from the organiz
 
 The first controlled-beta organization is `ORG-D878EAF5135D`. It is real beta data. Do not delete it, reset it, or use it as a disposable test organization.
 
+Who may join, how a report is classified, and the feedback template are in `docs/controlled-beta-feedback.md`.
+
 ## Identify an organization
 
 Ask for the organization name shown in the selector. The id is `ORG-` plus 12 characters and is stored on the Organizations row. Read that row with `organization_id`. Do not scan the table.

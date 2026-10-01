@@ -102,7 +102,7 @@ Razorpay is the intended first provider. The `provider` value `razorpay` is rese
 
 ## Webhook architecture
 
-Phase D implements `POST /billing/webhook` in code and tests. The route specification is in `infra/billing-checkout.json` with authorization `NONE`. Cognito is not used, because Razorpay calls the route. The route and `erap-billing-webhook` are deployed. Razorpay live mode is not enabled.
+Phase D implements `POST /billing/webhook` in code and tests. The route specification is in `infra/billing-checkout.json` with authorization `NONE`. Cognito is not used, because Razorpay calls the route. The route and `erap-billing-webhook` are deployed. Production billing mode is enabled on the billing and webhook functions. They read `erap/billing/razorpay/production` and do not fall back to the test secret.
 
 See Phase D below. A browser redirect or a checkout response still does not activate a subscription.
 
@@ -127,13 +127,13 @@ Do not scan or update production organizations in Phase A. When a later phase ba
 
 ## Phase C — Razorpay test checkout foundation
 
-`POST /billing/checkout` is deployed on API `4c6dni17l3` with Cognito authorizer `y0hzhr`. `erap-billing` and the test secret exist. `BILLING_PACKAGES` is separate from `PACKAGES`, so the main deploy workflow does not move the billing aliases.
+`POST /billing/checkout` is deployed on API `4c6dni17l3` with Cognito authorizer `y0hzhr`. `erap-billing` and the test secret exist. `BILLING_PACKAGES` is separate from `PACKAGES`. The main deploy workflow publishes `BILLING_PACKAGES`, including billing and the webhook. It does not publish Exchange or notifications.
 
 Only an `OWNER` membership can call checkout. `ADMIN`, `OPERATOR`, and `MEMBER` receive 403. A missing token receives 401. `organization_id` in the body is only a selector. The write uses the organization from `authorize`. Organization A cannot open checkout for Organization B.
 
 The body may contain `plan_id`. Amount, currency, price, and provider ids are rejected. The server plan map and `RAZORPAY_PLAN_LINKS` decide whether Razorpay may be called. `MONTHLY` sends test plan `plan_ThiWT35Gf1jyio` with `total_count` 468. `YEARLY` sends test plan `plan_ThiWTXOzBHl2Qb` with `total_count` 39. A customer can cancel before that maximum. `subscription.completed` stays ignored because the current statuses cannot represent the end of a fully paid term without ending the last paid period early.
 
-The provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty until then. The test key id must start with `rzp_test_`. The secret id must be `erap/billing/razorpay/test`, holding `key_id`, `key_secret`, and `webhook_secret`. Checkout uses the key pair. The webhook uses `webhook_secret` only to verify signatures. The secret value is not in git. A live key or any other secret id fails closed.
+The provider sends `POST https://api.razorpay.com/v1/subscriptions` with HTTP Basic auth, a 10 second timeout, `plan_id`, `total_count`, `quantity` 1, and a note of the organization id. It does not send an amount or a customer id. Razorpay fills `customer_id` only after the payer authorises, so `provider_customer_id` stays empty until then. Test mode requires the test key prefix and `erap/billing/razorpay/test`. Production mode requires the production key prefix and `erap/billing/razorpay/production`. A key from the other mode fails closed. Checkout uses the key pair. The webhook uses the webhook secret only to verify signatures. The secret value is not in git.
 
 Eligible stored states are `TRIALING`, `EXPIRED`, `CANCELLED`, and `GRANDFATHERED`. `ACTIVE` and `PAST_DUE` do not start another subscription. A stored provider subscription is replaced only when Razorpay still reports it as `created`. Any other existing provider subscription returns 409. `CANCELLED` may start a new provider subscription. A missing row stays grandfathered and is not created here. The conditional update sets `provider`, `provider_subscription_id`, and `updated_at` only. It does not set `subscription_status` to `ACTIVE` and does not set the billing period. Razorpay does not document an idempotency key for this call, so ERAP does not invent one.
 
@@ -143,9 +143,9 @@ Checkout success does not activate a subscription. Only a verified webhook can d
 
 ## Phase D — Verified Razorpay webhooks
 
-`POST /billing/webhook` is deployed without Cognito. The test secret exists. Live Razorpay is not enabled. Pilot data is not modified by billing deployment.
+`POST /billing/webhook` is deployed without Cognito. Test mode still uses `erap/billing/razorpay/test`. Production mode uses `erap/billing/razorpay/production` and does not fall back to the test secret. Pilot data is not modified by billing deployment.
 
-Razorpay authenticates the call with `X-Razorpay-Signature`. The signature is HMAC-SHA256 of the exact raw body, hex-encoded, compared with `hmac.compare_digest` against `webhook_secret` from `erap/billing/razorpay/test`. The body is not parsed and reserialized before the check. A missing or invalid signature returns 401, writes no `BillingEvents` row, and does not read `organization_id` from the payload. The response and logs do not contain the secret, the calculated signature, or the raw body. Webhook lines are JSON (`docs/observability.md`).
+Razorpay authenticates the call with `X-Razorpay-Signature`. The signature is HMAC-SHA256 of the exact raw body, hex-encoded, compared with `hmac.compare_digest` against the webhook secret for that function's billing mode. Production uses `erap/billing/razorpay/production`. Test mode uses `erap/billing/razorpay/test`. The body is not parsed and reserialized before the check. A missing or invalid signature returns 401, writes no `BillingEvents` row, and does not read `organization_id` from the payload. The response and logs do not contain the secret, the calculated signature, or the raw body. Webhook lines are JSON (`docs/observability.md`).
 
 `X-Razorpay-Event-Id` is `provider_event_id`. A missing id returns 400 and is not invented. The first verified delivery writes the event with `attribute_not_exists(provider_event_id)` and status `RECEIVED`. A later delivery of a `PROCESSED` or `IGNORED` id returns 200 and does not change the subscription or `processed_at`.
 
@@ -163,7 +163,7 @@ If the signature and event are valid but DynamoDB fails, the handler returns 500
 
 A later phase may repair a subscription by fetching it from Razorpay. This phase does not.
 
-`erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. `deploy-backend.yml` does not publish it. The function, alias, and route already exist. Its IAM is get and update on `OrganizationSubscriptions`, query only on `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test secret. It has no delete, no scan, and no access to operational tables.
+`erap-billing-webhook` is packaged in `BILLING_PACKAGES` and is not in `PACKAGES`. `deploy-backend.yml` publishes it with the other billing functions. The function, alias, and route already exist. Its IAM is get and update on `OrganizationSubscriptions`, query only on `ProviderSubscriptionIndex`, plus get, put, and update on `BillingEvents`, plus `GetSecretValue` on the test and production secret names. It has no delete, no scan, and no access to operational tables.
 
 ## Phase E — Billing API
 
