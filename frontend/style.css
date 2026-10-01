@@ -655,12 +655,12 @@ textarea {
 
 @media (max-width: 560px) {
     .signup-phone {
-        align-items: stretch;
+        flex-wrap: wrap;
     }
 
     .signup-dial,
     .signup-national {
-        flex-basis: 0;
+        flex: 1 1 100%;
     }
 
     .signup-dial-panel:not([hidden]) {
