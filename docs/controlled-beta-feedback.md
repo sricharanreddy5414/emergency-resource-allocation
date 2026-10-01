@@ -123,3 +123,29 @@ For each report:
 7. Change the product only after the report is reproduced.
 
 Do not treat every suggestion as work to build now.
+
+## First real beta workflow
+
+This records what was observed. It does not add a quote, a score, or a rating.
+
+REAL BETA ORGANIZATION: `ORG-4708B62B1B9C`, ERAP First User Beta
+
+REAL BETA ROLE: OWNER
+
+WORKFLOW: Location → Resource → Request → Allocation → Release
+
+WORKFLOW RESULT: SUCCESS
+
+The location is Beta Test Location, `LOC-6ABA6BDF2CB4`. The resource is `RES-BETA-1`, state AVAILABLE. The request is `REQ-BETA-1`, state RELEASED. The allocation is `ALLOC-REQ-BETA-1`, state RELEASED. History recorded `RESOURCE_RELEASED`.
+
+AUTOMATED TESTS: 657 passed at the Phase 21 baseline.
+
+USER FEEDBACK: NOT YET PROVIDED
+
+The eight feedback questions have not been answered. Do not fill them in from an operator's impression.
+
+Phase 21 fixed the operations timeline so a RELEASED allocation shows `released_at`. That fix stays.
+
+The overview heading could still say "All locations" after the location selector had selected Beta Test Location. The list filter followed the selected location. The heading is refreshed from the active location context.
+
+"Return" and "Emergency release" stay as separate actions. Return closes an open everyday allocation and records `EVERYDAY_RESOURCE_RETURNED`. Emergency release closes an allocated emergency allocation, sets the request and allocation to RELEASED, and records `RESOURCE_RELEASED`. No user statement says these labels were confusing.

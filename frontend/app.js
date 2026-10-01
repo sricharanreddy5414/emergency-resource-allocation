@@ -7827,6 +7827,8 @@ async function loadLocations() {
 
         renderLocationSwitcher();
 
+        refreshShellContext();
+
         return;
 
     }
@@ -7860,6 +7862,8 @@ async function loadLocations() {
         currentUser.location = null;
 
         renderLocationSwitcher();
+
+        refreshShellContext();
 
         return;
 
@@ -7921,6 +7925,8 @@ async function loadLocations() {
         $("locationModal")?.classList.add("hidden");
 
     }
+
+    refreshShellContext();
 
 }
 
@@ -8028,6 +8034,8 @@ async function switchLocation(locationId) {
         }
 
     }
+
+    refreshShellContext();
 
     clearTenantData();
 
