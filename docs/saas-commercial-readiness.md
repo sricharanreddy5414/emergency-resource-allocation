@@ -111,7 +111,7 @@ VERIFIED, with one help-text correction.
 
 The billing page labels all six subscription statuses, shows trial dates, period dates, a pending plan as awaiting confirmation, and owner-only checkout and cancellation. Prices come from `GET /billing/plans`. Admins see the page and cannot start checkout or cancel.
 
-The help page used to say purchase stays unavailable until a plan is offered. That contradicted the purchasable monthly and yearly plans. The help text now says checkout does not activate the subscription and that the current integration is the Razorpay test integration.
+The help page used to say purchase stays unavailable until a plan is offered. That contradicted the purchasable monthly and yearly plans. The help text now says checkout does not activate the subscription. Production checkout uses the production provider and does not fall back to the test provider.
 
 ## Test and production separation
 

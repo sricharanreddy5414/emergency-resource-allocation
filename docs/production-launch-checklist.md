@@ -17,7 +17,7 @@ Status values are PASS, FAIL, BLOCKED, DEFERRED, or NOT APPLICABLE. A green test
 | BILLING | PASS | Production mode is deployed on `erap-billing` live version 9. Checkout was not called for the new organization. |
 | RAZORPAY | PASS | Production and test secrets stay separate. Production plans are `plan_TiMn4MluXeOMK1` and `plan_TiMpOnO7K5GT0Q`. |
 | WEBHOOK | PASS | The production webhook uses the existing public route and the production webhook secret. |
-| FRONTEND | PASS | Amplify `https://main.d3enpe7opotop5.amplifyapp.com` is the deployed site. Help text says the provider integration is the Razorpay test integration. |
+| FRONTEND | PASS | Amplify `https://main.d3enpe7opotop5.amplifyapp.com` is the deployed site. Help text says production checkout uses the production provider and does not fall back to the test provider. |
 | DOMAIN | DEFERRED | No custom domain is configured. Launch on the current Amplify hostname is possible later. A custom domain is not a code defect. |
 | CORS | PASS | Allowed origin is the Amplify URL. `verify_hardening.py` checks it. `*` is not used with credentials. |
 | OBSERVABILITY | PASS | Structured logs from Phase 11B. Retention is 30 days. No new dashboard. |

@@ -114,7 +114,7 @@ def test_help_does_not_say_purchase_is_unavailable():
     text = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     assert "Purchase stays unavailable until a plan is offered" not in text
     assert "Checkout opens the provider page and does not by itself mark the subscription active." in text
-    assert "Razorpay test integration" in text
+    assert "Production checkout uses the production provider and does not fall back to the test provider." in text
     assert "Controlled limited beta" in text
     assert "manual support process" in text
     assert "legal/terms.html" in text

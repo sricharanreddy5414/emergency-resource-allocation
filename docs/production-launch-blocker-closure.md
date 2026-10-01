@@ -154,7 +154,7 @@ CORS: the allowed origin is that Amplify URL. Hardening verification reported th
 
 Cognito pool `eu-north-1_vv7adAAC9` is unchanged. MFA is OPTIONAL, software token on, SMS off. Password minimum length is 8. Account recovery is verified email, then verified phone. The frontend app client allows the Amplify origin plus localhost callback URLs and the Amplify logout URL. Users were not changed.
 
-The deployed Amplify page contains the sentence that the current provider integration is the Razorpay test integration. An already open browser tab still had the previous help sentence in its cached document.
+The deployed Amplify page contains the sentence that the current provider integration is the Razorpay test integration. An already open browser tab still had the previous help sentence in its cached document. Phase 16 help text now says production checkout uses the production provider and does not fall back to the test provider.
 
 ## Security and rollback
 
