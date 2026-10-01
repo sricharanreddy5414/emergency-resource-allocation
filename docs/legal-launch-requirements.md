@@ -1,12 +1,14 @@
 # Legal launch requirements
 
-V1 drafts now exist. They are not final legal approval.
+Company approval recorded for the current V1 launch documents.
+
+COMPANY APPROVAL = CONFIRMED for the controlled limited beta. This is not legal counsel approval. FINAL COMPANY/LEGAL APPROVAL by counsel is not claimed. Regulatory approval is not claimed.
 
 | Requirement | Status |
 |---|---|
-| Terms required | DOCUMENT PRESENT as `docs/legal/terms-of-service.md`. FINAL COMPANY/LEGAL APPROVAL is still required. |
-| Privacy policy required | DOCUMENT PRESENT as `docs/legal/privacy-policy.md`. FINAL COMPANY/LEGAL APPROVAL is still required. |
-| Cancellation policy required | DOCUMENT PRESENT as `docs/legal/cancellation-policy.md`. The implemented rule is owner cancellation at period end. FINAL COMPANY/LEGAL APPROVAL is still required. |
-| Refund policy/status required | DOCUMENT PRESENT as `docs/legal/refund-policy.md`. Refund automation is not implemented. A refund request is a manual support process. FINAL COMPANY/LEGAL APPROVAL is still required. |
+| Terms required | DOCUMENT PRESENT as `docs/legal/terms-of-service.md`. COMPANY APPROVAL = CONFIRMED. Legal counsel approval is not claimed. |
+| Privacy policy required | DOCUMENT PRESENT as `docs/legal/privacy-policy.md`. COMPANY APPROVAL = CONFIRMED. Legal counsel approval is not claimed. |
+| Cancellation policy required | DOCUMENT PRESENT as `docs/legal/cancellation-policy.md`. The implemented rule is owner cancellation at period end. COMPANY APPROVAL = CONFIRMED. Legal counsel approval is not claimed. |
+| Refund policy/status required | DOCUMENT PRESENT as `docs/legal/refund-policy.md`. Refund automation is not implemented. A refund request is a manual support process. COMPANY APPROVAL = CONFIRMED. Legal counsel approval is not claimed. |
 
-Do not treat these drafts as legal approval.
+Do not treat this company approval as legal counsel approval.

@@ -8,30 +8,34 @@ Phase 14 records the commercial model in `docs/saas-commercial-readiness.md`. Pr
 
 ## Phase 15 decision
 
-NO-GO.
+PHASE 15 = GO.
 
-Phase 15 did not launch ERAP. The application that is already deployed stays in its current test-mode billing configuration. No production Razorpay plan, key, or webhook was created. No customer was added. No payment was taken.
+LAUNCH SCOPE = CONTROLLED LIMITED BETA.
+
+COMPANY APPROVAL = CONFIRMED for the current V1 launch documents. This is not legal counsel approval and it is not regulatory approval.
+
+One controlled beta organization was created through the existing onboarding flow: `ORG-D878EAF5135D`, name Controlled Beta Organization. It is ACTIVE, the signed-in user is OWNER, and the subscription is TRIALING on FREE_TRIAL for 15 UTC days. No Razorpay subscription was created and no payment was taken. Public registration was not opened.
 
 The questions a launch has to answer:
 
 | Question | Result |
 |---|---|
-| Is production billing configured? | No. BLOCKED. |
-| Are production provider plans configured? | No. The only plan ids in code are test plans `plan_ThiWT35Gf1jyio` and `plan_ThiWTXOzBHl2Qb`. |
-| Are production secrets configured? | No. The loader accepts only `erap/billing/razorpay/test`. A key id must start with `rzp_test_`. |
-| Is the webhook configured for production? | No. The existing public route checks the test webhook secret. |
+| Is production billing configured? | Yes. `erap-billing` live version 9 uses production mode. |
+| Are production provider plans configured? | Yes. Monthly `plan_TiMn4MluXeOMK1` and yearly `plan_TiMpOnO7K5GT0Q` are distinct from the test plans. |
+| Are production secrets configured? | Yes. Production mode reads `erap/billing/razorpay/production` and requires an `rzp_live_` key. Test mode still uses `erap/billing/razorpay/test`. |
+| Is the webhook configured for production? | Yes. The existing public route is used by the production webhook, and the webhook function reads the production webhook secret. |
 | Is tenant isolation live-tested with two sessions? | Yes. Two signed-in non-pilot sessions each received HTTP 403, message `Organization access denied`, when reading the other organization's resources, requests, allocations, locations, exchange, notifications, billing, and members. No write was sent. |
 | Did authenticated smoke pass? | Yes for read-only GETs. Each signed-in non-pilot session received HTTP 200 for its own organization, resources, requests, allocations, locations, exchange, notifications, and billing. |
-| Is onboarding validated live? | No. Creating an organization writes a permanent trial. That write was not made. |
+| Is onboarding validated live? | Yes. `ORG-D878EAF5135D` was created once through the existing flow. |
 | Is rollback verified? | Yes, by `tests/test_alias_restore.py` and the code in `scripts/set_live_version.py`. No alias was rolled back. |
 | Is observability sufficient for the current system? | Yes for investigation. Alert delivery is not. |
 | Is disaster recovery verified? | Yes for PITR, deletion protection, and schedules. A second restore was not run. |
 | Are support procedures ready? | Yes. `docs/production-support.md`. |
-| Are legal and commercial documents present? | Drafts are present. FINAL COMPANY/LEGAL APPROVAL is not. APPROVAL REQUIRED. |
+| Are legal and commercial documents present? | COMPANY APPROVAL = CONFIRMED. Legal counsel approval is not claimed. |
 | Is launch scope approved? | Yes for this closure. Controlled limited beta. Organizations are onboarded deliberately. This is not a public launch. |
-| Is production pricing approved? | Yes for this closure. The catalog prices ₹999 monthly and ₹9,999 yearly are the production prices. Production provider plans for those prices are not created yet. |
+| Is production pricing approved? | Yes. The catalog prices are ₹999 monthly and ₹9,999 yearly, and the production plans use those prices. |
 | Are there unresolved security issues that block launch? | The live cross-tenant read test passed. No new code vulnerability was found in this pass. |
-| Are there unresolved critical operational issues? | Production billing is absent. `ERAP-Production-Alarms` has one confirmed email subscription. This closure accepts that existing subscription as the operational alert destination. The address is not stored in the repository. |
+| Are there unresolved critical operational issues? | No critical operational issue remains for the controlled limited beta. `ERAP-Production-Alarms` has one confirmed email subscription. The address is not stored in the repository. |
 
 Paid production stays off until those blocked rows are actually satisfied. A later phase has to record the human decisions. This file cannot supply them.
 
@@ -64,7 +68,9 @@ The running system is one account and one API. The stage name is `dev`. That sta
 - Who the first production customers are.
 - Whether ₹999 and ₹9,999 are the approved production prices.
 
-## What remains blocked
+## Earlier remaining list
+
+The current Phase 15 decision is the GO recorded above. This list is the earlier remaining work. It is not the current gate.
 
 1. Provision production Razorpay plans, a production secret, and a production webhook outside this repository. Do not paste the values into chat or into source.
 2. Provide terms, a privacy policy, and a cancellation or refund statement. Do not treat this file as those documents.
@@ -72,7 +78,7 @@ The running system is one account and one API. The stage name is `dev`. That sta
 4. Confirm the existing confirmed email subscription on `ERAP-Production-Alarms` as the launch destination, or name a different one outside this repository. Do not put the address in source.
 5. Validate live organization creation only when a disposable organization and a safe cleanup path exist. This pass did not create an organization.
 
-The two-session read test and the signed-in read-only smoke were completed during blocker closure. Details are in `docs/production-launch-blocker-closure.md`. The launch decision remains NO-GO.
+The two-session read test and the signed-in read-only smoke were completed during blocker closure. Details are in `docs/production-launch-blocker-closure.md`. The earlier closure decision was NO-GO.
 
 A later search did not find an approved production price, launch scope, legal text, alert destination, or `PAST_DUE` rule. `docs/legal-launch-requirements.md` names the missing documents. It is not those documents. Production Razorpay was not provisioned. No organization was created.
 

@@ -197,3 +197,7 @@ Production mode can select `erap/billing/razorpay/production` and `rzp_live_` ke
 Organization creation still writes a permanent organization, owner membership, and trial. No delete path exists, so no organization was created. Live onboarding remains ONBOARDING VALIDATION BLOCKED.
 
 The launch decision remains NO-GO.
+
+## Current decision
+
+The sections above are the earlier closure record, including the earlier NO-GO. Company approval is now recorded for the current V1 launch documents. This is not legal counsel approval. Live onboarding was then validated by creating `ORG-D878EAF5135D` through the existing flow. The current Phase 15 decision is GO for the controlled limited beta, recorded in `docs/production-launch-gate.md`.
