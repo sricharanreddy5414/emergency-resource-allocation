@@ -1,0 +1,13 @@
+.erap-logo {
+    display: block;
+    height: 40px;
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+}
+
+@media (max-width: 780px) {
+    .erap-logo {
+        height: 32px;
+    }
+}

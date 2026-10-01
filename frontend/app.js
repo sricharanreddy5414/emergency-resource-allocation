@@ -7022,7 +7022,7 @@ function renderOrganizationSwitcher() {
 
         option.value = organization.organization_id;
 
-        option.textContent = organization.name || organization.organization_id;
+        option.textContent = organization.name || "Organization";
 
         select.appendChild(option);
 
@@ -8226,7 +8226,7 @@ function syncOrganizationOnboardingView() {
 
         description.textContent = invited
             ? "Accept the invitation to join the existing organization. You can close this and decide later."
-            : "Set up your organization to start managing resources, requests, locations, and team members in ERAP.";
+            : "You are creating an organization. You become its owner. ERAP starts a 15-day trial. Creating the organization does not take a payment.";
 
     }
 

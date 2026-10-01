@@ -19,6 +19,11 @@
         href="style.css"
     >
 
+    <link
+        rel="stylesheet"
+        href="brand/logo.css"
+    >
+
 </head>
 
 
@@ -37,26 +42,11 @@
 
     <div class="logo">
 
-        <div class="logo-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <circle cx="6" cy="12" r="2.2"></circle>
-                <circle cx="18" cy="6" r="2.2"></circle>
-                <circle cx="18" cy="18" r="2.2"></circle>
-                <path d="M8 11.2 16 7.2M8 12.8 16 16.8"></path>
-            </svg>
-        </div>
-
-        <div>
-
-            <h2>
-                ERAP
-            </h2>
-
-            <span>
-                Emergency coordination
-            </span>
-
-        </div>
+        <img
+            class="erap-logo"
+            src="brand/ERAP-logo-4K.png"
+            alt="ERAP"
+        >
 
     </div>
 
@@ -231,7 +221,11 @@
             <span></span><span></span><span></span>
         </button>
 
-        <strong class="brand-mark">ERAP</strong>
+        <img
+            class="erap-logo"
+            src="brand/ERAP-logo-4K.png"
+            alt="ERAP"
+        >
 
         <h1 id="pageTitle" class="sr-only">Operations</h1>
 
@@ -1548,7 +1542,7 @@
                 ERAP is in a controlled limited beta. The billing page shows the catalog prices ERAP returns.
                 A new organization starts a 15-day trial. Checkout opens the provider page and does not by itself mark the subscription active.
                 Cancellation, when the owner requests it, runs through the end of the current period.
-                Refunds are a manual support process. These notes are not a legal approval.
+                Refunds are a manual support process. Company approval of the V1 terms is recorded. That approval is not legal counsel approval.
             </p>
             <p class="billing-note">
                 <a href="legal/terms.html">Terms</a>
@@ -2162,13 +2156,19 @@
         </button>
 
 
+        <img
+            class="erap-logo"
+            src="brand/ERAP-logo-4K.png"
+            alt="ERAP"
+        >
+
         <h2 id="organizationModalTitle">
             Create your organization
         </h2>
 
 
         <p class="modal-description" id="organizationModalDescription">
-            Set up your organization to start managing resources, requests, locations, and team members in ERAP.
+            You are creating an organization. You become its owner. ERAP starts a 15-day trial. Creating the organization does not take a payment.
         </p>
 
         <div id="pendingInvitations"></div>
