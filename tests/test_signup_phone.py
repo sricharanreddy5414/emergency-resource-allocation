@@ -47,3 +47,12 @@ def test_normal_visit_offers_create_account_before_cognito():
     style = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
     assert "flex-wrap: wrap" in style
     assert "@media (max-width: 560px)" in style
+
+
+def test_signup_errors_stay_separate_from_authenticator_setup():
+    signup = (ROOT / "frontend" / "signup-ui.js").read_text(encoding="utf-8")
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    assert "async function cognitoIdentityCall(" in signup
+    assert "async function cognitoIdentityCall(" not in app
+    assert "async function mfaCognitoCall(" in app
+    assert "Authenticator setup could not be completed" not in signup

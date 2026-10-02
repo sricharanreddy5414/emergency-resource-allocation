@@ -288,6 +288,7 @@ function signupErrorText(error) {
 }
 
 
+/* Keep this name off app.js. app.js loads later and would replace a shared function. */
 async function cognitoIdentityCall(action, body) {
 
     const response = await fetch("https://cognito-idp.eu-north-1.amazonaws.com/", {

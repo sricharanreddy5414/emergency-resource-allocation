@@ -1133,7 +1133,7 @@ function mfaSetupUri(secret, account) {
 
 }
 
-async function cognitoIdentityCall(action, body) {
+async function mfaCognitoCall(action, body) {
 
     const response = await originalFetch(
         "https://cognito-idp.eu-north-1.amazonaws.com/",
@@ -1195,7 +1195,7 @@ async function refreshMfaStatus() {
     }
 
     try {
-        const user = await cognitoIdentityCall("GetUser", { AccessToken: token });
+        const user = await mfaCognitoCall("GetUser", { AccessToken: token });
         const settings = Array.isArray(user.UserMFASettingList) ? user.UserMFASettingList : [];
         const enabled = settings.indexOf("SOFTWARE_TOKEN_MFA") !== -1
             || user.PreferredMfaSetting === "SOFTWARE_TOKEN_MFA";
@@ -1226,7 +1226,7 @@ async function startMfaSetup() {
     setMfaMessage("");
 
     try {
-        const result = await cognitoIdentityCall("AssociateSoftwareToken", { AccessToken: token });
+        const result = await mfaCognitoCall("AssociateSoftwareToken", { AccessToken: token });
         const secret = String(result.SecretCode || "");
         if (!secret) {
             setMfaMessage("Authenticator setup could not be completed. Try again.");
@@ -1265,7 +1265,7 @@ async function startMfaSetup() {
 
 async function enableSoftwareTokenPreference(token) {
 
-    await cognitoIdentityCall("SetUserMFAPreference", {
+    await mfaCognitoCall("SetUserMFAPreference", {
         AccessToken: token,
         SoftwareTokenMfaSettings: {
             Enabled: true,
@@ -1300,7 +1300,7 @@ async function verifyMfaSetup() {
     let verified = false;
 
     try {
-        await cognitoIdentityCall("VerifySoftwareToken", {
+        await mfaCognitoCall("VerifySoftwareToken", {
             AccessToken: token,
             UserCode: code,
             FriendlyDeviceName: "ERAP authenticator"
