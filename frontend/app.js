@@ -3334,15 +3334,23 @@ function isResourceAvailable(
     resource
 ) {
 
+    const operational = String(
+        resource?.operational_status || ""
+    ).trim().toUpperCase();
+
+    if (operational) {
+        return operational === "AVAILABLE";
+    }
+
     return (
 
-        resource.available ===
+        resource?.available ===
         true
 
         ||
 
         String(
-            resource.available
+            resource?.available ?? ""
         ).toLowerCase() ===
         "true"
 
