@@ -18,6 +18,15 @@ def node_executable():
     return None
 
 
+def test_cancelled_lifecycle_note_does_not_submit():
+    source = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    start = source.index("async function lifecycleResourceAction")
+    end = source.index("async function assignResourceAction", start)
+    body = source[start:end]
+    assert "if (notes === null)" in body
+    assert body.index("if (notes === null)") < body.index("postEverydayResource")
+
+
 def test_overview_ready_count_follows_operational_status():
     node = node_executable()
     assert node, "Node is required to execute the overview readiness test"

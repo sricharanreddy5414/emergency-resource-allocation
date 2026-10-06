@@ -44,3 +44,22 @@ assert.equal(
 assert.equal(context.isResourceAvailable({ available: true }), true);
 assert.equal(context.isResourceAvailable({ available: false }), false);
 assert.equal(context.isResourceAvailable({ available: "true" }), true);
+
+assert.equal(
+    context.isResourceAvailable({ operational_status: "RETIRED", available: false }),
+    false
+);
+assert.equal(
+    context.isResourceAllocated({ operational_status: "RETIRED", available: false }),
+    false,
+    "a retired resource is not allocated"
+);
+assert.equal(
+    context.isResourceAllocated({ operational_status: "ALLOCATED", available: false }),
+    true
+);
+assert.equal(
+    context.isResourceAllocated({ operational_status: "AVAILABLE", available: true }),
+    false
+);
+assert.equal(context.isResourceAllocated({ available: false }), true);

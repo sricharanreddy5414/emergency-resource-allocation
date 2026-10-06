@@ -2417,8 +2417,10 @@ function updateAdminDashboard() {
     }
 
     const allocatedResources =
-        totalResources -
-        availableResources;
+        resources.filter(
+            resource =>
+                isResourceAllocated(resource)
+        ).length;
 
     if ($("adminResourceOverview")) {
         $("adminResourceOverview").innerHTML = `
@@ -3288,7 +3290,12 @@ function updateDashboardStats() {
 
 
     const allocated =
-        total - available;
+        resources.filter(
+            resource =>
+                isResourceAllocated(
+                    resource
+                )
+        ).length;
 
 
     if (
@@ -3359,6 +3366,23 @@ function isResourceAvailable(
 }
 
 
+function isResourceAllocated(
+    resource
+) {
+
+    const operational = String(
+        resource?.operational_status || ""
+    ).trim().toUpperCase();
+
+    if (operational) {
+        return operational === "ALLOCATED";
+    }
+
+    return !isResourceAvailable(resource);
+
+}
+
+
 
 /* =========================================================
    ADVANCED ANALYTICS
@@ -3376,8 +3400,10 @@ function updateAnalytics() {
         ).length;
 
     const allocatedResources =
-        totalResources -
-        availableResources;
+        resources.filter(
+            resource =>
+                isResourceAllocated(resource)
+        ).length;
 
 
     const totalRequests =
@@ -4446,7 +4472,10 @@ async function lifecycleResourceAction(url, resourceId, promptLabel) {
     const body = { resource_id: resourceId };
 
     if (promptLabel) {
-        const notes = window.prompt(promptLabel, "") || "";
+        const notes = window.prompt(promptLabel, "");
+        if (notes === null) {
+            return;
+        }
         if (notes.trim()) {
             body.notes = notes.trim();
         }
