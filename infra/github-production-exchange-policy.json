@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublishExchangeFunctionOnly",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetAlias",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:PublishVersion",
+        "lambda:UpdateAlias"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-exchange",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-exchange:*"
+      ]
+    }
+  ]
+}

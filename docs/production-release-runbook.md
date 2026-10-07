@@ -70,10 +70,13 @@ This checks the runbooks, then runs hardening, recovery, and the security postur
 
 For the nine `PACKAGES` functions, push the reviewed commit to `origin/main`. GitHub Actions run CI and Deploy backend. Deploy backend checks out the commit, repeats tests, the secret scan, and the package check, assumes `ERAP-GitHub-Deploy`, runs `python scripts/deploy_backend.py`, then `python scripts/smoke_test.py` and `python scripts/verify_hardening.py`.
 
-Exchange, notifications, and billing are deployed only by their own scripts, and only when that code changed:
+Exchange production release is the manual workflow **Release exchange**. Run it from `main` and approve the `production` environment. Leave the commit input empty to release the dispatched `main` SHA, or pass a full SHA that is already contained in `main`. The workflow packages and publishes only `erap-exchange`, then moves alias `live`. It does not call `scripts/deploy_exchange.py`, does not rewrite IAM, and does not change Lambda configuration. `erap-exchange-expiry` and `erap-notifications` stay on their current aliases. `infra/github-production-exchange-policy.json` and the exchange workflow refs in `infra/github-production-trust.json` are the required permission and trust. This workflow does not apply them. Until those IAM changes are applied, Release exchange cannot assume `ERAP-GitHub-Production`.
+
+Exchange rollback is the manual workflow **Rollback exchange**. It accepts only an existing published version number. The current known good version before the F-04 release is `17`.
+
+Expiry and notifications still use their own scripts, and only when that code changed:
 
 ```text
-python scripts/deploy_exchange.py
 python scripts/deploy_exchange_expiry.py
 python scripts/deploy_notifications.py
 ```

@@ -17,8 +17,53 @@ REQUIRED = {
     ],
     "rollback.yml": ["workflow_dispatch", "environment: production", PRODUCTION_ROLE, "deploy_backend.py", "release_provenance.py", "refs/heads/main"],
     "release.yml": ["workflow_dispatch", "environment: production", PRODUCTION_ROLE, "deploy_backend.py", "release_provenance.py", "refs/heads/main"],
+    "release-exchange.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "release_exchange.py",
+        "release_provenance.py",
+        "refs/heads/main",
+        "security_scan.py",
+    ],
+    "rollback-exchange.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "rollback_exchange.py",
+        "refs/heads/main",
+        "security_scan.py",
+    ],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
+
+
+def _exchange_release_is_unsafe(text):
+    forbidden = (
+        "deploy_exchange.py",
+        "deploy_backend.py",
+        "update-function-configuration",
+        "put-role-policy",
+        "erap-exchange-expiry",
+        "erap-notifications",
+    )
+    return any(item in text for item in forbidden)
+
+
+def _exchange_rollback_is_unsafe(text):
+    forbidden = (
+        "deploy_exchange.py",
+        "deploy_backend.py",
+        "release_exchange.py",
+        "update-function-code",
+        "publish-version",
+        "update-function-configuration",
+        "put-role-policy",
+        "erap-exchange-expiry",
+        "erap-notifications",
+        "inputs.commit",
+    )
+    return any(item in text for item in forbidden)
 
 
 def main():
@@ -42,6 +87,12 @@ def main():
             raise SystemExit("CI must not request AWS credentials")
         if name == "deploy-backend.yml" and ("deploy_backend.py" in text or DEPLOY_ROLE in text or "id-token: write" in text):
             raise SystemExit("development workflow must not publish alias live")
+        if name in {"release.yml", "rollback.yml"} and "release_exchange.py" in text:
+            raise SystemExit(f"{name} must not publish Exchange")
+        if name == "release-exchange.yml" and _exchange_release_is_unsafe(text):
+            raise SystemExit("exchange release must publish only erap-exchange")
+        if name == "rollback-exchange.yml" and _exchange_rollback_is_unsafe(text):
+            raise SystemExit("exchange rollback must move only an existing erap-exchange version")
         if yaml is not None:
             loaded = yaml.safe_load(text)
             if not isinstance(loaded, dict) or "jobs" not in loaded:
