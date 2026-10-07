@@ -62,7 +62,7 @@ Workflows set `contents: read`. Deploy and rollback also set `id-token: write` s
 
 ## 14. Dependencies
 
-`requirements.txt` lists `boto3` and `pytest` without pins. `requirements-ci.txt` pins `pyyaml==6.0.3`. Lambda packages are small and do not vendor boto3; the runtime supplies it. No dependency was upgraded. The repository secret scan looks for access keys, private keys, Razorpay key and webhook shapes, bearer tokens, and credential assignments. It reports the file, line, and detector name, not the matched value. It does not query a vulnerability database.
+`requirements.txt` pins `boto3==1.43.98`, `botocore==1.43.98`, and `pytest==9.1.1`. `requirements-ci.txt` pins `pyyaml==6.0.3`. Those pins match the versions already used for tests. Lambda packages are small and do not vendor boto3; the runtime supplies it. No dependency was upgraded. The repository secret scan looks for access keys, private keys, Razorpay key and webhook shapes, bearer tokens, and credential assignments. It reports the file, line, and detector name, not the matched value. It does not query a vulnerability database.
 
 ## 15. Security tests
 
@@ -78,7 +78,7 @@ Workflows set `contents: read`. Deploy and rollback also set `id-token: write` s
 | Table names in Lambda environment | EXPECTED. |
 | Wildcard CORS in root `lambda_function.py` | Unused file. Not deployed. |
 | API throttle and authorizer | EXPECTED. Matches `verify_hardening.py`. |
-| Unpinned `boto3` and `pytest` | Repository only. Not in the Lambda zip. |
+| Pinned `boto3` and `pytest` | Repository install only. Not in the Lambda zip. |
 
 Git was not overwritten from AWS, and AWS was not rebuilt from Git, except the S3 public-access change above.
 
@@ -88,4 +88,4 @@ The shared operational role can still write the original resource, request, allo
 
 ## 18. Deferred improvements
 
-Role split for the four operational functions. Pinning local `boto3` and `pytest` after a compatibility check. Removing or rewriting the unused root `lambda_function.py`. Adding an email subscriber for alarms. Code signing, reserved concurrency, and a dead-letter queue were not justified by a defect found here.
+Role split for the four operational functions. Removing or rewriting the unused root `lambda_function.py`. Adding an email subscriber for alarms. Code signing, reserved concurrency, and a dead-letter queue were not justified by a defect found here.
