@@ -139,6 +139,9 @@ def authorize(
     role = membership.get("role")
     status = membership.get("status") or "ACTIVE"
 
+    # Only ACTIVE authorizes. The application creates an organization as ACTIVE
+    # and has no in-app transition. Any other status, including one set
+    # outside the application, is denied for reads and writes.
     if status != "ACTIVE":
         log_event(
             "WARNING",

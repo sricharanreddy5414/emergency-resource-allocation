@@ -319,6 +319,38 @@ def test_suspended_organization_is_denied(monkeypatch):
     assert denied.value.status_code == 403
 
 
+@pytest.mark.parametrize("status", ["SUSPENDED", "ARCHIVED"])
+def test_non_active_organization_has_no_operational_access(monkeypatch, status):
+    use_memberships(
+        monkeypatch,
+        [{"organization_id": ORG_A, "role": "OWNER", "status": status}],
+    )
+
+    with pytest.raises(AccessError) as denied:
+        access.authorize(event(), {}, access=access.READ_ACCESS)
+    assert denied.value.status_code == 403
+
+    with pytest.raises(AccessError) as write_denied:
+        access.authorize(event(), {}, access=access.WRITE_ACCESS)
+    assert write_denied.value.status_code == 403
+
+
+def test_active_organization_keeps_normal_access(monkeypatch):
+    use_memberships(monkeypatch, [{"organization_id": ORG_A, "role": "OWNER", "status": "ACTIVE"}])
+
+    _user, membership = access.authorize(event(), {}, access=access.READ_ACCESS)
+
+    assert membership["organization_id"] == ORG_A
+    assert membership["status"] == "ACTIVE"
+
+
+def test_application_does_not_assign_suspended_or_archived_status():
+    for path in (ROOT / "src").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        assert '"SUSPENDED"' not in text
+        assert '"ARCHIVED"' not in text
+
+
 def test_member_cannot_operate(monkeypatch):
     use_memberships(monkeypatch, memberships((ORG_A, "MEMBER")))
 
