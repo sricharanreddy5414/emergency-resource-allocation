@@ -36,6 +36,8 @@ _REDACTED_KEYS = {
     "webhook_secret",
     "signature",
     "token",
+    "page_token",
+    "next_token",
     "qr_payload",
     "qr_token",
     "token_hash",
