@@ -37,7 +37,8 @@ TRUST = {
 }
 
 # Least privilege derived from src/exchange + shared access/membership/audit paths.
-# No Scan, DeleteItem, BatchWriteItem, SecretsManager, or Razorpay.
+# No Scan, DeleteItem, BatchWriteItem, or Razorpay.
+# Network pagination uses a separate GetSecretValue policy, not this document.
 POLICY = {
     "Version": "2012-10-17",
     "Statement": [
@@ -208,6 +209,22 @@ def ensure_role():
         ]
     )
     print(f"policy attached {POLICY_NAME}")
+    page_policy = json.loads(
+        (ROOT / "infra" / "exchange-network-page-token-secret.json").read_text(encoding="utf-8")
+    )
+    aws(
+        [
+            "iam",
+            "put-role-policy",
+            "--role-name",
+            ROLE_NAME,
+            "--policy-name",
+            page_policy["policy_name"],
+            "--policy-document",
+            json.dumps(page_policy["policy"]),
+        ]
+    )
+    print(f"policy attached {page_policy['policy_name']}")
     # IAM role propagation
     time.sleep(8)
     return role_arn

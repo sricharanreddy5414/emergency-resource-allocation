@@ -8,9 +8,15 @@ from lambda_manifest import DEPLOY_ROLE, PRODUCTION_ROLE, REPO, ROOT
 
 REQUIRED = {
     "ci.yml": ["pull_request", "pytest", "security_scan.py", "package_lambdas.py", "check_frontend.py"],
-    "deploy-backend.yml": ["environment: development", DEPLOY_ROLE, "id-token: write", "deploy_backend.py", "smoke_test.py"],
-    "rollback.yml": ["workflow_dispatch", "environment: production", PRODUCTION_ROLE, "deploy_backend.py"],
-    "release.yml": ["workflow_dispatch", "environment: production", PRODUCTION_ROLE, "deploy_backend.py"],
+    "deploy-backend.yml": [
+        "environment: development",
+        "pytest",
+        "security_scan.py",
+        "package_lambdas.py",
+        "does not publish alias live",
+    ],
+    "rollback.yml": ["workflow_dispatch", "environment: production", PRODUCTION_ROLE, "deploy_backend.py", "release_provenance.py", "refs/heads/main"],
+    "release.yml": ["workflow_dispatch", "environment: production", PRODUCTION_ROLE, "deploy_backend.py", "release_provenance.py", "refs/heads/main"],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
 
@@ -34,6 +40,8 @@ def main():
                 raise SystemExit(f"{name} contains {secret}")
         if name == "ci.yml" and "id-token: write" in text:
             raise SystemExit("CI must not request AWS credentials")
+        if name == "deploy-backend.yml" and ("deploy_backend.py" in text or DEPLOY_ROLE in text or "id-token: write" in text):
+            raise SystemExit("development workflow must not publish alias live")
         if yaml is not None:
             loaded = yaml.safe_load(text)
             if not isinstance(loaded, dict) or "jobs" not in loaded:

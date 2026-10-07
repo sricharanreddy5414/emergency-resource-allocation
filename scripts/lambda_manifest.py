@@ -30,6 +30,7 @@ SHARED = {
     "common.py": "src/organization/common.py",
     "membership.py": "src/organization/membership.py",
     "pages.py": "src/shared/pages.py",
+    "api_views.py": "src/shared/api_views.py",
     "resource_state.py": "src/shared/resource_state.py",
     "everyday_operations.py": "src/shared/everyday_operations.py",
     "lifecycle_operations.py": "src/shared/lifecycle_operations.py",
@@ -114,6 +115,7 @@ EXCHANGE_PACKAGES = {
         "lifecycle.py": "src/exchange/lifecycle.py",
         "quantity_handover.py": "src/exchange/quantity_handover.py",
         "handover_qr.py": "src/shared/handover_qr.py",
+        "network_page_token.py": "src/exchange/network_page_token.py",
     },
     "erap-exchange-expiry": {
         **SHARED,

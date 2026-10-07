@@ -185,7 +185,8 @@ def test_entitlement_matrix():
         assert is_billing_access_allowed(item)
 
     assert is_operational_read_allowed(None)
-    assert is_operational_write_allowed(None, NOW)
+    assert is_operational_write_allowed(None, NOW) is False
+    assert is_normal_access_allowed(None, NOW) is False
     assert cancellation_window_open(active_window, NOW)
     assert is_operational_write_allowed(active_window, NOW)
     assert is_operational_write_allowed(active_after, NOW)
@@ -234,7 +235,7 @@ def test_active_cancellation_before_period_end_still_allows_writes(monkeypatch):
     assert store.puts
 
 
-def test_missing_subscription_allows_writes_and_creates_no_row(monkeypatch):
+def test_missing_subscription_denies_writes_and_creates_no_row(monkeypatch):
     subscriptions = Subscriptions()
     use_subscriptions(monkeypatch, subscriptions)
     use_members(monkeypatch, [member(ORG_A, "OWNER")])
@@ -244,11 +245,34 @@ def test_missing_subscription_allows_writes_and_creates_no_row(monkeypatch):
         location_event("POST", body={"name": "North"}),
         None,
     )
+    body = json.loads(result["body"])
 
-    assert result["statusCode"] == 201
+    assert result["statusCode"] == 403
+    assert body["error"]["code"] == "BILLING_REQUIRED"
     assert subscriptions.items == {}
     assert subscriptions.puts == 0
-    assert store.puts
+    assert store.puts == []
+
+
+def test_missing_subscription_read_stays_available(monkeypatch):
+    subscriptions = Subscriptions()
+    use_subscriptions(monkeypatch, subscriptions)
+    use_members(monkeypatch, [member(ORG_A, "MEMBER")])
+    store = wire_locations(monkeypatch)
+    store.items.append({
+        "organization_id": ORG_A,
+        "location_id": "LOC-A",
+        "name": "North",
+        "status": "ACTIVE",
+    })
+
+    result = locations_handler.lambda_handler(location_event("GET"), None)
+
+    assert result["statusCode"] == 200
+    assert json.loads(result["body"])["locations"][0]["name"] == "North"
+    assert subscriptions.items == {}
+    assert subscriptions.puts == 0
+    assert subscriptions.reads == 0
 
 
 @pytest.mark.parametrize("role", ["OWNER", "ADMIN", "OPERATOR", "MEMBER"])

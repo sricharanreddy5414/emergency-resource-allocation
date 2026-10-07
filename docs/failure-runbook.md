@@ -121,10 +121,10 @@ Safe actions are reads and alias moves. Destructive writes need an explicit deci
 
 ## 14. Secrets Manager issue
 
-- Symptoms: checkout or webhook cannot load `erap/billing/razorpay/test`.
+- Symptoms: checkout or webhook cannot load `erap/billing/razorpay/test` or `erap/billing/razorpay/production`.
 - First diagnostic: the billing log says the read failed, without the value.
-- Safe action: do not paste the secret into chat, code, or a ticket.
-- Recovery: confirm the webhook and billing roles can read that secret name. Do not rotate it as a first step.
+- Safe action: do not paste the secret into chat, code, or a ticket. Do not rotate it as a first step.
+- Recovery: confirm the webhook and billing roles can read that secret name. API-key rotation, when an operator later chooses it, follows `docs/security-posture.md`. Automatic rotation is not safe. Do not change the webhook secret while the verifier accepts only one secret.
 - Verification: the function starts and a bad signature still returns 401.
 - Escalation: SEV-2 for payments, SEV-3 if only a status read fails.
 

@@ -464,16 +464,28 @@ def create_exchange_request(body, organization_id, actor_sub, actor_role):
     return requester_view(meta)
 
 
+def _network_page_secrets():
+    from network_page_token import load_network_page_secret
+
+    current, previous = load_network_page_secret()
+    return [current, *previous]
+
+
 def list_network_requests(organization_id, query):
+    from network_page_token import read_network_page_token, sign_network_page_token
+
     _require_active_organization(organization_id)
     limit = _page_limit(query)
-    start = decode_token(
-        (query or {}).get("page_token"),
-        [GSI_NETWORK_LIST_KEY, GSI_CREATED_AT, "pk", "sk"],
-    )
-
-    if start and start.get(GSI_NETWORK_LIST_KEY) != NETWORK_OPEN_LIST_VALUE:
-        raise AccessError(400, "Invalid page token")
+    supplied = (query or {}).get("page_token")
+    secrets = _network_page_secrets() if supplied else None
+    start = None
+    if supplied:
+        start = read_network_page_token(
+            supplied,
+            organization_id=organization_id,
+            limit=limit,
+            secrets=secrets,
+        )
 
     from boto3.dynamodb.conditions import Key
 
@@ -504,9 +516,20 @@ def list_network_requests(organization_id, query):
         if projection:
             items.append(projection)
 
+    next_key = result.get("LastEvaluatedKey")
+    next_token = None
+    if next_key:
+        if secrets is None:
+            secrets = _network_page_secrets()
+        next_token = sign_network_page_token(
+            next_key,
+            organization_id=organization_id,
+            limit=limit,
+            secret=secrets[0],
+        )
     return {
         "items": items,
-        "next_token": encode_token(result.get("LastEvaluatedKey")),
+        "next_token": next_token,
     }
 
 

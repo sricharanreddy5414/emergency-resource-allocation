@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -26,6 +28,18 @@ def test_security_scan_passes():
 def test_workflows_do_not_request_static_keys():
     output = run(["scripts/check_workflows.py"])
     assert "workflow check passed" in output
+
+
+def test_development_environment_cannot_publish_live(monkeypatch):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import deploy_backend
+
+    monkeypatch.delenv("ERAP_ENVIRONMENT", raising=False)
+    with pytest.raises(SystemExit, match="alias live"):
+        deploy_backend.main()
+    monkeypatch.setenv("ERAP_ENVIRONMENT", "development")
+    with pytest.raises(SystemExit, match="alias live"):
+        deploy_backend.main()
 
 
 def test_frontend_syntax():

@@ -130,8 +130,12 @@ def deploy_one(folder, name, commit):
 
 
 def main():
-    commit = git_commit()
     environment = os.environ.get("ERAP_ENVIRONMENT", "development")
+    if environment != "production":
+        raise SystemExit(
+            "Refusing to publish alias live outside the production environment"
+        )
+    commit = git_commit()
     folder = ROOT / "dist"
     folder.mkdir(exist_ok=True)
     results = []

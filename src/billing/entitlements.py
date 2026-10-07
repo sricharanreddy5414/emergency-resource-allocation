@@ -15,7 +15,11 @@ WRITABLE_STATUSES = {"TRIALING", "ACTIVE", "PAST_DUE", "GRANDFATHERED"}
 
 
 def subscription_status(item):
-    """A missing row is grandfathered. An existing row uses its stored status."""
+    """Label for a stored row. A missing row uses the legacy display label.
+
+    That label does not grant operational writes. Writes require a stored
+    status in WRITABLE_STATUSES.
+    """
     if not item:
         return "GRANDFATHERED"
 
@@ -49,11 +53,15 @@ def cancellation_window_open(item, now):
 
 
 def is_operational_write_allowed(item, now=None):
-    """EXPIRED and CANCELLED block writes. ACTIVE stays writable until the webhook moves it."""
+    """EXPIRED and CANCELLED block writes. A missing or unknown row does too.
+
+    ACTIVE stays writable until the webhook moves it. An explicit
+    GRANDFATHERED row remains writable. A missing row is not that state.
+    """
     del now
 
     if not item:
-        return True
+        return False
 
     return subscription_status(item) in WRITABLE_STATUSES
 

@@ -8,6 +8,7 @@ from access import REQUEST_ROLES, AccessError, access_body, authorize, require_l
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
+from api_views import request_view
 from observability import begin_request, error_body, load_object, log_result
 
 
@@ -96,7 +97,7 @@ def update_request(proposed, organization_id, actor_sub, actor_role, request_id)
             location_id=current["location_id"],
         ),
     )
-    return response(200, {"message": "Request updated", "request": current})
+    return response(200, {"message": "Request updated", "request": request_view(current)})
 
 
 def active_request_type(organization_id, request_type_id):
@@ -196,7 +197,7 @@ def lambda_handler(event, context):
                 location_id=location["location_id"],
             ),
         )
-        return response(201, {"message": "Request created successfully", "request": item})
+        return response(201, {"message": "Request created successfully", "request": request_view(item)})
     except AccessError as error:
         return response(error.status_code, access_body(error))
     except json.JSONDecodeError:
