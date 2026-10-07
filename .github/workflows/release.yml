@@ -22,16 +22,32 @@ jobs:
     timeout-minutes: 30
     environment: production
     steps:
+      - name: Require the workflow ref to be main
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
+
       - name: Reject a commit that is not a full SHA
         if: inputs.commit != ''
         env:
           COMMIT: ${{ inputs.commit }}
         run: python -c "import os,re,sys; sys.exit(0 if re.fullmatch(r'[0-9a-f]{40}', os.environ['COMMIT']) else 1)"
 
-      - name: Checkout
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Prove the release commit is on main
+        env:
+          RELEASE_SHA: ${{ inputs.commit || github.sha }}
+        run: python scripts/release_provenance.py --sha "$RELEASE_SHA" --main-ref origin/main
+
+      - name: Checkout the proven commit
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
