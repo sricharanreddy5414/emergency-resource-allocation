@@ -175,6 +175,13 @@ def test_ordinary_identifiers_are_not_secrets(text):
 
 
 def test_secret_scan_runs_before_deployment_eligibility():
-    for name in ("ci.yml", "deploy-backend.yml", "release.yml", "rollback.yml"):
+    for name in (
+        "ci.yml",
+        "deploy-backend.yml",
+        "release.yml",
+        "rollback.yml",
+        "release-exchange.yml",
+        "rollback-exchange.yml",
+    ):
         text = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert "python scripts/security_scan.py" in text

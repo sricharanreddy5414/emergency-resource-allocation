@@ -16,7 +16,9 @@
           "token.actions.githubusercontent.com:sub": "repo:sricharanreddy5414@253192966/emergency-resource-allocation@1374188159:environment:production",
           "token.actions.githubusercontent.com:job_workflow_ref": [
             "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release.yml@refs/heads/main",
-            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback.yml@refs/heads/main"
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback.yml@refs/heads/main",
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-exchange.yml@refs/heads/main",
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-exchange.yml@refs/heads/main"
           ]
         }
       }
