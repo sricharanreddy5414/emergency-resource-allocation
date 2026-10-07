@@ -233,6 +233,80 @@ def test_valid_signature_activates_trial(capsys):
     assert sign(body) not in logged
 
 
+def _logged_events(capsys):
+    text = capsys.readouterr().out
+    return text, [json.loads(line) for line in text.splitlines() if line.startswith("{")]
+
+
+def test_webhook_logs_keep_outcome_and_omit_provider_identifiers(capsys):
+    body = payload("subscription.activated", SUB_A, payment_id="pay_Fake0001")
+    signature = sign(body)
+    event = request(body)
+    event["headers"]["Authorization"] = "Bearer fake-access-token"
+    event["headers"]["X-Refresh-Token"] = "fake-refresh-token"
+    subscriptions = Subscriptions([subscription(ORG_A, SUB_A)])
+    events = Events()
+    status, _ = process_webhook(event, subscriptions, events, SECRET, now=NOW)
+
+    assert status == 200
+    assert events.rows["evt_1"]["organization_id"] == ORG_A
+    logged, records = _logged_events(capsys)
+    processed = records[-1]
+    assert processed["service"] == "billing"
+    assert processed["operation"] == "webhook"
+    assert processed["outcome"] == "processed"
+    assert processed["event_type"] == "subscription.activated"
+    assert processed["billing_event_id"] == "evt_1"
+    assert processed["processing_status"] == "PROCESSED"
+    assert "organization_id" not in processed
+    assert "provider_subscription_id" not in processed
+    for hidden in (
+        SECRET,
+        signature,
+        SUB_A,
+        ORG_A,
+        "ORG-EVIL",
+        "pay_Fake0001",
+        "4111111111111111",
+        "Bearer fake-access-token",
+        "fake-refresh-token",
+        body.decode("utf-8"),
+    ):
+        assert hidden not in logged
+
+    rejected_event = request(body, signature="ab" * 32, event_id="evt_bad")
+    rejected, _ = process_webhook(
+        rejected_event,
+        Subscriptions([subscription(ORG_A, SUB_A)]),
+        Events(),
+        SECRET,
+        now=NOW,
+    )
+    assert rejected == 401
+    logged, records = _logged_events(capsys)
+    assert records[-1]["outcome"] == "rejected"
+    assert records[-1]["processing_status"] == "REJECTED"
+    assert "ab" * 32 not in logged
+    assert SECRET not in logged
+    assert SUB_A not in logged
+
+    subscriptions = Subscriptions([subscription(ORG_A, SUB_A)])
+    events = Events()
+    assert process_webhook(request(body), subscriptions, events, SECRET, now=NOW)[0] == 200
+    capsys.readouterr()
+    again, _ = process_webhook(request(body), subscriptions, events, SECRET, now=NOW)
+    assert again == 200
+    logged, records = _logged_events(capsys)
+    duplicate = records[-1]
+    assert duplicate["outcome"] == "duplicate"
+    assert duplicate["processing_status"] == "PROCESSED"
+    assert duplicate["billing_event_id"] == "evt_1"
+    assert "organization_id" not in duplicate
+    assert "provider_subscription_id" not in duplicate
+    assert SUB_A not in logged
+    assert ORG_A not in logged
+
+
 def test_invalid_and_missing_signatures_are_rejected():
     body = payload("subscription.activated", SUB_A)
     rows = [subscription(ORG_A, SUB_A)]

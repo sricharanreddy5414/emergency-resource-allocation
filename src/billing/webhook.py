@@ -22,7 +22,7 @@ def process_webhook(event, subscriptions, events, secret, now=None):
     event_id = _header(event, "x-razorpay-event-id")
 
     if not signatures_match(raw, signature or "", secret or ""):
-        _log(event_id or "", "", "", "", "REJECTED")
+        _log(event_id or "", "", "REJECTED")
         return 401, {"message": "Authentication required"}
 
     if not event_id:
@@ -37,11 +37,11 @@ def process_webhook(event, subscriptions, events, secret, now=None):
     try:
         existing = _begin(events, event_id, parsed, now)
     except ClientError as error:
-        _log(event_id, "", "", "", "FAILED", error.response["Error"]["Code"])
+        _log(event_id, "", "FAILED", error.response["Error"]["Code"])
         return 500, {"message": "Unable to record billing event"}
 
     if existing in {"PROCESSED", "IGNORED"}:
-        _log(event_id, parsed["event_type"], "", parsed["provider_subscription_id"], existing)
+        _log(event_id, parsed["event_type"], existing, duplicate=True)
         return 200, {"message": "OK"}
 
     try:
@@ -50,8 +50,6 @@ def process_webhook(event, subscriptions, events, secret, now=None):
         _log(
             event_id,
             parsed.get("event_type") or "",
-            "",
-            parsed.get("provider_subscription_id") or "",
             "FAILED",
             error.response["Error"]["Code"],
         )
@@ -63,20 +61,12 @@ def process_webhook(event, subscriptions, events, secret, now=None):
         _log(
             event_id,
             parsed.get("event_type") or "",
-            "",
-            parsed.get("provider_subscription_id") or "",
             "FAILED",
             error.response["Error"]["Code"],
         )
         return 500, {"message": "Unable to record billing event"}
 
-    _log(
-        event_id,
-        parsed["event_type"],
-        outcome["organization_id"],
-        parsed["provider_subscription_id"],
-        outcome["processing_status"],
-    )
+    _log(event_id, parsed["event_type"], outcome["processing_status"])
     return 200, {"message": "OK"}
 
 
@@ -390,11 +380,13 @@ def _header(event, name):
     return ""
 
 
-def _log(event_id, event_type, organization_id, provider_subscription_id, processing_status, error_code=""):
+def _log(event_id, event_type, processing_status, error_code="", *, duplicate=False):
     from observability import log_event
 
     status = str(processing_status or "")
-    if status in {"PROCESSED"}:
+    if duplicate:
+        level, outcome = "INFO", "duplicate"
+    elif status == "PROCESSED":
         level, outcome = "INFO", "processed"
     elif status in {"IGNORED", "REJECTED"}:
         level, outcome = "WARNING", status.lower()
@@ -408,8 +400,6 @@ def _log(event_id, event_type, organization_id, provider_subscription_id, proces
         provider="razorpay",
         billing_event_id=event_id,
         event_type=event_type,
-        organization_id=organization_id,
-        provider_subscription_id=provider_subscription_id,
         processing_status=status,
         error_code=error_code,
     )

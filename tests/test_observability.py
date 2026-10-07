@@ -123,14 +123,20 @@ def test_authorization_denied_is_logged_without_tokens(monkeypatch, capsys):
 def test_billing_webhook_log_omits_body_and_signature(capsys):
     import billing.webhook as webhook
 
-    webhook._log("evt-1", "subscription.charged", "ORG-A66B0A1E4F96", "sub_test", "IGNORED")
+    webhook._log("evt-1", "subscription.charged", "IGNORED")
     blob = capsys.readouterr().out
     event = json.loads(blob.strip().splitlines()[-1])
     assert event["service"] == "billing"
+    assert event["operation"] == "webhook"
     assert event["outcome"] == "ignored"
     assert event["billing_event_id"] == "evt-1"
+    assert event["event_type"] == "subscription.charged"
+    assert "organization_id" not in event
+    assert "provider_subscription_id" not in event
     assert "signature" not in event
     assert "payload" not in event
+    assert "ORG-A66B0A1E4F96" not in blob
+    assert "sub_test" not in blob
 
 
 def test_qr_log_omits_token(capsys):
