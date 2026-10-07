@@ -89,7 +89,9 @@ def test_trial_is_fifteen_utc_days_and_writes_follow_status_not_payment():
         assert is_operational_write_allowed({"subscription_status": status}) is True
     for status in ("CANCELLED", "EXPIRED"):
         assert is_operational_write_allowed({"subscription_status": status}) is False
-    assert is_operational_write_allowed(None) is True
+    assert is_operational_write_allowed(None) is False
+    assert is_operational_write_allowed({"subscription_status": ""}) is False
+    assert is_operational_write_allowed({"subscription_status": "UNKNOWN"}) is False
 
 
 def test_limits_are_not_enforced_and_only_the_test_secret_is_accepted():

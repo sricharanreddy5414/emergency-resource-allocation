@@ -1,4 +1,8 @@
-"""Missing subscription rows stay grandfathered for existing handler tests."""
+"""Handler tests receive an explicit grandfathered subscription.
+
+Production authorization denies a genuinely missing row. Tests that cover
+that denial replace this fixture with an empty subscription table.
+"""
 
 import sys
 from pathlib import Path
@@ -15,14 +19,19 @@ sys.path[:0] = [
 import access
 
 
-class MissingSubscriptions:
+class KnownSubscription:
     def get_item(self, Key):
-        return {}
+        return {
+            "Item": {
+                "organization_id": Key["organization_id"],
+                "subscription_status": "GRANDFATHERED",
+            }
+        }
 
     def put_item(self, *args, **kwargs):
         raise AssertionError("authorization must not create a subscription")
 
 
 @pytest.fixture(autouse=True)
-def grandfather_missing_subscription(monkeypatch):
-    monkeypatch.setattr(access, "subscriptions_table", lambda: MissingSubscriptions())
+def grandfather_known_subscription(monkeypatch):
+    monkeypatch.setattr(access, "subscriptions_table", lambda: KnownSubscription())
