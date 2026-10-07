@@ -6,15 +6,14 @@ on:
       - main
 
 permissions:
-  id-token: write
   contents: read
 
 concurrency:
-  group: erap-backend-deploy
+  group: erap-backend-validate
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: development
@@ -41,31 +40,5 @@ jobs:
       - name: Check Lambda packages
         run: python scripts/package_lambdas.py --check
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::481838970142:role/ERAP-GitHub-Deploy
-          aws-region: eu-north-1
-          role-session-name: erap-development
-
-      - name: Deploy Lambda code
-        env:
-          ERAP_ENVIRONMENT: development
-        run: python scripts/deploy_backend.py
-
-      - name: Smoke test
-        env:
-          SMOKE_WAIT_AMPLIFY: "1"
-          SMOKE_AMPLIFY_SECONDS: "360"
-        run: python scripts/smoke_test.py
-
-      - name: Verify hardening
-        run: python scripts/verify_hardening.py
-
-      - name: Restore the previous alias when verification fails
-        if: failure()
-        run: python scripts/set_live_version.py --from-summary
-
-      - name: Write summary
-        if: always()
-        run: python scripts/render_summary.py >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm this workflow does not publish alias live
+        run: python scripts/check_workflows.py

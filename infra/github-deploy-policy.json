@@ -5,12 +5,8 @@
       "Sid": "PublishExistingFunctions",
       "Effect": "Allow",
       "Action": [
-        "lambda:CreateAlias",
         "lambda:GetAlias",
-        "lambda:GetFunctionConfiguration",
-        "lambda:PublishVersion",
-        "lambda:UpdateAlias",
-        "lambda:UpdateFunctionCode"
+        "lambda:GetFunctionConfiguration"
       ],
       "Resource": [
         "arn:aws:lambda:eu-north-1:481838970142:function:get-resources",
