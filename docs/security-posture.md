@@ -62,7 +62,7 @@ Workflows set `contents: read`. Deploy and rollback also set `id-token: write` s
 
 ## 14. Dependencies
 
-`requirements.txt` lists `boto3` and `pytest` without pins. `requirements-ci.txt` pins `pyyaml==6.0.3`. Lambda packages are small and do not vendor boto3; the runtime supplies it. No dependency was upgraded. The repository secret scan looks for access-key shapes and private keys. It does not query a vulnerability database.
+`requirements.txt` lists `boto3` and `pytest` without pins. `requirements-ci.txt` pins `pyyaml==6.0.3`. Lambda packages are small and do not vendor boto3; the runtime supplies it. No dependency was upgraded. The repository secret scan looks for access keys, private keys, Razorpay key and webhook shapes, bearer tokens, and credential assignments. It reports the file, line, and detector name, not the matched value. It does not query a vulnerability database.
 
 ## 15. Security tests
 
