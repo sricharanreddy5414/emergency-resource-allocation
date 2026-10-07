@@ -18,6 +18,7 @@ from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
 from matching import choose_resource, explain_match, sort_requests_by_priority
 from resource_state import EMERGENCY_CLAIM_CONDITION
+from api_views import allocation_view, request_view
 from observability import begin_request, error_body, load_object, log_result
 
 
@@ -135,7 +136,7 @@ def lambda_handler(event, context):
                 {
                     "message": "Allocations retrieved successfully",
                     "count": len(allocations),
-                    "allocations": allocations,
+                    "allocations": [allocation_view(item) for item in allocations],
                 },
             )
 
@@ -150,7 +151,7 @@ def lambda_handler(event, context):
                 {
                     "message": "Requests retrieved successfully",
                     "count": len(requests),
-                    "requests": requests,
+                    "requests": [request_view(item) for item in requests],
                 },
             )
 
