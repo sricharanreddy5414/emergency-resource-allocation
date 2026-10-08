@@ -1,0 +1,49 @@
+{
+  "applied": false,
+  "region": "eu-north-1",
+  "note": "Definitions only. scripts/ensure_lifecycle_alarms.py does not call AWS unless --apply is present. The general backend release does not call that script. These four alarms copy ERAP-AutoRelease-Errors: Lambda Errors, Sum, 300 seconds, one evaluation period, threshold 1, GreaterThanThreshold, missing data notBreaching. They publish to the existing topic ERAP-Production-Alarms. No new topic and no new subscription. Reservation-expiry log retention is 30 days, the same period as the other production groups.",
+  "topic_name": "ERAP-Production-Alarms",
+  "unchanged_alarms": [
+    "ERAP-ApiGateway-5XX",
+    "ERAP-Allocation-Throttles",
+    "ERAP-AutoRelease-Errors",
+    "ERAP-Public-Lambda-Errors",
+    "ERAP-Resources-SystemErrors",
+    "EmergencyResourceAllocation-Lambda-Errors"
+  ],
+  "pattern": {
+    "namespace": "AWS/Lambda",
+    "metric_name": "Errors",
+    "statistic": "Sum",
+    "period": 300,
+    "evaluation_periods": 1,
+    "threshold": 1,
+    "comparison_operator": "GreaterThanThreshold",
+    "treat_missing_data": "notBreaching",
+    "alarm_description": "ERAP production alarm",
+    "dimension_name": "FunctionName"
+  },
+  "alarms": [
+    {
+      "alarm_name": "ERAP-BillingWebhook-Errors",
+      "function_name": "erap-billing-webhook"
+    },
+    {
+      "alarm_name": "ERAP-BillingExpiry-Errors",
+      "function_name": "erap-billing-expiry"
+    },
+    {
+      "alarm_name": "ERAP-ExchangeExpiry-Errors",
+      "function_name": "erap-exchange-expiry"
+    },
+    {
+      "alarm_name": "ERAP-ReservationExpiry-Errors",
+      "function_name": "erap-reservation-expiry"
+    }
+  ],
+  "log_retention": {
+    "function_name": "erap-reservation-expiry",
+    "log_group": "/aws/lambda/erap-reservation-expiry",
+    "retention_in_days": 30
+  }
+}
