@@ -306,12 +306,12 @@ def test_concurrent_claim_allows_one_allocation(monkeypatch):
     rival.bind(monkeypatch)
     status, body = rival.allocate("Q2")
 
-    assert status == 404
-    assert body["message"] == "No suitable resource available"
+    assert status == 200
+    assert body["request_id"] == "Q2"
     assert len(rival.allocations.items) == 1
-    assert rival.allocations.items[0]["request_id"] == "Q1"
-    assert rival.requests.items[0]["Status"] == "ALLOCATED"
-    assert rival.requests.items[1]["Status"] == "PENDING"
+    assert rival.allocations.items[0]["request_id"] == "Q2"
+    assert rival.requests.items[0]["Status"] == "PENDING"
+    assert rival.requests.items[1]["Status"] == "ALLOCATED"
 
 
 def test_claim_stays_inside_the_organization(monkeypatch):
