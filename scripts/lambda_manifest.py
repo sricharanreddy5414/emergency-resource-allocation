@@ -51,7 +51,11 @@ PACKAGES = {
         "lambda_function.py": "src/resource/handler.py",
     },
     "create-request": {**SHARED, "lambda_function.py": "src/request/handler.py"},
-    "emergency-resource-allocation": {**SHARED, "lambda_function.py": "src/allocation/service.py"},
+    "emergency-resource-allocation": {
+        **SHARED,
+        "emergency_page_token.py": "src/shared/emergency_page_token.py",
+        "lambda_function.py": "src/allocation/service.py",
+    },
     "emergency-resource-auto-release": {
         "audit.py": "src/shared/audit.py",
         "observability.py": "src/shared/observability.py",

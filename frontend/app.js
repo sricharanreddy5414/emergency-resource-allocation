@@ -2792,23 +2792,210 @@ async function loadResources(options) {
 
 let requests = [];
 
+/* EMERGENCY_PAGE_START */
+const EMERGENCY_PAGE_LIMIT = "100";
+let requestNextPageToken = null;
+let requestPageOrganizationId = "";
+let requestPageLocationId = "";
+let requestPageLoading = false;
+let requestPageRequest = 0;
+let allocationNextPageToken = null;
+let allocationPageOrganizationId = "";
+let allocationPageLocationId = "";
+let allocationPageLoading = false;
+let allocationPageRequest = 0;
 
-async function loadRequests() {
+function resetRequestPagination() {
 
-    const table = document.getElementById("requestsTable");
+    requestPageRequest += 1;
+    requestNextPageToken = null;
+    requestPageOrganizationId = "";
+    requestPageLocationId = "";
+    requestPageLoading = false;
 
-    if (!table) {
-        return;
+}
+
+function resetAllocationPagination() {
+
+    allocationPageRequest += 1;
+    allocationNextPageToken = null;
+    allocationPageOrganizationId = "";
+    allocationPageLocationId = "";
+    allocationPageLoading = false;
+
+}
+
+function emergencyListQuery(pageToken) {
+
+    const params = new URLSearchParams(tenantQuery().replace(/^\?/, ""));
+
+    params.set("limit", EMERGENCY_PAGE_LIMIT);
+
+    if (pageToken) {
+
+        params.set("page_token", pageToken);
+
     }
 
-    table.innerHTML = `
-        <tr>
-            <td colspan="7">
-                Loading requests...
-            </td>
-        </tr>
-    `;
+    return "?" + params.toString();
 
+}
+
+function readEmergencyPage(payload, collectionName) {
+
+    let parsed = payload;
+
+    if (payload && typeof payload.body === "string") {
+
+        try {
+
+            parsed = JSON.parse(payload.body);
+
+        } catch (error) {
+
+            parsed = payload;
+
+        }
+
+    }
+
+    let page = [];
+
+    if (Array.isArray(parsed)) {
+
+        page = parsed;
+
+    } else if (parsed && Array.isArray(parsed[collectionName])) {
+
+        page = parsed[collectionName];
+
+    }
+
+    const token = parsed && !Array.isArray(parsed) && typeof parsed.next_token === "string" && parsed.next_token
+        ? parsed.next_token
+        : null;
+
+    return { page, token };
+
+}
+
+function appendEmergencyRows(existing, page, idName) {
+
+    const seen = new Set(existing.map(item => String(item[idName] || "")));
+    const added = page.filter(item => !seen.has(String(item[idName] || "")));
+
+    return existing.concat(added);
+
+}
+
+function renderEmergencyLoadMore(hostId, token, loading, onClick) {
+
+    const host = $(hostId);
+
+    if (!host) {
+
+        return;
+
+    }
+
+    host.replaceChildren();
+
+    if (!token) {
+
+        return;
+
+    }
+
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.className = "secondary-btn";
+    button.textContent = "Load more";
+    button.disabled = loading;
+    button.addEventListener("click", onClick);
+    host.appendChild(button);
+
+}
+
+function renderRequestLoadMore() {
+
+    renderEmergencyLoadMore(
+        "requestLoadMore",
+        requestNextPageToken,
+        requestPageLoading,
+        () => loadRequests({ append: true })
+    );
+
+}
+
+function renderAllocationLoadMore() {
+
+    renderEmergencyLoadMore(
+        "allocationLoadMore",
+        allocationNextPageToken,
+        allocationPageLoading,
+        () => loadAllocations({ append: true })
+    );
+
+}
+
+async function loadRequests(options) {
+
+    const append = Boolean(options && options.append);
+    const table = document.getElementById("requestsTable");
+
+    if (requestPageLoading) {
+
+        return;
+
+    }
+
+    if (append && !requestNextPageToken) {
+
+        return;
+
+    }
+
+    const organizationId = selectedOrganizationId() || "";
+    const locationId = selectedLocationId() || "";
+
+    if (
+        append &&
+        (organizationId !== requestPageOrganizationId || locationId !== requestPageLocationId)
+    ) {
+
+        resetRequestPagination();
+
+        return loadRequests();
+
+    }
+
+    const pageToken = append ? requestNextPageToken : "";
+    const requestId = ++requestPageRequest;
+
+    requestPageLoading = true;
+
+    if (!append) {
+
+        requestNextPageToken = null;
+        requestPageOrganizationId = organizationId;
+        requestPageLocationId = locationId;
+
+        if (table) {
+
+            table.innerHTML = `
+                <tr>
+                    <td colspan="7">
+                        Loading requests...
+                    </td>
+                </tr>
+            `;
+
+        }
+
+    }
+
+    renderRequestLoadMore();
 
     try {
 
@@ -2816,14 +3003,17 @@ async function loadRequests() {
 
         if (!idToken) {
 
-            throw new Error(
-                "Cognito ID token is not available"
-            );
+            throw new Error("Cognito ID token is not available");
 
         }
 
+        if (requestId !== requestPageRequest) {
 
-        const response = await fetch(REQUESTS_API_URL + tenantQuery(), {
+            return;
+
+        }
+
+        const response = await fetch(REQUESTS_API_URL + emergencyListQuery(pageToken), {
             method: "GET",
             headers: {
                 "Accept": "application/json",
@@ -2831,54 +3021,113 @@ async function loadRequests() {
             }
         });
 
+        if (requestId !== requestPageRequest) {
+
+            return;
+
+        }
 
         if (!response.ok) {
 
-            throw new Error(
-                `Request API returned ${response.status}`
-            );
+            let message = "";
+
+            try {
+
+                message = getApiMessage(await response.json());
+
+            } catch (parseError) {
+
+                message = "";
+
+            }
+
+            if (append && response.status === 400 && message === "Invalid page token") {
+
+                requestNextPageToken = null;
+                showToast("This request page expired. Refresh to load the first page.");
+
+                return;
+
+            }
+
+            if (append) {
+
+                showToast("Unable to load more requests from AWS");
+
+                return;
+
+            }
+
+            throw new Error(`Request API returned ${response.status}`);
 
         }
 
+        const received = readEmergencyPage(await response.json(), "requests");
 
-        const data = await response.json();
+        if (requestId !== requestPageRequest) {
 
-        if (Array.isArray(data)) {
-
-            requests = data;
-
-        } else if (Array.isArray(data.requests)) {
-
-            requests = data.requests;
-
-        } else {
-
-            requests = [];
+            return;
 
         }
 
+        requests = append ? appendEmergencyRows(requests, received.page, "request_id") : received.page;
+        requestNextPageToken = received.token;
+        requestPageOrganizationId = organizationId;
+        requestPageLocationId = locationId;
 
         updateAnalytics();
         updateAdminDashboard();
-
         renderRequests();
         syncCancelRequestDialog();
 
-    } catch (error) {
-
-        console.error(
-            "Unable to load requests:",
-            error
+        showToast(
+            requestNextPageToken
+                ? `${requests.length} requests loaded. More are available.`
+                : `${requests.length} requests loaded`
         );
 
+    } catch (error) {
 
-        table.innerHTML = `
-            <tr>
-                <td colspan="7">
-                    Unable to load requests from AWS.
-                </td>
-            </tr>
-        `;
+        if (requestId !== requestPageRequest) {
+
+            return;
+
+        }
+
+        if (append) {
+
+            console.error("Unable to load more requests");
+            showToast("Unable to load more requests from AWS");
+
+            return;
+
+        }
+
+        console.error("Unable to load requests:", error);
+
+        requests = [];
+        requestNextPageToken = null;
+
+        if (table) {
+
+            table.innerHTML = `
+                <tr>
+                    <td colspan="7">
+                        Unable to load requests from AWS.
+                    </td>
+                </tr>
+            `;
+
+        }
+
+    } finally {
+
+        if (requestId === requestPageRequest) {
+
+            requestPageLoading = false;
+            renderRequestLoadMore();
+
+        }
 
     }
 
@@ -6047,20 +6296,63 @@ function addAllocationFromResponse(
    ALLOCATION TABLE
 ========================================================= */
 
-async function loadAllocations() {
+async function loadAllocations(options) {
 
+    const append = Boolean(options && options.append);
     const table = $("allocationsTable");
 
-    if (table) {
+    if (allocationPageLoading) {
 
-    table.innerHTML = `
-        <tr>
-            <td colspan="4">
-                Loading allocations...
-            </td>
-        </tr>
-    `;
+        return;
+
     }
+
+    if (append && !allocationNextPageToken) {
+
+        return;
+
+    }
+
+    const organizationId = selectedOrganizationId() || "";
+    const locationId = selectedLocationId() || "";
+
+    if (
+        append &&
+        (organizationId !== allocationPageOrganizationId || locationId !== allocationPageLocationId)
+    ) {
+
+        resetAllocationPagination();
+
+        return loadAllocations();
+
+    }
+
+    const pageToken = append ? allocationNextPageToken : "";
+    const requestId = ++allocationPageRequest;
+
+    allocationPageLoading = true;
+
+    if (!append) {
+
+        allocationNextPageToken = null;
+        allocationPageOrganizationId = organizationId;
+        allocationPageLocationId = locationId;
+
+        if (table) {
+
+            table.innerHTML = `
+                <tr>
+                    <td colspan="8">
+                        Loading allocations...
+                    </td>
+                </tr>
+            `;
+
+        }
+
+    }
+
+    renderAllocationLoadMore();
 
     try {
 
@@ -6068,82 +6360,140 @@ async function loadAllocations() {
 
         if (!idToken) {
 
-            throw new Error(
-                "Cognito ID token is not available"
-            );
+            throw new Error("Cognito ID token is not available");
+
+        }
+
+        if (requestId !== allocationPageRequest) {
+
+            return;
 
         }
 
         const response = await fetch(
-            ALLOCATIONS_API_URL + tenantQuery(),
+            ALLOCATIONS_API_URL + emergencyListQuery(pageToken),
             {
                 method: "GET",
                 headers: {
                     "Accept": "application/json",
-                "Authorization": "Bearer " + idToken
+                    "Authorization": "Bearer " + idToken
                 }
             }
         );
 
+        if (requestId !== allocationPageRequest) {
+
+            return;
+
+        }
+
         if (!response.ok) {
-            throw new Error(
-                `Allocation API returned ${response.status}`
-            );
-        }
 
-        const data = await response.json();
+            let message = "";
 
-        let parsed = data;
-
-        if (
-            data &&
-            typeof data.body === "string"
-        ) {
             try {
-                parsed = JSON.parse(data.body);
-            } catch {
-                parsed = data;
+
+                message = getApiMessage(await response.json());
+
+            } catch (parseError) {
+
+                message = "";
+
             }
+
+            if (append && response.status === 400 && message === "Invalid page token") {
+
+                allocationNextPageToken = null;
+                showToast("This allocation page expired. Refresh to load the first page.");
+
+                return;
+
+            }
+
+            if (append) {
+
+                showToast("Unable to load more allocations from AWS");
+
+                return;
+
+            }
+
+            throw new Error(`Allocation API returned ${response.status}`);
+
         }
 
-        if (Array.isArray(parsed)) {
+        const received = readEmergencyPage(await response.json(), "allocations");
 
-            allocations = parsed;
+        if (requestId !== allocationPageRequest) {
 
-        } else if (
-            Array.isArray(parsed.allocations)
-        ) {
-
-            allocations = parsed.allocations;
-
-        } else {
-
-            allocations = [];
+            return;
 
         }
+
+        allocations = append
+            ? appendEmergencyRows(allocations, received.page, "allocation_id")
+            : received.page;
+        allocationNextPageToken = received.token;
+        allocationPageOrganizationId = organizationId;
+        allocationPageLocationId = locationId;
 
         renderAllocations();
         updateAnalytics();
         updateAdminDashboard();
 
-    } catch (error) {
-
-        console.error(
-            "Unable to load allocations:",
-            error
+        showToast(
+            allocationNextPageToken
+                ? `${allocations.length} allocations loaded. More are available.`
+                : `${allocations.length} allocations loaded`
         );
 
-        allocations = [];
+    } catch (error) {
 
-        table.innerHTML = `
-            <tr>
-                <td colspan="4">
-                    Unable to load allocations from AWS.
-                </td>
-            </tr>
-        `;
+        if (requestId !== allocationPageRequest) {
+
+            return;
+
+        }
+
+        if (append) {
+
+            console.error("Unable to load more allocations");
+            showToast("Unable to load more allocations from AWS");
+
+            return;
+
+        }
+
+        console.error("Unable to load allocations:", error);
+
+        allocations = [];
+        allocationNextPageToken = null;
+
+        if (table) {
+
+            table.innerHTML = `
+                <tr>
+                    <td colspan="8">
+                        Unable to load allocations from AWS.
+                    </td>
+                </tr>
+            `;
+
+        }
+
+    } finally {
+
+        if (requestId === allocationPageRequest) {
+
+            allocationPageLoading = false;
+            renderAllocationLoadMore();
+
+        }
+
     }
+
 }
+/* EMERGENCY_PAGE_END */
 
 function renderAllocations() {
 
@@ -6389,7 +6739,7 @@ function exportRequests() {
     ) {
 
         showToast(
-            "No requests available to export."
+            "No loaded requests available to export."
         );
 
         return;
@@ -6490,7 +6840,7 @@ function exportAllocations() {
     ) {
 
         showToast(
-            "No browser-session allocations available to export."
+            "No loaded allocations available to export."
         );
 
         return;
@@ -8128,6 +8478,8 @@ async function deactivateCatalogType(url, typeId, idName) {
 function clearTenantData() {
 
     resetResourcePagination();
+    resetRequestPagination();
+    resetAllocationPagination();
 
     resources = [];
 

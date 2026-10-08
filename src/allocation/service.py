@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
@@ -13,6 +14,13 @@ from access import (
     query_by_organization,
     require_location,
     require_owned,
+)
+from emergency_page_token import (
+    ALLOCATION_ENDPOINT,
+    REQUEST_ENDPOINT,
+    load_emergency_page_secret,
+    read_emergency_page_token,
+    sign_emergency_page_token,
 )
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
@@ -97,6 +105,108 @@ def parse_body(event):
     return load_object(event.get("body") or {}, event.get("isBase64Encoded"))
 
 
+PAGE_SIZE_DEFAULT = 100
+PAGE_SIZE_MAX = 100
+_LIST_INDEX = "OrganizationLocationIndex"
+
+
+def _page_limit(query):
+    raw = query.get("limit")
+    if raw is None or str(raw).strip() == "":
+        return PAGE_SIZE_DEFAULT
+    if isinstance(raw, bool):
+        raise AccessError(400, "Page size is invalid")
+    try:
+        limit = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise AccessError(400, "Page size is invalid")
+    if limit < 1 or limit > PAGE_SIZE_MAX:
+        raise AccessError(400, "Page size is invalid")
+    return limit
+
+
+def _emergency_page_secrets():
+    current, previous = load_emergency_page_secret()
+    return [current, *previous]
+
+
+def _resume_cursor(query, endpoint, organization_id, location_id, limit):
+    supplied = query.get("page_token")
+    if supplied is None:
+        return None
+    return read_emergency_page_token(
+        supplied,
+        endpoint=endpoint,
+        organization_id=organization_id,
+        location_id=location_id,
+        limit=limit,
+        secrets=_emergency_page_secrets(),
+    )
+
+
+def _query_page(table, organization_id, location_id, limit, start, cursor_name):
+    """Read one index page. The caller signs any continuation key."""
+    key = Key("organization_id").eq(organization_id)
+    if location_id:
+        key = key & Key("location_id").eq(location_id)
+    kwargs = {
+        "IndexName": _LIST_INDEX,
+        "KeyConditionExpression": key,
+        "Limit": limit,
+    }
+    if start:
+        kwargs["ExclusiveStartKey"] = {
+            "organization_id": start["organization_id"],
+            "location_id": start["location_id"],
+            cursor_name: start[cursor_name],
+        }
+    result = table.query(**kwargs)
+    items = []
+    for item in result.get("Items") or []:
+        if item.get("organization_id") != organization_id:
+            continue
+        if location_id and str(item.get("location_id") or "") != location_id:
+            continue
+        items.append(item)
+    last = result.get("LastEvaluatedKey") or None
+    cursor = None
+    if last:
+        cursor = {
+            "organization_id": str(last.get("organization_id") or ""),
+            "location_id": str(last.get("location_id") or ""),
+            cursor_name: str(last.get(cursor_name) or ""),
+        }
+    return items, cursor
+
+
+def _list_response(message, name, views, token):
+    body = {
+        "message": message,
+        "count": len(views),
+        name: views,
+    }
+    if token:
+        body["next_token"] = token
+    return response(200, body)
+
+
+def _signed_page(table, organization_id, location_id, limit, endpoint, cursor_name, query, view):
+    start = _resume_cursor(query, endpoint, organization_id, location_id, limit)
+    items, cursor = _query_page(table, organization_id, location_id, limit, start, cursor_name)
+    token = None
+    if cursor:
+        current, _previous = load_emergency_page_secret()
+        token = sign_emergency_page_token(
+            cursor,
+            endpoint=endpoint,
+            organization_id=organization_id,
+            location_id=location_id,
+            limit=limit,
+            secret=current,
+        )
+    return [view(item) for item in items], token
+
+
 def lambda_handler(event, context):
     begin_request(event)
     method = (
@@ -127,34 +237,32 @@ def lambda_handler(event, context):
             require_location(locations_table(), organization_id, location_id)
 
         if method == "GET" and path.endswith("/allocations"):
-            allocations = query_by_organization(
+            limit = _page_limit(query)
+            views, token = _signed_page(
                 allocations_table(),
                 organization_id,
-                location_id or None,
+                location_id,
+                limit,
+                ALLOCATION_ENDPOINT,
+                "allocation_id",
+                query,
+                allocation_view,
             )
-            return response(
-                200,
-                {
-                    "message": "Allocations retrieved successfully",
-                    "count": len(allocations),
-                    "allocations": [allocation_view(item) for item in allocations],
-                },
-            )
+            return _list_response("Allocations retrieved successfully", "allocations", views, token)
 
         if method == "GET" and path.endswith("/requests"):
-            requests = query_by_organization(
+            limit = _page_limit(query)
+            views, token = _signed_page(
                 requests_table(),
                 organization_id,
-                location_id or None,
+                location_id,
+                limit,
+                REQUEST_ENDPOINT,
+                "request_id",
+                query,
+                request_view,
             )
-            return response(
-                200,
-                {
-                    "message": "Requests retrieved successfully",
-                    "count": len(requests),
-                    "requests": [request_view(item) for item in requests],
-                },
-            )
+            return _list_response("Requests retrieved successfully", "requests", views, token)
 
         if method == "POST":
             return allocate(body, organization_id, _user_sub, membership.get("role"))
