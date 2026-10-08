@@ -719,8 +719,35 @@ textarea {
 
 .queue-summary {
     display: flex;
+    flex-wrap: wrap;
     gap: 22px;
     margin-top: 8px;
+}
+
+.queue-note,
+.allocation-hint {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 62ch;
+}
+
+.table-container {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.status-badge.status-released,
+.status-badge.status-returned {
+    color: var(--muted);
+}
+
+.release-resource-btn:disabled,
+.request-submit-btn:disabled,
+.allocate-btn:disabled,
+.secondary-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .queue-summary strong {

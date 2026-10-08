@@ -433,8 +433,8 @@
             <ul class="situation-notes">
                 <li><span id="totalResources">0</span> registered</li>
                 <li><span id="allocatedResources">0</span> allocated</li>
-                <li><span id="analyticsPendingRequests">0</span> waiting</li>
-                <li><span id="analyticsAllocatedRequests">0</span> in coordination</li>
+                <li><span id="analyticsPendingRequests">0</span> pending in loaded results</li>
+                <li><span id="analyticsAllocatedRequests">0</span> allocated in loaded results</li>
                 <li><span id="analyticsTotalRequests">0</span> loaded requests, <span id="analyticsReleasedRequests">0</span> released</li>
             </ul>
             <div class="spectrum" aria-hidden="true">
@@ -477,10 +477,13 @@
     <details class="allocate-drawer">
         <summary>Allocate an existing request</summary>
         <form id="allocationForm">
+            <p id="allocationRequestHint" class="allocation-hint" aria-live="polite">
+                Allocates one available resource to a pending request. Cancelled, allocated, and released requests are not allocatable.
+            </p>
             <div class="form-row">
                 <div class="form-group">
                     <label for="requestId">Request ID</label>
-                    <input type="text" id="requestId" placeholder="Existing request ID" autocomplete="off" required>
+                    <input type="text" id="requestId" placeholder="Existing pending request ID" autocomplete="off" required aria-describedby="allocationRequestHint">
                 </div>
                 <div class="form-group">
                     <label for="resourceType">Request Type</label>
@@ -1020,11 +1023,13 @@
             <p>
                 Coordinate incoming resource requirements across your organization.
             </p>
-            <div class="queue-summary">
+            <div class="queue-summary" aria-label="Loaded request counts">
                 <div><span>Pending</span><strong id="queuePending">0</strong></div>
                 <div><span>Allocated</span><strong id="queueAllocated">0</strong></div>
                 <div><span>Released</span><strong id="queueReleased">0</strong></div>
+                <div><span>Cancelled</span><strong id="queueCancelled">0</strong></div>
             </div>
+            <p class="queue-note">These counts are from the requests already loaded.</p>
         </div>
 
         <div class="hero-actions">
@@ -1080,9 +1085,10 @@
         type="search"
         id="requestsSearch"
         placeholder="Search requests by ID, type or location..."
+        aria-label="Search loaded requests"
     >
 
-    <select id="requestsStatusFilter">
+    <select id="requestsStatusFilter" aria-label="Filter loaded requests by status">
 
         <option value="ALL">
             All Requests
@@ -1094,6 +1100,10 @@
 
         <option value="ALLOCATED">
             Allocated
+        </option>
+
+        <option value="RELEASED">
+            Released
         </option>
 
         <option value="CANCELLED">
@@ -1299,8 +1309,16 @@
             <input
                 type="search"
                 id="allocationSearch"
-                placeholder="Search allocation..."
+                placeholder="Search loaded allocations..."
+                aria-label="Search loaded allocations"
             >
+
+            <select id="allocationStatusFilter" aria-label="Filter loaded allocations by status">
+                <option value="ALL">All statuses</option>
+                <option value="ALLOCATED">Allocated</option>
+                <option value="RETURNED">Returned</option>
+                <option value="RELEASED">Released</option>
+            </select>
 
 
             <button
@@ -1368,7 +1386,7 @@
                     <tr>
 
                         <td colspan="8">
-                            No allocations yet. Completed allocations from this session appear here.
+                            No allocations are loaded for this organization and location.
                         </td>
 
                     </tr>
@@ -1737,7 +1755,7 @@
             </summary>
 
             <p>
-                Create a request with a request type, location, and priority. Priority 1 is the highest. Allocation matches that request to an available resource. Release returns the resource to available.
+                Create a request with a request type, location, and priority. Priority 1 is the highest. Allocation matches that request to an available resource. Release returns the resource to available. Emergency release ends an emergency allocation. Everyday return is a separate resource action.
             </p>
 
         </details>
@@ -2427,6 +2445,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="cancelRequestTitle"
+    aria-describedby="cancelRequestPrompt"
 >
 
     <div class="modal-card">
@@ -2465,7 +2484,7 @@
 </div>
 
 
-<div id="requestModal" class="modal-overlay" style="display:none;">
+<div id="requestModal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="requestModalTitle">
 
     <div class="modal-card request-modal-card">
 
@@ -2482,10 +2501,10 @@
             +
         </div>
 
-        <h2>Create Resource Request</h2>
+        <h2 id="requestModalTitle">Create Resource Request</h2>
 
         <p class="modal-subtitle">
-            Submit a request for resource allocation.
+            Request ID, request type, location, and priority are required. Priority 1 is the highest.
         </p>
 
         <form id="requestModalForm">

@@ -3139,6 +3139,45 @@ async function loadRequests(options) {
 // RENDER REQUESTS
 // =====================================================
 
+function emergencyStatusLabel(status) {
+
+    const value = String(status || "").toUpperCase();
+
+    if (value === "PENDING") {
+
+        return "Pending";
+
+    }
+
+    if (value === "ALLOCATED") {
+
+        return "Allocated";
+
+    }
+
+    if (value === "RELEASED") {
+
+        return "Released";
+
+    }
+
+    if (value === "CANCELLED") {
+
+        return "Cancelled";
+
+    }
+
+    if (value === "RETURNED") {
+
+        return "Returned";
+
+    }
+
+    return value || "Unknown";
+
+}
+
+
 function requestRecordStatus(request) {
 
     return String(request.status ?? request.Status ?? "").toUpperCase();
@@ -3171,7 +3210,7 @@ function renderActiveOperations() {
         container.innerHTML = `
             <div class="ops-empty">
                 <h3>No active operations</h3>
-                <p>New requests will appear here when your organization creates them.</p>
+                <p>No pending or allocated requests are in the loaded results.</p>
                 <button class="primary-btn js-open-request" type="button">Create Request</button>
             </div>
         `;
@@ -3197,7 +3236,7 @@ function renderActiveOperations() {
                 </div>
                 <div class="ops-item-meta">
                     <span class="priority-badge">Priority ${escapeHtml(String(priority))}</span>
-                    <span class="status-badge ${status === "ALLOCATED" ? "allocated" : "pending"}">${escapeHtml(status)}</span>
+                    <span class="status-badge ${status === "ALLOCATED" ? "allocated" : "pending"}">${escapeHtml(emergencyStatusLabel(status))}</span>
                     <span class="cell-meta">${escapeHtml(String(created))}</span>
                     <button class="secondary-btn js-view-requests" type="button">View requests</button>
                 </div>
@@ -3231,8 +3270,9 @@ function renderRecentOperations() {
     allocations.forEach(item => {
         const status = String(item.status || "").toUpperCase();
         const released = status === "RELEASED";
+        const returned = status === "RETURNED";
         events.push({
-            title: released ? "Resource released" : "Allocation completed",
+            title: released ? "Emergency release" : returned ? "Allocation returned" : "Resource allocated",
             detail: String(item.request_id || "") + " · " + String(item.resource_id || ""),
             time: String(
                 released
@@ -3336,10 +3376,18 @@ function renderRequests() {
 
     if (filteredRequests.length === 0) {
 
+        const anotherPage = typeof requestNextPageToken !== "undefined" && requestNextPageToken;
+        const message = requests.length === 0
+            ? "No requests are loaded for this organization and location."
+            : "No loaded requests match this search or status.";
+        const continuation = anotherPage
+            ? " Another page can be loaded without changing this filter."
+            : "";
+
         table.innerHTML = `
             <tr>
                 <td colspan="7">
-                    No matching requests. Create a request when your organization needs a resource.
+                    ${escapeHtml(message + continuation)}
                 </td>
             </tr>
         `;
@@ -3383,35 +3431,32 @@ const createdAt =
 
 
         let statusClass = "status-badge";
-        let statusLabel = status;
 
         if (status === "ALLOCATED") {
 
             statusClass += " status-allocated";
-            statusLabel = "ALLOCATED";
 
         } else if (status === "PENDING") {
 
             statusClass += " status-pending";
-            statusLabel = "PENDING";
 
-        } else if (status === "WAITING") {
+        } else if (status === "RELEASED") {
 
-            statusClass += " status-waiting";
-            statusLabel = "WAITING";
+            statusClass += " status-released";
 
         } else if (status === "CANCELLED") {
 
             statusClass += " status-cancelled";
-            statusLabel = "CANCELLED";
 
         }
+
+        const statusLabel = emergencyStatusLabel(status);
 
         const high = Number(priority) <= 2 ? " request-high" : "";
         const canCancel = status === "PENDING" && requestId !== "—";
         const cancelLabel = requestCancelInFlight ? "Cancelling..." : "Cancel";
         const cancelAction = canCancel
-            ? `<button class="secondary-btn js-cancel-request" type="button" data-request-id="${escapeHtml(requestId)}"${requestCancelInFlight ? " disabled" : ""}>${cancelLabel}</button>`
+            ? `<button class="secondary-btn js-cancel-request" type="button" data-request-id="${escapeHtml(requestId)}" aria-label="Cancel pending request ${escapeHtml(requestId)}"${requestCancelInFlight ? " disabled" : ""}>${cancelLabel}</button>`
             : "";
 
         return `
@@ -3730,6 +3775,7 @@ async function confirmCancelRequest() {
 
             if (response.status === 409) {
 
+                showToast("The record may have changed. The list has been refreshed.");
                 await loadRequests();
 
             }
@@ -4054,6 +4100,12 @@ function updateAnalytics() {
                 "RELEASED"
         ).length;
 
+    const cancelledRequests =
+        requests.filter(
+            request =>
+                requestRecordStatus(request) === "CANCELLED"
+        ).length;
+
 
     if ($("analyticsTotalRequests")) {
         $("analyticsTotalRequests")
@@ -4106,6 +4158,10 @@ function updateAnalytics() {
         $("queueReleased").textContent = releasedRequests;
     }
 
+    if ($("queueCancelled")) {
+        $("queueCancelled").textContent = cancelledRequests;
+    }
+
 
     renderAnalyticsBars(
         "resourceStatusChart",
@@ -4136,6 +4192,10 @@ function updateAnalytics() {
             {
                 label: "Released",
                 value: releasedRequests
+            },
+            {
+                label: "Cancelled",
+                value: cancelledRequests
             }
         ]
     );
@@ -5139,16 +5199,28 @@ async function assignResourceAction(resourceId) {
 }
 
 
+let emergencyReleaseInFlight = false;
+
+
 async function releaseResource(resourceId) {
+
+    if (emergencyReleaseInFlight) {
+
+        return;
+
+    }
 
     const confirmed =
         window.confirm(
-            `Emergency release resource ${resourceId}?`
+            `Emergency release resource ${resourceId}? This is not an everyday return.`
         );
 
     if (!confirmed) {
         return;
     }
+
+    emergencyReleaseInFlight = true;
+    renderAllocations();
 
     try {
 
@@ -5175,15 +5247,34 @@ async function releaseResource(resourceId) {
 
 
         const data =
-            await response.json();
+            await response.json().catch(() => ({}));
 
 
         if (!response.ok) {
 
+            const message = getApiMessage(data) || "Failed to release resource.";
+
             showToast(
-                data.message ||
-                "Failed to release resource."
+                response.status === 409
+                    ? recordChangedMessage(message)
+                    : message
             );
+
+            if (response.status === 409) {
+
+                try {
+
+                    await loadAllocations();
+                    await loadRequests();
+                    await loadResources();
+
+                } catch (reloadError) {
+
+                    showToast("Refresh the lists to see the current records.");
+
+                }
+
+            }
 
             return;
 
@@ -5196,12 +5287,22 @@ async function releaseResource(resourceId) {
 
 
         addNotification(
-            "Resource released",
+            "Emergency release",
             `${resourceId} is now available.`
         );
 
 
-        await loadResources();
+        try {
+
+            await loadResources();
+            await loadAllocations();
+            await loadRequests();
+
+        } catch (reloadError) {
+
+            showToast("Resource released. Refresh the lists to see it.");
+
+        }
 
     }
 
@@ -5216,6 +5317,13 @@ async function releaseResource(resourceId) {
         showToast(
             "Unable to release resource. Please try again."
         );
+
+    }
+
+    finally {
+
+        emergencyReleaseInFlight = false;
+        renderAllocations();
 
     }
 
@@ -5705,11 +5813,72 @@ function applyResourcePageFilters() {
    ALLOCATION REQUEST
 ========================================================= */
 
+let allocationSubmitInFlight = false;
+
+
+function recordChangedMessage(message) {
+
+    const text = String(message || "The request could not be completed.");
+
+    if (text.toLowerCase().includes("may have changed")) {
+
+        return text;
+
+    }
+
+    return text + " The record may have changed. The list will be refreshed.";
+
+}
+
+
+function syncAllocationRequestHint() {
+
+    const hint = $("allocationRequestHint");
+
+    if (!hint) {
+
+        return;
+
+    }
+
+    const current = (requests || []).find(request =>
+        String(request.request_id || "") === String($("requestId")?.value || "").trim()
+    );
+
+    if (!current) {
+
+        hint.textContent = "Allocates one available resource to a pending request. Cancelled, allocated, and released requests are not allocatable.";
+
+        return;
+
+    }
+
+    const status = requestRecordStatus(current);
+
+    if (status === "PENDING") {
+
+        hint.textContent = "Loaded request " + current.request_id + " is Pending and can be allocated.";
+
+        return;
+
+    }
+
+    hint.textContent = "Loaded request " + current.request_id + " is " + emergencyStatusLabel(status) + " and is not available for allocation.";
+
+}
+
+
 async function submitAllocation(
     event
 ) {
 
     event.preventDefault();
+
+    if (allocationSubmitInFlight) {
+
+        return;
+
+    }
 
     if (tenantContextLoading || !selectedOrganizationId()) {
 
@@ -5773,17 +5942,44 @@ async function submitAllocation(
 
     }
 
-
-    button.disabled =
-        true;
-
-
-    button.classList.add(
-        "loading"
+    const loadedRequest = (requests || []).find(request =>
+        String(request.request_id || "") === requestId
     );
 
+    if (loadedRequest && requestRecordStatus(loadedRequest) !== "PENDING") {
+
+        showResult(
+            "This loaded request is " + emergencyStatusLabel(requestRecordStatus(loadedRequest)) + " and cannot be allocated.",
+            "error"
+        );
+        syncAllocationRequestHint();
+
+        return;
+
+    }
+
+    const confirmed = window.confirm(
+        "Allocate an available resource to request " + requestId + "? The server checks that the request is still pending."
+    );
+
+    if (!confirmed) {
+
+        return;
+
+    }
 
     try {
+
+        allocationSubmitInFlight = true;
+
+        if (button) {
+
+            button.disabled = true;
+            button.textContent = "Allocating...";
+            button.setAttribute("aria-busy", "true");
+            button.classList.add("loading");
+
+        }
 
         const payload = {
 
@@ -5862,15 +6058,31 @@ async function submitAllocation(
 
         if (!response.ok) {
 
-            throw new Error(
+            const failure = getApiMessage(data) || "Unable to process allocation request.";
 
-                getApiMessage(
-                    data
-                ) ||
+            if (response.status === 409) {
 
-                `Request failed with status ${response.status}`
+                showResult(
+                    recordChangedMessage(failure),
+                    "error"
+                );
 
-            );
+                try {
+
+                    await loadRequests();
+                    await loadAllocations();
+
+                } catch (reloadError) {
+
+                    showToast("Refresh the lists to see the current records.");
+
+                }
+
+                return;
+
+            }
+
+            throw new Error(failure);
 
         }
 
@@ -5924,15 +6136,20 @@ async function submitAllocation(
         );
 
 
-        addAllocationFromResponse(
-            result
-        );
-
-
         form.reset();
+        syncAllocationRequestHint();
 
+        try {
 
-        await loadResources();
+            await loadRequests();
+            await loadAllocations();
+            await loadResources();
+
+        } catch (reloadError) {
+
+            showToast("Allocation was processed. Refresh the lists to see it.");
+
+        }
 
     }
 
@@ -5962,13 +6179,16 @@ async function submitAllocation(
 
     finally {
 
-        button.disabled =
-            false;
+        allocationSubmitInFlight = false;
 
+        if (button) {
 
-        button.classList.remove(
-            "loading"
-        );
+            button.disabled = false;
+            button.textContent = "Allocate Resource";
+            button.removeAttribute("aria-busy");
+            button.classList.remove("loading");
+
+        }
 
     }
 
@@ -6514,7 +6734,7 @@ function renderAllocations() {
 
                 <td colspan="8">
 
-                    No allocations yet. Completed allocations from this session appear here.
+                    No allocations are loaded for this organization and location.
 
                 </td>
 
@@ -6537,11 +6757,16 @@ function renderAllocations() {
             .toLowerCase();
 
 
+    const selectedStatus = String($("allocationStatusFilter")?.value || "ALL").toUpperCase();
+
     const filtered =
         allocations.filter(
             item => {
 
-                return (
+                const status = String(item.status || "").toUpperCase();
+                const matchesStatus = selectedStatus === "ALL" || status === selectedStatus;
+
+                return matchesStatus && (
 
                     !query ||
 
@@ -6609,7 +6834,7 @@ function renderAllocations() {
 
                     <td colspan="8">
 
-                        No matching allocations found.
+                        No loaded allocations match this search or status.
 
                     </td>
 
@@ -6629,10 +6854,17 @@ function renderAllocations() {
                                 "ALLOCATED"
                             ).toUpperCase();
 
-                        const rowClass =
-                            status === "RELEASED"
+                        const terminal = status === "RELEASED" || status === "RETURNED";
+
+                        const rowClass = terminal
                                 ? "flow-released"
                                 : "flow-live";
+
+                        const badgeClass = status === "RELEASED"
+                            ? "status-released"
+                            : status === "RETURNED"
+                                ? "status-returned"
+                                : "allocated";
 
                         const action =
                             status === "ALLOCATED"
@@ -6641,16 +6873,18 @@ function renderAllocations() {
                                     <button
                                         type="button"
                                         class="release-resource-btn"
+                                        aria-label="Emergency release resource ${escapeHtml(item.resource_id || "")}"
                                         onclick="releaseResource('${escapeHtml(
                                             item.resource_id ||
                                             ""
                                         )}')"
+                                        ${emergencyReleaseInFlight ? "disabled" : ""}
                                     >
-                                        Release
+                                        ${emergencyReleaseInFlight ? "Releasing..." : "Emergency release"}
                                     </button>
                                   `
 
-                                : "-";
+                                : "—";
 
                         return `
 
@@ -6701,14 +6935,10 @@ function renderAllocations() {
                                 <td>
 
                                     <span
-                                        class="status-badge ${
-                                            status === "RELEASED"
-                                                ? "released"
-                                                : "allocated"
-                                        }"
+                                        class="status-badge ${badgeClass}"
                                     >
 
-                                        ${escapeHtml(status)}
+                                        ${escapeHtml(emergencyStatusLabel(status))}
 
                                     </span>
 
@@ -7404,6 +7634,18 @@ function initializeEvents() {
         ?.addEventListener(
             "input",
             renderAllocations
+        );
+
+    $("allocationStatusFilter")
+        ?.addEventListener(
+            "change",
+            renderAllocations
+        );
+
+    $("requestId")
+        ?.addEventListener(
+            "input",
+            syncAllocationRequestHint
         );
     $("exportRequestsBtn")?.addEventListener("click", exportRequests);
 
@@ -8225,9 +8467,18 @@ function prepareRequestModal() {
 }
 
 
+let requestCreateInFlight = false;
+
+
 async function submitRequestModal(event) {
 
     event.preventDefault();
+
+    if (requestCreateInFlight) {
+
+        return;
+
+    }
 
     const requestId = $("modalRequestId")?.value.trim() || "";
     const requestTypeId = $("modalRequestType")?.value || "";
@@ -8269,10 +8520,13 @@ async function submitRequestModal(event) {
 
         button.disabled = true;
         button.textContent = "Submitting...";
+        button.setAttribute("aria-busy", "true");
 
     }
 
+    requestCreateInFlight = true;
     show("");
+    let created = false;
 
     try {
 
@@ -8314,10 +8568,19 @@ async function submitRequestModal(event) {
         }
 
         show(getApiMessage(data) || "Request created successfully.", "success");
+        created = true;
 
         if (typeof loadRequests === "function") {
 
-            loadRequests();
+            try {
+
+                await loadRequests();
+
+            } catch (reloadError) {
+
+                showToast("Request was created. Refresh the list to see it.");
+
+            }
 
         }
 
@@ -8333,6 +8596,15 @@ async function submitRequestModal(event) {
 
             $("requestModalForm")?.reset();
             show("");
+            requestCreateInFlight = false;
+
+            if (button) {
+
+                button.disabled = false;
+                button.textContent = "Submit Request →";
+                button.removeAttribute("aria-busy");
+
+            }
 
         }, 1200);
 
@@ -8342,10 +8614,17 @@ async function submitRequestModal(event) {
 
     } finally {
 
-        if (button) {
+        if (!created) {
 
-            button.disabled = false;
-            button.textContent = "Submit Request →";
+            requestCreateInFlight = false;
+
+            if (button) {
+
+                button.disabled = false;
+                button.textContent = "Submit Request →";
+                button.removeAttribute("aria-busy");
+
+            }
 
         }
 
