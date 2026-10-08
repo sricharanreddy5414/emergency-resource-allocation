@@ -435,7 +435,7 @@
                 <li><span id="allocatedResources">0</span> allocated</li>
                 <li><span id="analyticsPendingRequests">0</span> waiting</li>
                 <li><span id="analyticsAllocatedRequests">0</span> in coordination</li>
-                <li><span id="analyticsTotalRequests">0</span> requests, <span id="analyticsReleasedRequests">0</span> released</li>
+                <li><span id="analyticsTotalRequests">0</span> loaded requests, <span id="analyticsReleasedRequests">0</span> released</li>
             </ul>
             <div class="spectrum" aria-hidden="true">
                 <span id="readinessAvailableBar"></span>
@@ -626,7 +626,7 @@
         <div class="tally">
 
             <span>
-                Total Requests
+                Loaded Requests
             </span>
 
             <h2 id="adminTotalRequests">
@@ -634,7 +634,7 @@
             </h2>
 
             <p>
-                Emergency requests
+                Already loaded
             </p>
 
         </div>
@@ -643,7 +643,7 @@
         <div class="tally">
 
             <span>
-                Active Allocations
+                Loaded Allocations
             </span>
 
             <h2 id="adminActiveAllocations">
@@ -651,7 +651,7 @@
             </h2>
 
             <p>
-                Currently allocated
+                Allocated among loaded rows
             </p>
 
         </div>
@@ -1059,7 +1059,7 @@
                 <h2>Open work</h2>
 
                 <p>
-                    Pending, allocated, released, and cancelled requests for the selected organization.
+                    Loaded requests for the selected organization. Search and status apply to the rows already loaded.
                 </p>
             </div>
 
@@ -1136,6 +1136,8 @@
             </table>
 
         </div>
+
+        <div id="requestLoadMore"></div>
 
     </section>
 
@@ -1266,7 +1268,7 @@
             </h2>
 
             <p>
-                Follow a request through the matched resource, the allocation, and the release.
+                Loaded allocations for the selected organization. Search applies to the rows already loaded.
             </p>
             <div class="flow-strip" aria-label="Allocation flow">
                 <span>Request</span><span>→</span><span>Matched resource</span><span>→</span><span>Allocation</span><span>→</span><span>Release</span>
@@ -1378,6 +1380,8 @@
 
 
         </div>
+
+        <div id="allocationLoadMore"></div>
 
 
     </section>

@@ -389,7 +389,7 @@ def test_source_does_not_keep_an_unsigned_resource_continuation():
     assert "erap/resource/page-token" in module
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     start = app.index("async function loadResources")
-    end = app.index("RESOURCE PAGE FILTER")
+    end = app.index("/* EMERGENCY_PAGE_START */")
     resource_load = app[start:end]
     assert "page_token" not in resource_load
     assert "atob(" not in resource_load

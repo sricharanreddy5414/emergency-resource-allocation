@@ -144,6 +144,10 @@ install("escapeHtml");
 install("getOperationalStatusLabel");
 install("getResourceStatus");
 install("applyResourcePageFilters");
+vm.runInContext(
+    "function resetRequestPagination() {}\nfunction resetAllocationPagination() {}",
+    context
+);
 install("clearTenantData");
 
 function query(url) {
