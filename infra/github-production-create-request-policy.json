@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublishCreateRequestFunctionOnly",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetAlias",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:PublishVersion",
+        "lambda:UpdateAlias"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-north-1:481838970142:function:create-request",
+        "arn:aws:lambda:eu-north-1:481838970142:function:create-request:*"
+      ]
+    }
+  ]
+}
