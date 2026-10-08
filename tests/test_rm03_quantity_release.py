@@ -177,6 +177,7 @@ def pool(**extra):
 
 def tables_for(item):
     resources = Resources(item)
+    everyday._transact_write = resources.transact_write_items
     allocations = Allocations()
     resources.allocation_items = allocations.allocation_items
     return {

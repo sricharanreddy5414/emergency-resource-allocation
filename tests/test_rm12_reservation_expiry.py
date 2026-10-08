@@ -280,6 +280,7 @@ def reserved_item(**extra):
 
 def tables_for(item, status="ACTIVE", fail_notification=False):
     store = item if isinstance(item, Store) else Store(item)
+    everyday._transact_write = store.transact_write_items
     return {
         "resources": store,
         "history": Rows(),

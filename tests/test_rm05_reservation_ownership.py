@@ -127,6 +127,7 @@ def resource():
 
 def tables_for(item=None):
     resources = Resources(item or resource())
+    everyday._transact_write = resources.transact_write_items
     return {
         "resources": resources,
         "allocations": type("Alloc", (), {"allocation_items": resources.allocation_items})(),

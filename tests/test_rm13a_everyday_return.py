@@ -1,8 +1,10 @@
 """RM-13A: everyday return commits the resource and allocation together."""
 
 import copy
+import inspect
 
 import pytest
+from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
 import everyday_operations as everyday
@@ -137,6 +139,7 @@ class Store:
 
 def _tables(resource, allocation):
     store = Store(resource, allocation)
+    everyday._transact_write = store.transact_write_items
     allocations = type("Alloc", (), {})()
     allocations.get_item = store.get_item
     return {
@@ -318,3 +321,149 @@ def test_allocation_for_another_resource_is_rejected():
     assert error.value.status_code == 404
     assert tables["resources"].item["operational_status"] == "ALLOCATED"
     assert tables["resources"].calls == []
+
+
+class _HighLevelResourceClient:
+    """Serializes AttributeValues again, which is what the resource client does."""
+
+    def __init__(self):
+        self.calls = []
+
+    def transact_write_items(self, TransactItems):
+        self.calls.append(TransactItems)
+        serializer = TypeSerializer()
+        for step in TransactItems:
+            body = step.get("Update") or step.get("Put") or {}
+            values = list((body.get("Key") or {}).values())
+            item = body.get("Item") or {}
+            if "allocation_id" in item:
+                values.append(item["allocation_id"])
+            for value in values:
+                if isinstance(value, dict) and "M" in serializer.serialize(value):
+                    raise ClientError(
+                        {
+                            "Error": {
+                                "Code": "TransactionCanceledException",
+                                "Message": "Transaction cancelled",
+                            },
+                            "CancellationReasons": [
+                                {
+                                    "Code": "ValidationError",
+                                    "Message": "The provided key element does not match the schema",
+                                },
+                                {"Code": "None"},
+                            ],
+                        },
+                        "TransactWriteItems",
+                    )
+
+
+class _LowLevelClient:
+    def __init__(self):
+        self.calls = []
+
+    def transact_write_items(self, TransactItems):
+        self.calls.append(copy.deepcopy(TransactItems))
+
+
+class _Sink:
+    def __init__(self):
+        self.rows = []
+
+    def put_item(self, Item, ConditionExpression=None):
+        self.rows.append(dict(Item))
+
+    def get_item(self, Key):
+        return {}
+
+
+def _string_key(value):
+    assert list(value) == ["S"]
+    assert isinstance(value["S"], str)
+    assert value["S"]
+    return value["S"]
+
+
+def test_everyday_transactions_reach_the_low_level_client_once(monkeypatch):
+    source = inspect.getsource(everyday._commit_everyday_allocation)
+    assert "_transact_write" in source
+    assert "meta" not in source
+
+    high = _HighLevelResourceClient()
+    low = _LowLevelClient()
+    monkeypatch.setattr(everyday, "_transact_write", low.transact_write_items)
+    sink = _Sink()
+
+    def tables_for(resource, allocation=None):
+        allocations = _Sink()
+        if allocation:
+            allocations.get_item = lambda Key: {"Item": dict(allocation)}
+        return {
+            "resources": type("Resources", (), {"meta": type("Meta", (), {"client": high})()})(),
+            "allocations": allocations,
+            "history": sink,
+            "audit": sink,
+        }
+
+    individual = {
+        "resource_id": "RM12-TEST-1",
+        "organization_id": ORG,
+        "Available": True,
+        "operational_status": "AVAILABLE",
+        "tracking_mode": "INDIVIDUAL",
+        "location_id": "LOC1",
+        "Type": "Kit",
+        "Location": "HQ",
+    }
+    everyday.everyday_allocate_individual({}, ORG, USER, "OPERATOR", individual, tables_for(individual))
+
+    reserved = dict(individual)
+    reserved["resource_id"] = "RM12-RESERVED"
+    reserved["Available"] = False
+    reserved["operational_status"] = "RESERVED"
+    reserved["reserved_by"] = USER
+    reserved["reserved_at"] = "2026-10-08T00:00:00+00:00"
+    everyday.everyday_allocate_individual({}, ORG, USER, "OPERATOR", reserved, tables_for(reserved))
+
+    pool = {
+        "resource_id": "RM12-QTY",
+        "organization_id": ORG,
+        "tracking_mode": "QUANTITY",
+        "operational_status": "AVAILABLE",
+        "Available": False,
+        "quantity_total": 10,
+        "quantity_available": 6,
+        "quantity_reserved": 0,
+        "quantity_allocated": 4,
+        "location_id": "LOC1",
+        "Type": "Supplies",
+        "Location": "HQ",
+    }
+    everyday.everyday_allocate_quantity({"quantity": 2}, ORG, USER, "OPERATOR", pool, tables_for(pool))
+
+    returned = dict(individual)
+    returned["resource_id"] = "RM12-RETURN"
+    returned["Available"] = False
+    returned["operational_status"] = "ALLOCATED"
+    allocation = _allocation("EVERYDAY-RETURN", "RM12-RETURN")
+    everyday.everyday_return(
+        {"allocation_id": "EVERYDAY-RETURN"},
+        ORG,
+        USER,
+        "OPERATOR",
+        returned,
+        tables_for(returned, allocation),
+    )
+
+    assert high.calls == []
+    assert len(low.calls) == 4
+    resource_ids = []
+    for call in low.calls:
+        resource_key = call[0]["Update"]["Key"]["resource_id"]
+        resource_ids.append(_string_key(resource_key))
+        second = call[1]
+        if "Put" in second:
+            _string_key(second["Put"]["Item"]["allocation_id"])
+        else:
+            _string_key(second["Update"]["Key"]["allocation_id"])
+    assert resource_ids == ["RM12-TEST-1", "RM12-RESERVED", "RM12-QTY", "RM12-RETURN"]
