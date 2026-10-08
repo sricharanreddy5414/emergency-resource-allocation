@@ -2488,14 +2488,172 @@ function updateAdminDashboard() {
    LOAD RESOURCES FROM API GATEWAY
 ========================================================= */
 
-async function loadResources() {
+/* RESOURCE_PAGE_START */
+const RESOURCE_PAGE_LIMIT = "100";
+let resourceNextPageToken = null;
+let resourcePageOrganizationId = "";
+let resourcePageLocationId = "";
+let resourcePageLoading = false;
+let resourcePageRequest = 0;
+
+function resetResourcePagination() {
+
+    resourcePageRequest += 1;
+    resourceNextPageToken = null;
+    resourcePageOrganizationId = "";
+    resourcePageLocationId = "";
+    resourcePageLoading = false;
+
+}
+
+
+function resourceInventoryQuery(pageToken) {
+
+    const params = new URLSearchParams(tenantQuery().replace(/^\?/, ""));
+
+    params.set("limit", RESOURCE_PAGE_LIMIT);
+
+    if (pageToken) {
+
+        params.set("page_token", pageToken);
+
+    }
+
+    return "?" + params.toString();
+
+}
+
+
+function readResourcePage(payload) {
+
+    let parsed = payload;
+
+    if (payload && typeof payload.body === "string") {
+
+        try {
+
+            parsed = JSON.parse(payload.body);
+
+        } catch (error) {
+
+            parsed = payload.body;
+
+        }
+
+    }
+
+    let page = [];
+
+    if (Array.isArray(parsed)) {
+
+        page = parsed;
+
+    } else if (parsed && Array.isArray(parsed.resources)) {
+
+        page = parsed.resources;
+
+    } else if (parsed && Array.isArray(parsed.Items)) {
+
+        page = parsed.Items;
+
+    } else if (parsed && parsed.body && Array.isArray(parsed.body)) {
+
+        page = parsed.body;
+
+    }
+
+    const token = parsed && !Array.isArray(parsed) && typeof parsed.next_token === "string" && parsed.next_token
+        ? parsed.next_token
+        : null;
+
+    return { page, token };
+
+}
+
+
+function renderResourceLoadMore() {
+
+    ["resourceLoadMore", "overviewResourceLoadMore"].forEach(id => {
+
+        const host = $(id);
+
+        if (!host) {
+
+            return;
+
+        }
+
+        host.replaceChildren();
+
+        if (!resourceNextPageToken) {
+
+            return;
+
+        }
+
+        const button = document.createElement("button");
+
+        button.type = "button";
+        button.className = "secondary-btn resource-load-more-btn";
+        button.textContent = "Load more";
+        button.disabled = resourcePageLoading;
+        button.addEventListener("click", () => loadResources({ append: true }));
+
+        host.appendChild(button);
+
+    });
+
+}
+
+
+async function loadResources(options) {
+
+    const append = Boolean(options && options.append);
+
+    if (resourcePageLoading) {
+
+        return;
+
+    }
+
+    if (append && !resourceNextPageToken) {
+
+        return;
+
+    }
+
+    const organizationId = selectedOrganizationId() || "";
+    const locationId = selectedLocationId() || "";
+
+    if (
+        append &&
+        (organizationId !== resourcePageOrganizationId || locationId !== resourcePageLocationId)
+    ) {
+
+        resetResourcePagination();
+
+        return loadResources();
+
+    }
+
+    const pageToken = append ? resourceNextPageToken : "";
+    const requestId = ++resourcePageRequest;
+
+    resourcePageLoading = true;
+
+    if (!append) {
+
+        resourceNextPageToken = null;
+        resourcePageOrganizationId = organizationId;
+        resourcePageLocationId = locationId;
+
+    }
+
+    renderResourceLoadMore();
 
     try {
 
-        showToast(
-            "Loading resources..."
-        );
-
+        showToast(append ? "Loading more resources..." : "Loading resources...");
 
         /*
            IMPORTANT:
@@ -2503,111 +2661,69 @@ async function loadResources() {
            This avoids unnecessary CORS preflight.
         */
 
-        const response =
-            await fetch(
-                RESOURCES_API_URL + tenantQuery(),
-                {
-                    method:
-                        "GET",
-
-                    headers: {
-                        "Authorization":
-                            "Bearer " + getIdToken()
-                    }
+        const response = await fetch(
+            RESOURCES_API_URL + resourceInventoryQuery(pageToken),
+            {
+                method: "GET",
+                headers: {
+                    "Authorization": "Bearer " + getIdToken()
                 }
-            );
+            }
+        );
 
+        if (requestId !== resourcePageRequest) {
+
+            return;
+
+        }
 
         if (!response.ok) {
 
-            throw new Error(
-                `API returned ${response.status}`
-            );
-
-        }
-
-
-        const data =
-            await response.json();
-
-
-        let parsed =
-            data;
-
-
-        if (
-            typeof data.body ===
-            "string"
-        ) {
+            let message = "";
 
             try {
 
-                parsed =
-                    JSON.parse(
-                        data.body
-                    );
+                message = getApiMessage(await response.json());
+
+            } catch (parseError) {
+
+                message = "";
 
             }
 
-            catch {
+            if (append && response.status === 400 && message === "Invalid page token") {
 
-                parsed =
-                    data.body;
+                resourceNextPageToken = null;
+                showToast("This resource page expired. Refresh to load the first page.");
+
+                return;
 
             }
 
-        }
+            if (append) {
 
+                showToast("Unable to load more resources from AWS");
 
-        if (
-            Array.isArray(parsed)
-        ) {
+                return;
 
-            resources =
-                parsed;
+            }
 
-        }
-
-        else if (
-            Array.isArray(
-                parsed.resources
-            )
-        ) {
-
-            resources =
-                parsed.resources;
+            throw new Error(`API returned ${response.status}`);
 
         }
 
-        else if (
-            Array.isArray(
-                parsed.Items
-            )
-        ) {
+        const received = readResourcePage(await response.json());
 
-            resources =
-                parsed.Items;
+        if (requestId !== resourcePageRequest) {
+
+            return;
 
         }
 
-        else if (
-            parsed.body &&
-            Array.isArray(
-                parsed.body
-            )
-        ) {
-
-            resources =
-                parsed.body;
-
-        }
-
-        else {
-
-            resources = [];
-
-        }
-
+        resources = append ? resources.concat(received.page) : received.page;
+        resourceNextPageToken = received.token;
+        resourcePageOrganizationId = organizationId;
+        resourcePageLocationId = locationId;
 
         normalizeResources();
 
@@ -2619,23 +2735,33 @@ async function loadResources() {
 
         renderResourcesPage();
 
-
         showToast(
-            `${resources.length} resources loaded from AWS`
+            resourceNextPageToken
+                ? `${resources.length} resources loaded. More are available.`
+                : `${resources.length} resources loaded from AWS`
         );
 
-    }
+    } catch (error) {
 
-    catch (error) {
+        if (requestId !== resourcePageRequest) {
 
-        console.error(
-            "Resource loading error:",
-            error
-        );
+            return;
 
+        }
+
+        if (append) {
+
+            console.error("Resource loading error: continuation request failed");
+            showToast("Unable to load more resources from AWS");
+
+            return;
+
+        }
+
+        console.error("Resource loading error:", error);
 
         resources = [];
-
+        resourceNextPageToken = null;
 
         updateDashboardStats();
         updateAnalytics();
@@ -2645,14 +2771,21 @@ async function loadResources() {
 
         renderResourcesPage();
 
+        showToast("Unable to load resources from AWS");
 
-        showToast(
-            "Unable to load resources from AWS"
-        );
+    } finally {
+
+        if (requestId === resourcePageRequest) {
+
+            resourcePageLoading = false;
+            renderResourceLoadMore();
+
+        }
 
     }
 
 }
+/* RESOURCE_PAGE_END */
 // =====================================================
 // REQUESTS - LIVE AWS DATA
 // =====================================================
@@ -3892,12 +4025,16 @@ function renderResourcesTable() {
             <tr>
 
                 <td colspan="4">
-                    No resources registered for this view.
+                    ${resourceNextPageToken
+                        ? "No resources in this page."
+                        : "No resources registered for this view."}
                 </td>
 
             </tr>
 
         `;
+
+        renderResourceLoadMore();
 
         return;
 
@@ -3997,12 +4134,16 @@ function renderResourcesPage() {
             <tr>
 
                 <td colspan="7">
-                    No resources registered. Add a resource for this organization to start allocation.
+                    ${resourceNextPageToken
+                        ? "No resources in this page."
+                        : "No resources registered. Add a resource for this organization to start allocation."}
                 </td>
 
             </tr>
 
         `;
+
+        renderResourceLoadMore();
 
         return;
 
@@ -7756,6 +7897,8 @@ async function deactivateCatalogType(url, typeId, idName) {
 
 function clearTenantData() {
 
+    resetResourcePagination();
+
     resources = [];
 
     requests = [];
@@ -7789,6 +7932,8 @@ function clearTenantData() {
     updateDashboardStats();
 
     updateAnalytics();
+
+    renderResourceLoadMore();
 
 }
 
