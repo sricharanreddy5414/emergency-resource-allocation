@@ -18,6 +18,7 @@ EXTRA_FUNCTIONS = (
     "erap-billing",
     "erap-billing-webhook",
     "erap-billing-expiry",
+    "erap-reservation-expiry",
 )
 
 
