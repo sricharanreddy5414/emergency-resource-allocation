@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import zipfile
@@ -284,6 +285,57 @@ def test_auto_release_rollback_refuses_when_alias_changes_before_update():
     assert ["lambda", "update-alias"] not in [call[:2] for call in state["calls"]]
 
 
+def _assert_trust_matches_only_approved_workflows(refs, equals):
+    approved = [
+        "release.yml",
+        "rollback.yml",
+        "release-exchange.yml",
+        "rollback-exchange.yml",
+        "release-resource.yml",
+        "rollback-resource.yml",
+        "release-reservation-expiry.yml",
+        "rollback-reservation-expiry.yml",
+        "release-allocation.yml",
+        "rollback-allocation.yml",
+        "release-create-request.yml",
+        "rollback-create-request.yml",
+        "release-auto-release.yml",
+        "rollback-auto-release.yml",
+    ]
+    repository = "sricharanreddy5414/emergency-resource-allocation"
+    form = re.compile(
+        rf"^{re.escape(repository)}/\.github/workflows/([A-Za-z0-9.-]+\.yml)@refs/heads/main$"
+    )
+    filenames = []
+    for workflow_ref in refs:
+        match = form.fullmatch(workflow_ref)
+        assert match, workflow_ref
+        assert "*" not in workflow_ref and "?" not in workflow_ref
+        filenames.append(match.group(1))
+    assert filenames == approved
+    sub = equals["token.actions.githubusercontent.com:sub"]
+    assert sub == (
+        "repo:sricharanreddy5414@253192966/emergency-resource-allocation@1374188159:environment:production"
+    )
+
+    def allowed(workflow_ref, *, subject=sub):
+        return subject == sub and workflow_ref in refs
+
+    for name in approved:
+        issued = f"{repository}/.github/workflows/{name}@refs/heads/main"
+        assert allowed(issued)
+        assert refs.count(issued) == 1
+    assert not allowed(f"{repository}/.github/workflows/ci.yml@refs/heads/main")
+    assert not allowed(f"{repository}/.github/workflows/deploy-backend.yml@refs/heads/main")
+    assert not allowed(f"{repository}/.github/workflows/release-auto-release.yml@refs/heads/feature")
+    assert not allowed(f"{repository}/.github/workflows/release.yml@refs/pull/18/merge")
+    assert not allowed("other/repo/.github/workflows/release.yml@refs/heads/main")
+    assert not allowed(
+        f"{repository}/.github/workflows/release.yml@refs/heads/main",
+        subject="repo:sricharanreddy5414@253192966/emergency-resource-allocation@1374188159:environment:development",
+    )
+
+
 def test_auto_release_workflows_are_manual_production_and_scoped():
     release = (ROOT / ".github" / "workflows" / "release-auto-release.yml").read_text(encoding="utf-8")
     rollback = (ROOT / ".github" / "workflows" / "rollback-auto-release.yml").read_text(encoding="utf-8")
@@ -364,13 +416,18 @@ def test_auto_release_workflows_are_manual_production_and_scoped():
         "arn:aws:lambda:eu-north-1:481838970142:function:emergency-resource-auto-release:*",
     ]
     trust = json.loads((ROOT / "infra" / "github-production-trust.json").read_text(encoding="utf-8"))
+    assert "StringLike" not in trust["Statement"][0]["Condition"]
     equals = trust["Statement"][0]["Condition"]["StringEquals"]
     refs = equals["token.actions.githubusercontent.com:job_workflow_ref"]
     prefix = "sricharanreddy5414/emergency-resource-allocation/.github/workflows/"
     assert f"{prefix}release-auto-release.yml@refs/heads/main" in refs
     assert f"{prefix}rollback-auto-release.yml@refs/heads/main" in refs
-    assert equals["token.actions.githubusercontent.com:repository"] == "sricharanreddy5414/emergency-resource-allocation"
-    assert equals["token.actions.githubusercontent.com:ref"] == "refs/heads/main"
-    assert "environment:production" in equals["token.actions.githubusercontent.com:sub"]
+    assert equals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
+    assert equals["token.actions.githubusercontent.com:sub"].endswith(":environment:production")
     assert "repo:*" not in json.dumps(trust)
-    assert '"*"' not in json.dumps(equals["token.actions.githubusercontent.com:job_workflow_ref"])
+    assert "*.yml" not in json.dumps(refs)
+    assert "*.yaml" not in json.dumps(refs)
+    assert '"*"' not in json.dumps(refs)
+    compact = json.dumps(trust, separators=(",", ":")).encode("utf-8")
+    assert len(compact) < 2048
+    _assert_trust_matches_only_approved_workflows(refs, equals)
