@@ -346,6 +346,7 @@ def test_created_individual_can_reserve_and_return(monkeypatch):
     monkeypatch.setattr(everyday, "_commit_everyday_allocation", lambda *args, **kwargs: None)
     everyday.everyday_allocate_individual({}, ORG, ACTOR, "OPERATOR", table.item, tables)
     monkeypatch.setattr(everyday, "_commit_everyday_allocation", commit_allocation)
+    everyday._transact_write = table.transact_write_items
     assert table.history[-1]["reason"] == "EVERYDAY_RESOURCE_ALLOCATED"
     assert table.history[-1]["actor_sub"] == ACTOR
 

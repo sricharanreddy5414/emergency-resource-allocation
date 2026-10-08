@@ -291,6 +291,7 @@ class Subscriptions:
 
 def store(resource):
     table = ConditionalTable("Resources", [resource])
+    everyday._transact_write = table.transact_write_items
     allocations = type("Alloc", (), {"name": "Allocations", "allocation_items": table.allocation_items, "meta": table.meta})()
     allocations.get_item = lambda Key: table.get_item(Key)
     allocations.put_item = table.put_item

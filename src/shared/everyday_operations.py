@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
+import boto3
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
@@ -81,19 +82,17 @@ def _encoded(values):
     return encoded
 
 
+def _dynamodb_client():
+    return boto3.client("dynamodb")
+
+
 def _transact_write(transact_items):
-    """Low-level TransactWriteItems. Tests replace the table client instead."""
-    import boto3
-
-    boto3.client("dynamodb").transact_write_items(TransactItems=transact_items)
+    """Execute TransactWriteItems. Tests may replace this helper."""
+    _dynamodb_client().transact_write_items(TransactItems=transact_items)
 
 
-def _commit_everyday_allocation(tables, transact_items):
-    """Commit the resource update and allocation insert together."""
-    client = getattr(getattr(tables["resources"], "meta", None), "client", None)
-    if client is not None and hasattr(client, "transact_write_items"):
-        client.transact_write_items(TransactItems=transact_items)
-        return
+def _commit_everyday_allocation(_tables, transact_items):
+    """Commit pre-encoded items once through the low-level DynamoDB client."""
     _transact_write(transact_items)
 
 

@@ -196,6 +196,7 @@ class AuditTable:
 
 def tables(resource):
     table = Table("Resources", [resource])
+    everyday._transact_write = table.transact_write_items
     allocations = type("Alloc", (), {"name": "Allocations", "allocation_items": {}, "meta": table.meta})()
     allocations.allocation_items = table.allocation_items
     allocations.get_item = lambda Key: table.get_item(Key)
