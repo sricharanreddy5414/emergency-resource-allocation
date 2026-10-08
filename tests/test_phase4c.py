@@ -539,7 +539,7 @@ def test_empty_location_can_be_deactivated(monkeypatch):
     assert locations.puts[-1]["status"] == "INACTIVE"
 
 
-def test_auto_release_filters_and_is_idempotent():
+def test_auto_release_filters_and_is_idempotent(monkeypatch):
     now = datetime(2026, 9, 27, tzinfo=timezone.utc)
     allocation = {
         "allocation_id": "A1",
@@ -605,6 +605,20 @@ def test_auto_release_filters_and_is_idempotent():
         "history": Store(),
         "audit": None,
     }
+    import emergency_release
+    from transact_memory import apply_transact
+
+    def _transact(items):
+        apply_transact(
+            {
+                "Resources": resources.items,
+                "Allocations": allocations.items,
+                "EmergencyRequests": requests.items,
+            },
+            items,
+        )
+
+    monkeypatch.setattr(emergency_release, "_transact_write", _transact)
     first = auto_release.lambda_handler({}, None, store=store, now=now)
     second = auto_release.lambda_handler({}, None, store=store, now=now)
 
@@ -613,6 +627,7 @@ def test_auto_release_filters_and_is_idempotent():
     assert allocations.scans == 0
     assert allocations.queries[0]["IndexName"] == "AllocationStatusIndex"
     assert resources.items[0]["Available"] is True
+    assert resources.items[0]["operational_status"] == "AVAILABLE"
 
 
 def test_auto_release_skips_other_tenants_and_other_holders():

@@ -1,4 +1,4 @@
-"""Explicit response fields for emergency requests and allocations.
+"""Explicit response fields for resources, emergency requests, and allocations.
 
 Stored items may contain implementation attributes. API responses copy only
 the names in these tuples. Authorization happens before this projection.
@@ -21,6 +21,40 @@ REQUEST_FIELDS = (
     "request_type_id",
     "attributes",
     "matching_config",
+)
+
+# Fields the resource screens read back: list, edit form, filters, and exchange
+# offer choices. organization_id stays because the list response identifies the
+# tenant. Discovery index keys, reservation owner, and other stored names are
+# omitted here.
+RESOURCE_FIELDS = (
+    "resource_id",
+    "organization_id",
+    "name",
+    "Type",
+    "resource_type_id",
+    "Location",
+    "location_id",
+    "Available",
+    "visibility",
+    "attributes",
+    "operational_status",
+    "tracking_mode",
+    "quantity_available",
+    "public_name",
+    "public_description",
+    "public_contact",
+    "show_availability",
+)
+
+# Status history modal. actor_sub is stored for audit and is not returned.
+RESOURCE_HISTORY_FIELDS = (
+    "previous_status",
+    "new_status",
+    "reason",
+    "changed_at",
+    "request_id",
+    "allocation_id",
 )
 
 ALLOCATION_FIELDS = (
@@ -67,3 +101,11 @@ def request_view(item):
 
 def allocation_view(item):
     return _view(item, ALLOCATION_FIELDS)
+
+
+def resource_view(item):
+    return _view(item, RESOURCE_FIELDS)
+
+
+def resource_history_view(item):
+    return _view(item, RESOURCE_HISTORY_FIELDS)

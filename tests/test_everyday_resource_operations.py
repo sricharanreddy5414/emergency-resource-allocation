@@ -76,6 +76,9 @@ class Table:
             if item.get("operational_status") not in (None, "AVAILABLE"):
                 raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
 
+        if "reserved_by = :actor" in condition and item.get("reserved_by") != values.get(":actor"):
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+
         if "operational_status = :allocated" in condition and item.get("operational_status") not in (
             None,
             "ALLOCATED",
@@ -128,33 +131,62 @@ class Table:
             self.history.append(Item)
 
     def transact_write_items(self, TransactItems):
-        for step in TransactItems:
-            if "Update" in step:
-                update = step["Update"]
-                if "resource_id" in update["Key"]:
-                    key = update["Key"]["resource_id"]["S"]
-                    item = self.items[key]
-                    condition = update.get("ConditionExpression", "")
-                    if "Available = :true" in condition and not item.get("Available", True):
-                        raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "TransactWriteItems")
-                    expr = update.get("UpdateExpression", "")
-                    if "operational_status = :allocated" in expr:
-                        item["operational_status"] = "ALLOCATED"
-                        item["Available"] = False
-                    if "operational_status = :available" in expr:
-                        item["operational_status"] = "AVAILABLE"
-                        item["Available"] = True
-                elif "allocation_id" in update["Key"]:
-                    allocation_id = update["Key"]["allocation_id"]["S"]
-                    alloc = self.allocation_items[allocation_id]
-                    if alloc.get("status") != "OPEN":
-                        raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "TransactWriteItems")
-                    alloc["status"] = "RETURNED"
-            if "Put" in step:
-                alloc = {}
-                for key, value in step["Put"]["Item"].items():
-                    alloc[key] = list(value.values())[0]
-                self.allocation_items[alloc["allocation_id"]] = alloc
+        items_before = {key: dict(value) for key, value in self.items.items()}
+        allocations_before = {key: dict(value) for key, value in self.allocation_items.items()}
+        try:
+            for step in TransactItems:
+                if "Update" in step:
+                    update = step["Update"]
+                    if "resource_id" in update["Key"]:
+                        key = update["Key"]["resource_id"]["S"]
+                        item = self.items[key]
+                        condition = update.get("ConditionExpression", "")
+                        if "Available = :true" in condition and not item.get("Available", True):
+                            raise ClientError(
+                                {"Error": {"Code": "ConditionalCheckFailedException"}},
+                                "TransactWriteItems",
+                            )
+                        if "operational_status = :reserved" in condition and item.get("operational_status") != "RESERVED":
+                            raise ClientError(
+                                {"Error": {"Code": "ConditionalCheckFailedException"}},
+                                "TransactWriteItems",
+                            )
+                        expr = update.get("UpdateExpression", "")
+                        if "operational_status = :allocated" in expr:
+                            item["operational_status"] = "ALLOCATED"
+                            item["Available"] = False
+                            if "REMOVE" in expr:
+                                item.pop("reserved_by", None)
+                                item.pop("reserved_at", None)
+                        if "operational_status = :available" in expr:
+                            item["operational_status"] = "AVAILABLE"
+                            item["Available"] = True
+                    elif "allocation_id" in update["Key"]:
+                        allocation_id = update["Key"]["allocation_id"]["S"]
+                        alloc = self.allocation_items[allocation_id]
+                        if alloc.get("status") != "OPEN":
+                            raise ClientError(
+                                {"Error": {"Code": "ConditionalCheckFailedException"}},
+                                "TransactWriteItems",
+                            )
+                        alloc["status"] = "RETURNED"
+                if "Put" in step:
+                    alloc = {}
+                    for key, value in step["Put"]["Item"].items():
+                        alloc[key] = list(value.values())[0]
+                    if "attribute_not_exists" in (step["Put"].get("ConditionExpression") or ""):
+                        if alloc["allocation_id"] in self.allocation_items:
+                            raise ClientError(
+                                {"Error": {"Code": "ConditionalCheckFailedException"}},
+                                "TransactWriteItems",
+                            )
+                    self.allocation_items[alloc["allocation_id"]] = alloc
+        except ClientError:
+            self.items.clear()
+            self.items.update(items_before)
+            self.allocation_items.clear()
+            self.allocation_items.update(allocations_before)
+            raise
 
 
 class AuditTable:

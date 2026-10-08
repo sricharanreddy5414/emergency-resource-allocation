@@ -44,12 +44,18 @@ SHARED = {
 }
 
 PACKAGES = {
-    "get-resources": {**SHARED, "lambda_function.py": "src/resource/handler.py"},
+    "get-resources": {
+        **SHARED,
+        "emergency_release.py": "src/shared/emergency_release.py",
+        "resource_page_token.py": "src/shared/resource_page_token.py",
+        "lambda_function.py": "src/resource/handler.py",
+    },
     "create-request": {**SHARED, "lambda_function.py": "src/request/handler.py"},
     "emergency-resource-allocation": {**SHARED, "lambda_function.py": "src/allocation/service.py"},
     "emergency-resource-auto-release": {
         "audit.py": "src/shared/audit.py",
         "observability.py": "src/shared/observability.py",
+        "emergency_release.py": "src/shared/emergency_release.py",
         "lambda_function.py": "src/auto_release/handler.py",
     },
     "erap-catalog": {**SHARED, "handler.py": "src/catalog/handler.py"},
