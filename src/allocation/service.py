@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
 from access import (
@@ -219,6 +220,87 @@ def _resources_for_match(organization_id, request, cache):
     return cache["organization"]
 
 
+_serializer = TypeSerializer()
+
+
+def _dynamodb_client():
+    import boto3
+
+    return boto3.client("dynamodb")
+
+
+def _transact_write(transact_items):
+    """Execute TransactWriteItems. Tests may replace this helper."""
+    _dynamodb_client().transact_write_items(TransactItems=transact_items)
+
+
+def _encoded(values):
+    encoded = {}
+    for key, value in values.items():
+        if value is None:
+            continue
+        encoded[key] = _serializer.serialize(value)
+    return encoded
+
+
+def _claim_transact_items(resource_id, organization_id, allocation, request_id):
+    """Resource claim, allocation insert, and request transition are one transaction."""
+    return [
+        {
+            "Update": {
+                "TableName": "Resources",
+                "Key": _encoded({"resource_id": resource_id}),
+                "UpdateExpression": "SET #a = :false, operational_status = :op_allocated",
+                "ConditionExpression": EMERGENCY_CLAIM_CONDITION,
+                "ExpressionAttributeNames": {"#a": "Available"},
+                "ExpressionAttributeValues": _encoded(
+                    {
+                        ":false": False,
+                        ":true": True,
+                        ":organization_id": organization_id,
+                        ":op_available": "AVAILABLE",
+                        ":indiv": "INDIVIDUAL",
+                        ":op_allocated": "ALLOCATED",
+                    }
+                ),
+            }
+        },
+        {
+            "Put": {
+                "TableName": "Allocations",
+                "Item": _encoded(allocation),
+                "ConditionExpression": "attribute_not_exists(allocation_id)",
+            }
+        },
+        {
+            "Update": {
+                "TableName": "EmergencyRequests",
+                "Key": _encoded({"request_id": request_id}),
+                "UpdateExpression": "SET #s = :status",
+                "ConditionExpression": "#s = :pending AND organization_id = :organization_id",
+                "ExpressionAttributeNames": {"#s": "Status"},
+                "ExpressionAttributeValues": _encoded(
+                    {
+                        ":status": "ALLOCATED",
+                        ":pending": "PENDING",
+                        ":organization_id": organization_id,
+                    }
+                ),
+            }
+        },
+    ]
+
+
+def _commit_emergency_claim(transact_items):
+    """Commit pre-encoded claim items once through the low-level DynamoDB client."""
+    _transact_write(transact_items)
+
+
+def _claim_cancelled(error):
+    reasons = error.response.get("CancellationReasons") or []
+    return [str((reason or {}).get("Code") or "None") for reason in reasons]
+
+
 def _mark_unmatchable(cache, resource_id):
     for pool in cache.values():
         for item in pool:
@@ -338,39 +420,6 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         resource_id = resource.get("resource_id")
         allocated_at = datetime.now(timezone.utc).isoformat()
 
-        try:
-            resources_table().update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression="SET #a = :false, operational_status = :op_allocated",
-                ConditionExpression=EMERGENCY_CLAIM_CONDITION,
-                ExpressionAttributeNames={"#a": "Available"},
-                ExpressionAttributeValues={
-                    ":false": False,
-                    ":true": True,
-                    ":organization_id": organization_id,
-                    ":op_available": "AVAILABLE",
-                    ":indiv": "INDIVIDUAL",
-                    ":op_allocated": "ALLOCATED",
-                },
-            )
-        except ClientError as error:
-            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                _mark_unmatchable(resource_cache, resource_id)
-                continue
-
-            from observability import log_event
-
-            log_event(
-                "ERROR",
-                "allocation",
-                "reserve",
-                "failed",
-                organization_id=organization_id,
-                resource_id=resource_id,
-                error_code=error.response["Error"]["Code"],
-            )
-            return response(500, {"message": "Unable to process allocation"})
-
         allocation_id = "ALLOC-" + current_request_id
         allocation = {
             "allocation_id": allocation_id,
@@ -385,36 +434,36 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
             "allocated_at": allocated_at,
         }
         try:
-            allocations_table().put_item(
-                Item=allocation,
-                ConditionExpression="attribute_not_exists(allocation_id)",
-            )
-            requests_table().update_item(
-                Key={"request_id": current_request_id},
-                UpdateExpression="SET #s = :status",
-                ConditionExpression="#s = :pending AND organization_id = :organization_id",
-                ExpressionAttributeNames={"#s": "Status"},
-                ExpressionAttributeValues={
-                    ":status": "ALLOCATED",
-                    ":pending": "PENDING",
-                    ":organization_id": organization_id,
-                },
+            _commit_emergency_claim(
+                _claim_transact_items(
+                    resource_id,
+                    organization_id,
+                    allocation,
+                    current_request_id,
+                )
             )
         except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
-            resources_table().update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression="SET Available = :available, operational_status = :op_available",
-                ConditionExpression="organization_id = :organization_id AND Available = :held",
-                ExpressionAttributeValues={
-                    ":available": True,
-                    ":held": False,
-                    ":organization_id": organization_id,
-                    ":op_available": "AVAILABLE",
-                },
+            code = error.response["Error"]["Code"]
+            if code == "TransactionCanceledException":
+                reasons = _claim_cancelled(error)
+                if reasons and reasons[0] == "ConditionalCheckFailed":
+                    _mark_unmatchable(resource_cache, resource_id)
+                    continue
+                if any(reason == "ConditionalCheckFailed" for reason in reasons[1:]):
+                    return response(409, {"message": "Request is not eligible for allocation"})
+
+            from observability import log_event
+
+            log_event(
+                "ERROR",
+                "allocation",
+                "reserve",
+                "failed",
+                organization_id=organization_id,
+                resource_id=resource_id,
+                error_code=code,
             )
-            return response(409, {"message": "Request is not eligible for allocation"})
+            return response(500, {"message": "Unable to process allocation"})
 
         history_table().put_item(
             Item={
