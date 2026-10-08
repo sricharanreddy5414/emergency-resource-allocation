@@ -17,6 +17,7 @@ import ensure_reservation_expiry
 import everyday_operations as everyday
 import lifecycle_operations as lifecycle
 import reservation_expiry
+import reservation_expiry_handler
 from api_views import RESOURCE_FIELDS, resource_history_view
 from lambda_manifest import BILLING_PACKAGES, PACKAGES, package_map
 from resource_state import (
@@ -671,3 +672,73 @@ def test_emergency_auto_release_duration_is_unchanged():
     source = (ROOT / "src" / "auto_release" / "handler.py").read_text(encoding="utf-8")
     assert "RELEASE_AFTER_MINUTES = 30" in source
     assert reservation_due_values(WHEN)["reservation_expires_at"] == DUE
+
+
+class _RequestContext:
+    def __init__(self, aws_request_id):
+        self.aws_request_id = aws_request_id
+
+
+def _json_logs(capsys):
+    events = []
+    for line in capsys.readouterr().out.splitlines():
+        text = line.strip()
+        if text.startswith("{"):
+            events.append(json.loads(text))
+    return events
+
+
+def test_lambda_request_id_is_the_correlation_id(monkeypatch, capsys):
+    tables = tables_for(reserved_item())
+
+    def run(now=None, tables=None, limit=reservation_expiry.BATCH_LIMIT, invocation_id=""):
+        del now, tables, limit
+        return reservation_expiry.run_reservation_expiry(
+            datetime.fromisoformat(DUE),
+            tables_for_run,
+            invocation_id=invocation_id,
+        )
+
+    tables_for_run = tables
+    monkeypatch.setattr(reservation_expiry_handler, "run_reservation_expiry", run)
+    result = reservation_expiry_handler.lambda_handler({}, _RequestContext("test-request-123"))
+    assert result["expired"] == 1
+    assert tables["resources"].items["R1"]["operational_status"] == "AVAILABLE"
+    logs = _json_logs(capsys)
+    assert logs
+    assert {item["correlation_id"] for item in logs} == {"test-request-123"}
+    assert all(item["correlation_id"] != "reservation-expiry" for item in logs)
+    for item in logs:
+        assert "actor_sub" not in item
+        assert "authorization" not in item
+        assert "password" not in item
+        assert "token" not in item
+    rendered = json.dumps(logs)
+    assert "Bearer " not in rendered
+    assert "eyJ" not in rendered
+
+
+def test_separate_invocations_keep_separate_correlation_ids(capsys):
+    first = tables_for(reserved_item())
+    second = tables_for(reserved_item())
+    clock = datetime.fromisoformat(DUE)
+    reservation_expiry.run_reservation_expiry(clock, first, invocation_id="request-one")
+    reservation_expiry.run_reservation_expiry(clock, second, invocation_id="request-two")
+    logs = _json_logs(capsys)
+    seen = {item["correlation_id"] for item in logs}
+    assert "request-one" in seen
+    assert "request-two" in seen
+    assert "reservation-expiry" not in seen
+    assert first["resources"].items["R1"]["operational_status"] == "AVAILABLE"
+    assert second["resources"].items["R1"]["operational_status"] == "AVAILABLE"
+
+
+def test_fixed_correlation_string_is_not_the_invocation_id():
+    worker = (ROOT / "src" / "shared" / "reservation_expiry.py").read_text(encoding="utf-8")
+    entry = (ROOT / "src" / "reservation_expiry_handler.py").read_text(encoding="utf-8")
+    assert '"reservation-expiry"' not in worker.split("begin_request", 1)[1].split("now_text", 1)[0]
+    assert "context.aws_request_id" in entry
+    assert "del event, context" not in entry
+    packaged = package_map()["erap-reservation-expiry"]
+    assert packaged["observability.py"].endswith("src/shared/observability.py")
+    assert packaged["handler.py"].endswith("src/reservation_expiry_handler.py")
