@@ -111,6 +111,25 @@ REQUIRED = {
         "security_scan.py",
         "create-request",
     ],
+    "release-auto-release.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "release_auto_release.py",
+        "release_provenance.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "emergency-resource-auto-release",
+    ],
+    "rollback-auto-release.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "rollback_auto_release.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "emergency-resource-auto-release",
+    ],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
 
@@ -330,6 +349,65 @@ def _resource_rollback_is_unsafe(text):
     return any(item in text for item in forbidden)
 
 
+def _auto_release_release_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_resource.py",
+        "release_allocation.py",
+        "release_create_request.py",
+        "release_exchange.py",
+        "release_reservation_expiry.py",
+        "rollback_auto_release.py",
+        "update-function-configuration",
+        "put-role-policy",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-allocation",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-locations",
+        "erap-create-organization",
+        "erap-get-organization",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+    )
+    return any(item in text for item in forbidden)
+
+
+def _auto_release_rollback_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_auto_release.py",
+        "release_resource.py",
+        "release_allocation.py",
+        "release_create_request.py",
+        "update-function-code",
+        "publish-version",
+        "update-function-configuration",
+        "put-role-policy",
+        "inputs.commit",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-allocation",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-locations",
+        "erap-create-organization",
+        "erap-get-organization",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+    )
+    return any(item in text for item in forbidden)
+
+
 def _production_trust_refs():
     trust = json.loads((ROOT / "infra" / "github-production-trust.json").read_text(encoding="utf-8"))
     statement = trust["Statement"][0]
@@ -380,6 +458,10 @@ def main():
             raise SystemExit("create-request release must publish only create-request")
         if name == "rollback-create-request.yml" and _create_request_rollback_is_unsafe(text):
             raise SystemExit("create-request rollback must move only an existing create-request version")
+        if name == "release-auto-release.yml" and _auto_release_release_is_unsafe(text):
+            raise SystemExit("auto-release release must publish only emergency-resource-auto-release")
+        if name == "rollback-auto-release.yml" and _auto_release_rollback_is_unsafe(text):
+            raise SystemExit("auto-release rollback must move only an existing emergency-resource-auto-release version")
         if name in {"release.yml", "rollback.yml", "release-exchange.yml", "rollback-exchange.yml"} and "release_resource.py" in text:
             raise SystemExit(f"{name} must not publish get-resources")
         if yaml is not None:
@@ -409,6 +491,8 @@ def main():
             "rollback-allocation.yml",
             "release-create-request.yml",
             "rollback-create-request.yml",
+            "release-auto-release.yml",
+            "rollback-auto-release.yml",
         )
     ]
     if _production_trust_refs() != expected_refs:
@@ -481,6 +565,22 @@ def main():
             raise SystemExit("create-request production policy is not limited to create-request")
         if "lambda:CreateAlias" in action_set:
             raise SystemExit("create-request production policy must not allow CreateAlias")
+    auto_release_policy = json.loads(
+        (ROOT / "infra" / "github-production-auto-release-policy.json").read_text(encoding="utf-8")
+    )
+    auto_release_resources = {
+        "arn:aws:lambda:eu-north-1:481838970142:function:emergency-resource-auto-release",
+        "arn:aws:lambda:eu-north-1:481838970142:function:emergency-resource-auto-release:*",
+    }
+    for statement in auto_release_policy["Statement"]:
+        actions = statement["Action"]
+        resources = statement["Resource"]
+        action_set = set(actions if isinstance(actions, list) else [actions])
+        resource_set = set(resources if isinstance(resources, list) else [resources])
+        if action_set != allowed_actions or resource_set != auto_release_resources:
+            raise SystemExit("auto-release production policy is not limited to emergency-resource-auto-release")
+        if "lambda:CreateAlias" in action_set:
+            raise SystemExit("auto-release production policy must not allow CreateAlias")
     print("workflow check passed")
     return 0
 
