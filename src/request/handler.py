@@ -9,7 +9,7 @@ from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
 from api_views import request_view
-from observability import begin_request, error_body, load_object, log_result
+from observability import begin_request, error_body, load_object, log_event, log_result
 
 
 def response(status_code, body):
@@ -59,32 +59,84 @@ def request_types_table():
 
 
 def update_request(proposed, organization_id, actor_sub, actor_role, request_id):
+    """Update the fields PUT /requests already changes, only while the request is pending.
+
+    Allocation moves Status with its own conditional update. Replacing the row
+    after this read could write PENDING back over ALLOCATED.
+    """
     current = requests_table().get_item(Key={"request_id": request_id}).get("Item")
     require_owned(current, organization_id)
 
     if str(current.get("Status", "")).upper() != "PENDING":
         return response(409, {"message": "Request is not eligible for update"})
 
-    current.update(
-        {
-            "ResourceType": proposed["ResourceType"],
-            "Location": proposed["Location"],
-            "location_id": proposed["location_id"],
-            "Priority": proposed["Priority"],
-            "organization_id": organization_id,
-        }
-    )
+    names = {
+        "#resource_type": "ResourceType",
+        "#location": "Location",
+        "#priority": "Priority",
+        "#status": "Status",
+    }
+    values = {
+        ":resource_type": proposed["ResourceType"],
+        ":location": proposed["Location"],
+        ":location_id": proposed["location_id"],
+        ":priority": proposed["Priority"],
+        ":organization_id": organization_id,
+        ":pending": "PENDING",
+    }
+    assignments = [
+        "#resource_type = :resource_type",
+        "#location = :location",
+        "location_id = :location_id",
+        "#priority = :priority",
+    ]
+    updated = dict(current)
+    updated["ResourceType"] = proposed["ResourceType"]
+    updated["Location"] = proposed["Location"]
+    updated["location_id"] = proposed["location_id"]
+    updated["Priority"] = proposed["Priority"]
 
     if proposed.get("request_type_id"):
-        current["request_type_id"] = proposed["request_type_id"]
-        current["attributes"] = proposed.get("attributes") or {}
-        current["matching_config"] = proposed.get("matching_config") or {}
+        names["#request_type_id"] = "request_type_id"
+        names["#attributes"] = "attributes"
+        names["#matching_config"] = "matching_config"
+        values[":request_type_id"] = proposed["request_type_id"]
+        values[":attributes"] = proposed.get("attributes") or {}
+        values[":matching_config"] = proposed.get("matching_config") or {}
+        assignments.extend(
+            [
+                "#request_type_id = :request_type_id",
+                "#attributes = :attributes",
+                "#matching_config = :matching_config",
+            ]
+        )
+        updated["request_type_id"] = proposed["request_type_id"]
+        updated["attributes"] = proposed.get("attributes") or {}
+        updated["matching_config"] = proposed.get("matching_config") or {}
 
-    requests_table().put_item(
-        Item=current,
-        ConditionExpression="organization_id = :organization_id",
-        ExpressionAttributeValues={":organization_id": organization_id},
-    )
+    try:
+        requests_table().update_item(
+            Key={"request_id": request_id},
+            UpdateExpression="SET " + ", ".join(assignments),
+            ConditionExpression="organization_id = :organization_id AND #status = :pending",
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code")
+        if code != "ConditionalCheckFailedException":
+            raise
+        log_event(
+            "WARNING",
+            "requests",
+            "request.update",
+            "conflict",
+            organization_id=organization_id,
+            request_id=request_id,
+            error_code=code,
+        )
+        return response(409, {"message": "Request is not eligible for update"})
+
     record_audit(
         audit_table(),
         build_audit_event(
@@ -94,10 +146,10 @@ def update_request(proposed, organization_id, actor_sub, actor_role, request_id)
             "request.update",
             "request",
             request_id,
-            location_id=current["location_id"],
+            location_id=updated["location_id"],
         ),
     )
-    return response(200, {"message": "Request updated", "request": request_view(current)})
+    return response(200, {"message": "Request updated", "request": request_view(updated)})
 
 
 def active_request_type(organization_id, request_type_id):

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from botocore.exceptions import ClientError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [
@@ -102,6 +103,40 @@ class OrgTable:
             item for item in self.items if item.get("request_id") != Item.get("request_id")
         ]
         self.items.append(dict(Item))
+
+    def update_item(self, Key, UpdateExpression, ConditionExpression, ExpressionAttributeNames=None, ExpressionAttributeValues=None):
+        names = ExpressionAttributeNames or {}
+        values = ExpressionAttributeValues or {}
+        item = None
+        for stored in self.items:
+            if all(stored.get(key) == value for key, value in Key.items()):
+                item = stored
+                break
+        if item is None or not _condition_holds(item, ConditionExpression, names, values):
+            raise ClientError(
+                {"Error": {"Code": "ConditionalCheckFailedException", "Message": "The conditional request failed"}},
+                "UpdateItem",
+            )
+        expression = UpdateExpression.strip()
+        if not expression.startswith("SET "):
+            raise AssertionError("request update must set fields")
+        for assignment in expression[4:].split(","):
+            left, right = assignment.split("=", 1)
+            item[_attr(left.strip(), names)] = values[right.strip()]
+
+
+def _attr(token, names):
+    if token.startswith("#"):
+        return names[token]
+    return token
+
+
+def _condition_holds(item, expression, names, values):
+    for clause in expression.split(" AND "):
+        left, right = clause.split("=", 1)
+        if item.get(_attr(left.strip(), names)) != values[right.strip()]:
+            return False
+    return True
 
 
 def _pairs(expression):
