@@ -48,7 +48,7 @@ Emergency rollback of an API-key version is `UpdateSecretVersionStage` back to t
 
 ## 6. API Gateway
 
-API `4c6dni17l3`, stage `dev`, deployment `tr1rz2`. Protected methods use authorizer `y0hzhr`. `GET /public/resources` and `POST /billing/webhook` are the unauthenticated routes. The webhook still requires a valid Razorpay signature. Default throttle is 20 requests per second, burst 40. Public resource `GET` is 5 per second, burst 10. `scripts/verify_hardening.py` checks those values. No route was changed.
+API `4c6dni17l3`, stage `dev`, deployment `59k29o`. Protected methods use authorizer `y0hzhr`. `GET /public/resources` and `POST /billing/webhook` are the unauthenticated routes. The webhook still requires a valid Razorpay signature. Default throttle is 20 requests per second, burst 40. Public resource `GET` is 5 per second, burst 10. `scripts/verify_hardening.py` checks those values. No route was changed.
 
 ## 7. CORS
 
@@ -74,7 +74,7 @@ All 15 functions run Python 3.14 on x86_64, with no VPC, no layers, no dead-lett
 
 ## 12. CloudWatch
 
-Phase 11B structured logs drop authorization headers, bearer tokens, JWTs, passwords, MFA values, webhook secrets, signatures, raw QR tokens, and raw Cognito subjects. The subject in CloudWatch is a SHA-256 prefix. DynamoDB audit rows still store the raw subject. Log groups are kept for 30 days. Alarms publish to SNS, and no email endpoint is subscribed.
+Phase 11B structured logs drop authorization headers, bearer tokens, JWTs, passwords, MFA values, webhook secrets, signatures, raw QR tokens, and raw Cognito subjects. The subject in CloudWatch is a SHA-256 prefix. DynamoDB audit rows still store the raw subject. Log groups that already have a retention policy are kept for 30 days. The repository policy for reservation-expiry is 30 days, and that live retention has not been applied. Alarms publish to SNS topic `ERAP-Production-Alarms`, which has one confirmed email subscription. The address is not stored in this repository.
 
 ## 13. GitHub Actions
 
@@ -108,4 +108,4 @@ The shared operational role can still write the original resource, request, allo
 
 ## 18. Deferred improvements
 
-Role split for the four operational functions. Removing or rewriting the unused root `lambda_function.py`. Adding an email subscriber for alarms. Code signing, reserved concurrency, and a dead-letter queue were not justified by a defect found here.
+Role split for the four operational functions. Removing or rewriting the unused root `lambda_function.py`. Code signing, reserved concurrency, and a dead-letter queue were not justified by a defect found here.
