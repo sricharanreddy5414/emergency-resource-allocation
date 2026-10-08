@@ -294,6 +294,7 @@ def test_allocation_workflows_are_manual_production_and_scoped():
     ]
     trust = json.loads((ROOT / "infra" / "github-production-trust.json").read_text(encoding="utf-8"))
     refs = trust["Statement"][0]["Condition"]["StringEquals"]["token.actions.githubusercontent.com:job_workflow_ref"]
-    assert "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release.yml@refs/heads/main" in refs
-    assert "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-allocation.yml@refs/heads/main" in refs
-    assert "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-allocation.yml@refs/heads/main" in refs
+    prefix = "sricharanreddy5414/emergency-resource-allocation/.github/workflows/"
+    assert f"{prefix}release.yml@refs/heads/main" in refs
+    assert f"{prefix}release-allocation.yml@refs/heads/main" in refs
+    assert f"{prefix}rollback-allocation.yml@refs/heads/main" in refs

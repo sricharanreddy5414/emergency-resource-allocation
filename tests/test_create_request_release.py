@@ -300,5 +300,5 @@ def test_create_request_workflows_are_manual_production_and_scoped():
     prefix = "sricharanreddy5414/emergency-resource-allocation/.github/workflows/"
     assert f"{prefix}release-create-request.yml@refs/heads/main" in refs
     assert f"{prefix}rollback-create-request.yml@refs/heads/main" in refs
-    assert trust["Statement"][0]["Condition"]["StringEquals"]["token.actions.githubusercontent.com:ref"] == "refs/heads/main"
+    assert all(item.endswith("@refs/heads/main") for item in refs)
     assert "environment:production" in trust["Statement"][0]["Condition"]["StringEquals"]["token.actions.githubusercontent.com:sub"]

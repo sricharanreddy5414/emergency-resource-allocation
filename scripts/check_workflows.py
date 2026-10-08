@@ -1,6 +1,7 @@
 """Check the workflow files without deploying."""
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -408,11 +409,30 @@ def _auto_release_rollback_is_unsafe(text):
     return any(item in text for item in forbidden)
 
 
+_WORKFLOW_REF = re.compile(
+    rf"^{re.escape(REPO)}/\.github/workflows/([A-Za-z0-9.-]+\.yml)@refs/heads/main$"
+)
+_PRODUCTION_SUB = (
+    "repo:sricharanreddy5414@253192966/emergency-resource-allocation@1374188159:environment:production"
+)
+
+
+def _production_trust():
+    return json.loads((ROOT / "infra" / "github-production-trust.json").read_text(encoding="utf-8"))
+
+
 def _production_trust_refs():
-    trust = json.loads((ROOT / "infra" / "github-production-trust.json").read_text(encoding="utf-8"))
-    statement = trust["Statement"][0]
-    condition = statement["Condition"]["StringEquals"]
-    return condition["token.actions.githubusercontent.com:job_workflow_ref"]
+    condition = _production_trust()["Statement"][0]["Condition"]
+    if "StringLike" in condition or "StringEqualsIgnoreCase" in condition:
+        raise SystemExit("production trust must not use a wildcard workflow condition")
+    refs = condition["StringEquals"]["token.actions.githubusercontent.com:job_workflow_ref"]
+    names = []
+    for workflow_ref in refs:
+        match = _WORKFLOW_REF.fullmatch(workflow_ref)
+        if not match or "*" in workflow_ref or "?" in workflow_ref:
+            raise SystemExit(f"production trust workflow ref is not an exact file: {workflow_ref}")
+        names.append(match.group(1))
+    return names
 
 
 def main():
@@ -477,26 +497,37 @@ def main():
     if "emergency-resource-allocation@1374188159:environment:development" not in deploy_trust:
         raise SystemExit("deploy trust is not limited to the development environment")
     expected_refs = [
-        f"{REPO}/.github/workflows/{name}@refs/heads/main"
-        for name in (
-            "release.yml",
-            "rollback.yml",
-            "release-exchange.yml",
-            "rollback-exchange.yml",
-            "release-resource.yml",
-            "rollback-resource.yml",
-            "release-reservation-expiry.yml",
-            "rollback-reservation-expiry.yml",
-            "release-allocation.yml",
-            "rollback-allocation.yml",
-            "release-create-request.yml",
-            "rollback-create-request.yml",
-            "release-auto-release.yml",
-            "rollback-auto-release.yml",
-        )
+        "release.yml",
+        "rollback.yml",
+        "release-exchange.yml",
+        "rollback-exchange.yml",
+        "release-resource.yml",
+        "rollback-resource.yml",
+        "release-reservation-expiry.yml",
+        "rollback-reservation-expiry.yml",
+        "release-allocation.yml",
+        "rollback-allocation.yml",
+        "release-create-request.yml",
+        "rollback-create-request.yml",
+        "release-auto-release.yml",
+        "rollback-auto-release.yml",
     ]
     if _production_trust_refs() != expected_refs:
         raise SystemExit("production trust workflow refs are not the approved main workflows")
+    production_trust = _production_trust()
+    equals = production_trust["Statement"][0]["Condition"]["StringEquals"]
+    if equals.get("token.actions.githubusercontent.com:aud") != "sts.amazonaws.com":
+        raise SystemExit("production trust audience restriction changed")
+    if equals.get("token.actions.githubusercontent.com:sub") != _PRODUCTION_SUB:
+        raise SystemExit("production trust repository or environment restriction changed")
+    for workflow_ref in equals["token.actions.githubusercontent.com:job_workflow_ref"]:
+        if not workflow_ref.startswith(REPO + "/.github/workflows/"):
+            raise SystemExit("production trust repository restriction changed")
+        if not workflow_ref.endswith("@refs/heads/main"):
+            raise SystemExit("production trust branch restriction changed")
+    trust_bytes = len(json.dumps(production_trust, separators=(",", ":")).encode("utf-8"))
+    if trust_bytes >= 2048:
+        raise SystemExit(f"production trust policy is {trust_bytes} bytes")
     policy = json.loads((ROOT / "infra" / "github-production-resource-policy.json").read_text(encoding="utf-8"))
     allowed_actions = {
         "lambda:GetAlias",
