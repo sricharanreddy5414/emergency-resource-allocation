@@ -73,6 +73,25 @@ REQUIRED = {
         "security_scan.py",
         "erap-reservation-expiry",
     ],
+    "release-allocation.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "release_allocation.py",
+        "release_provenance.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "emergency-resource-allocation",
+    ],
+    "rollback-allocation.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "rollback_allocation.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "emergency-resource-allocation",
+    ],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
 
@@ -167,6 +186,60 @@ def _reservation_expiry_rollback_is_unsafe(text):
     return any(item in text for item in forbidden)
 
 
+def _allocation_release_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_resource.py",
+        "release_exchange.py",
+        "release_reservation_expiry.py",
+        "update-function-configuration",
+        "put-role-policy",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-auto-release",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-locations",
+        "erap-create-organization",
+        "erap-get-organization",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+    )
+    return any(item in text for item in forbidden)
+
+
+def _allocation_rollback_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_allocation.py",
+        "release_resource.py",
+        "update-function-code",
+        "publish-version",
+        "update-function-configuration",
+        "put-role-policy",
+        "inputs.commit",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-auto-release",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-locations",
+        "erap-create-organization",
+        "erap-get-organization",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+    )
+    return any(item in text for item in forbidden)
+
+
 def _resource_rollback_is_unsafe(text):
     forbidden = (
         "deploy_backend.py",
@@ -225,6 +298,10 @@ def main():
             raise SystemExit("reservation expiry release must publish only erap-reservation-expiry")
         if name == "rollback-reservation-expiry.yml" and _reservation_expiry_rollback_is_unsafe(text):
             raise SystemExit("reservation expiry rollback must move only an existing erap-reservation-expiry version")
+        if name == "release-allocation.yml" and _allocation_release_is_unsafe(text):
+            raise SystemExit("allocation release must publish only emergency-resource-allocation")
+        if name == "rollback-allocation.yml" and _allocation_rollback_is_unsafe(text):
+            raise SystemExit("allocation rollback must move only an existing emergency-resource-allocation version")
         if name in {"release.yml", "rollback.yml", "release-exchange.yml", "rollback-exchange.yml"} and "release_resource.py" in text:
             raise SystemExit(f"{name} must not publish get-resources")
         if yaml is not None:
@@ -250,6 +327,8 @@ def main():
             "rollback-resource.yml",
             "release-reservation-expiry.yml",
             "rollback-reservation-expiry.yml",
+            "release-allocation.yml",
+            "rollback-allocation.yml",
         )
     ]
     if _production_trust_refs() != expected_refs:
@@ -290,6 +369,22 @@ def main():
             raise SystemExit("reservation expiry production policy is not limited to erap-reservation-expiry")
         if "lambda:CreateAlias" not in action_set:
             raise SystemExit("reservation expiry production policy must allow CreateAlias")
+    allocation_policy = json.loads(
+        (ROOT / "infra" / "github-production-allocation-policy.json").read_text(encoding="utf-8")
+    )
+    allocation_resources = {
+        "arn:aws:lambda:eu-north-1:481838970142:function:emergency-resource-allocation",
+        "arn:aws:lambda:eu-north-1:481838970142:function:emergency-resource-allocation:*",
+    }
+    for statement in allocation_policy["Statement"]:
+        actions = statement["Action"]
+        resources = statement["Resource"]
+        action_set = set(actions if isinstance(actions, list) else [actions])
+        resource_set = set(resources if isinstance(resources, list) else [resources])
+        if action_set != allowed_actions or resource_set != allocation_resources:
+            raise SystemExit("allocation production policy is not limited to emergency-resource-allocation")
+        if "lambda:CreateAlias" in action_set:
+            raise SystemExit("allocation production policy must not allow CreateAlias")
     print("workflow check passed")
     return 0
 
