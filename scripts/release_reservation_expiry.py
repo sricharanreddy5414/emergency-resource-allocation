@@ -1,9 +1,10 @@
-"""Publish erap-reservation-expiry code and move alias live.
+"""Publish erap-reservation-expiry code and point alias live at that version.
 
-This does not create the due-time index, rewrite IAM, or change Lambda
-configuration. UpdateFunctionCode replaces only the unpublished code.
-PublishVersion then snapshots that code with the configuration already
-on the function.
+The first release creates alias live. A later release moves the existing
+alias. This does not create the due-time index, rewrite IAM, change the
+schedule, or change Lambda configuration. UpdateFunctionCode replaces only
+the unpublished code. PublishVersion then snapshots that code with the
+configuration already on the function.
 """
 
 import json
@@ -19,6 +20,12 @@ from release_provenance import require_commit_on_main
 
 
 FUNCTION = "erap-reservation-expiry"
+APPROVED_ROLE = "arn:aws:iam::481838970142:role/ERAP-Reservation-Expiry-Lambda-Role"
+APPROVED_RUNTIME = "python3.14"
+APPROVED_HANDLER = "handler.lambda_handler"
+APPROVED_MEMORY = 256
+APPROVED_TIMEOUT = 60
+APPROVED_ARCHITECTURES = ("x86_64",)
 
 
 def fingerprint(config):
@@ -39,6 +46,53 @@ def fingerprint(config):
         "layers": tuple(layers),
         "architectures": tuple((config or {}).get("Architectures") or []),
     }
+
+
+def _missing_live_alias(error):
+    """True only for the expected missing-alias response from GetAlias."""
+    text = str(error)
+    return "ResourceNotFoundException" in text and "GetAlias" in text
+
+
+def _network_attached(config):
+    vpc = (config or {}).get("VpcConfig") or {}
+    return bool(vpc.get("SubnetIds") or vpc.get("SecurityGroupIds"))
+
+
+def _matches_approved_baseline(config):
+    """True when $LATEST still matches the repository infrastructure definition."""
+    current = fingerprint(config)
+    return (
+        (config or {}).get("FunctionName") == FUNCTION
+        and current["runtime"] == APPROVED_RUNTIME
+        and current["handler"] == APPROVED_HANDLER
+        and current["role"] == APPROVED_ROLE
+        and current["memory"] == APPROVED_MEMORY
+        and current["timeout"] == APPROVED_TIMEOUT
+        and current["environment"] == ()
+        and current["layers"] == ()
+        and current["architectures"] == APPROVED_ARCHITECTURES
+        and not _network_attached(config)
+    )
+
+
+def _live_alias(aws):
+    """Return the published live version, or None when that alias does not exist."""
+    try:
+        current = aws(
+            ["lambda", "get-alias", "--function-name", FUNCTION, "--name", ALIAS],
+            region=REGION,
+        )
+    except SystemExit as error:
+        if _missing_live_alias(error):
+            return None
+        raise
+    if not isinstance(current, dict):
+        raise SystemExit("Reservation expiry live alias response was empty")
+    version = str(current.get("FunctionVersion") or "")
+    if not version.isdigit() or version == "0":
+        raise SystemExit("Reservation expiry live alias is not a published version")
+    return version
 
 
 def _configuration(aws, qualifier=None):
@@ -76,17 +130,33 @@ def _recorded(config):
     }
 
 
+def _promote(aws, previous, version, commit):
+    description = f"commit={commit}"[:256]
+    action = "create-alias" if previous is None else "update-alias"
+    aws(
+        [
+            "lambda",
+            action,
+            "--function-name",
+            FUNCTION,
+            "--name",
+            ALIAS,
+            "--function-version",
+            version,
+            "--description",
+            description,
+        ],
+        region=REGION,
+    )
+
+
 def publish_reservation_expiry(aws, archive, commit, *, check=check_zip):
     """Publish one erap-reservation-expiry version and point live at it."""
     check(Path(archive), FUNCTION)
-    current = aws(
-        ["lambda", "get-alias", "--function-name", FUNCTION, "--name", ALIAS],
-        region=REGION,
-    )
-    previous = str(current.get("FunctionVersion") or "")
-    if not previous.isdigit() or previous == "0":
-        raise SystemExit("Reservation expiry live alias is not a published version")
-    before = _configuration(aws, previous)
+    previous = _live_alias(aws)
+    before = _configuration(aws) if previous is None else _configuration(aws, previous)
+    if previous is None and not _matches_approved_baseline(before):
+        raise SystemExit("Reservation expiry configuration drifted before publish")
     recorded = _recorded(before)
 
     aws(
@@ -102,6 +172,8 @@ def publish_reservation_expiry(aws, archive, commit, *, check=check_zip):
     )
     latest = _wait_ready(aws)
     if fingerprint(latest) != fingerprint(before):
+        raise SystemExit("Reservation expiry configuration drifted before publish")
+    if previous is None and not _matches_approved_baseline(latest):
         raise SystemExit("Reservation expiry configuration drifted before publish")
 
     published = aws(
@@ -123,27 +195,12 @@ def publish_reservation_expiry(aws, archive, commit, *, check=check_zip):
         raise SystemExit("Published reservation expiry version does not match the current configuration")
     if snapshot.get("CodeSha256") != latest.get("CodeSha256"):
         raise SystemExit("Published reservation expiry version does not match the packaged code")
+    if previous is None and not _matches_approved_baseline(snapshot):
+        raise SystemExit("Published reservation expiry version does not match the current configuration")
 
-    aws(
-        [
-            "lambda",
-            "update-alias",
-            "--function-name",
-            FUNCTION,
-            "--name",
-            ALIAS,
-            "--function-version",
-            version,
-            "--description",
-            f"commit={commit}"[:256],
-        ],
-        region=REGION,
-    )
-    confirmed = aws(
-        ["lambda", "get-alias", "--function-name", FUNCTION, "--name", ALIAS],
-        region=REGION,
-    )
-    if str(confirmed.get("FunctionVersion") or "") != version:
+    _promote(aws, previous, version, commit)
+    confirmed = _live_alias(aws)
+    if confirmed != version:
         raise SystemExit("Reservation expiry alias did not move")
     return {
         "function": FUNCTION,
@@ -153,6 +210,7 @@ def publish_reservation_expiry(aws, archive, commit, *, check=check_zip):
         "published_version": version,
         "alias_version": version,
         "configuration_preserved": True,
+        "first_release": previous is None,
         "recorded": recorded,
     }
 
