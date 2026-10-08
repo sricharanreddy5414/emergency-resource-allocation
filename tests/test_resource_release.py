@@ -242,4 +242,6 @@ def test_resource_workflows_are_manual_production_and_scoped():
         f"{prefix}rollback-allocation.yml@refs/heads/main",
         f"{prefix}release-create-request.yml@refs/heads/main",
         f"{prefix}rollback-create-request.yml@refs/heads/main",
+        f"{prefix}release-auto-release.yml@refs/heads/main",
+        f"{prefix}rollback-auto-release.yml@refs/heads/main",
     ]

@@ -640,6 +640,11 @@ def test_auto_release_filters_and_is_idempotent(monkeypatch):
         )
 
     monkeypatch.setattr(emergency_release, "_transact_write", _transact)
+    monkeypatch.setattr(
+        auto_release,
+        "events_client",
+        lambda: type("Events", (), {"put_events": lambda self, **kwargs: {}})(),
+    )
     first = auto_release.lambda_handler({}, None, store=store, now=now)
     second = auto_release.lambda_handler({}, None, store=store, now=now)
 

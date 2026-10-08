@@ -12,6 +12,16 @@ from observability import begin_request, log_event, log_result
 
 RELEASE_AFTER_MINUTES = 30
 STATUS_INDEX = "AllocationStatusIndex"
+HOLDER_INDEX = "OrganizationLocationIndex"
+# The holder index is partitioned by organization only, so one due allocation
+# can sit behind a long history. Each query page is capped, and so is the
+# number of pages. Stopping at the cap is incomplete: the worker skips that
+# release and leaves the resource held. A missing later page is not evidence
+# that no other allocation still holds it.
+HOLDER_PAGE_SIZE = 100
+HOLDER_PAGE_LIMIT = 25
+RELEASED_EVENT_SOURCE = "emergency.resource.allocation"
+RELEASED_EVENT_DETAIL = "ResourceReleased"
 
 
 def response(status_code, body):
@@ -31,6 +41,10 @@ def tables():
         "history": dynamodb.Table("ResourceStatusHistory"),
         "audit": dynamodb.Table(os.environ.get("AUDIT_TABLE", "AuditEvents")),
     }
+
+
+def events_client():
+    return boto3.client("events")
 
 
 def plan_release(allocation, resource, request, other_allocations):
@@ -97,6 +111,80 @@ def query_expired(allocations_table, cutoff):
     return items
 
 
+def lookup_other_holders(allocations_table, allocation):
+    """Page this organization's allocations until another holder is known.
+
+    The query key is the allocation's own organization. A holder on a later
+    page keeps the resource held. The lookup stops early once that holder is
+    found. If the page cap is reached first, the result is incomplete.
+    """
+    organization_id = allocation.get("organization_id")
+    resource_id = allocation.get("resource_id")
+    allocation_id = allocation.get("allocation_id")
+    holders = []
+    start_key = None
+    pages = 0
+
+    while pages < HOLDER_PAGE_LIMIT:
+        kwargs = {
+            "IndexName": HOLDER_INDEX,
+            "KeyConditionExpression": "organization_id = :organization_id",
+            "ExpressionAttributeValues": {":organization_id": organization_id},
+            "Limit": HOLDER_PAGE_SIZE,
+        }
+        if start_key:
+            kwargs["ExclusiveStartKey"] = start_key
+        result = allocations_table.query(**kwargs)
+        pages += 1
+        for item in result.get("Items") or []:
+            if item.get("organization_id") != organization_id:
+                continue
+            if item.get("allocation_id") == allocation_id:
+                continue
+            if item.get("resource_id") != resource_id:
+                continue
+            if str(item.get("status", "")).upper() != "ALLOCATED":
+                continue
+            holders.append(item)
+            return {"complete": True, "holders": holders}
+        start_key = result.get("LastEvaluatedKey")
+        if not start_key:
+            return {"complete": True, "holders": holders}
+
+    return {"complete": False, "holders": holders}
+
+
+def emit_resource_released(resource_id, allocation_id, request_id, organization_id):
+    """Publish the same ResourceReleased event manual release publishes."""
+    result = events_client().put_events(
+        Entries=[
+            {
+                "Source": RELEASED_EVENT_SOURCE,
+                "DetailType": RELEASED_EVENT_DETAIL,
+                "Detail": json.dumps(
+                    {
+                        "resource_id": resource_id,
+                        "allocation_id": allocation_id,
+                        "request_id": request_id,
+                        "organization_id": organization_id,
+                        "status": "RELEASED",
+                    }
+                ),
+                "EventBusName": "default",
+            }
+        ]
+    )
+    if int((result or {}).get("FailedEntryCount") or 0):
+        log_event(
+            "WARNING",
+            "auto-release",
+            "allocation.auto_release",
+            "event_failed",
+            error_code="FailedEntryCount",
+            allocation_id=allocation_id,
+        )
+
+
 def release_allocation(store, allocation, now):
     organization_id = allocation.get("organization_id")
 
@@ -107,12 +195,40 @@ def release_allocation(store, allocation, now):
     request_id = allocation.get("request_id")
     resource = store["resources"].get_item(Key={"resource_id": resource_id}).get("Item")
     request = store["requests"].get_item(Key={"request_id": request_id}).get("Item")
-    related = store["allocations"].query(
-        IndexName="OrganizationLocationIndex",
-        KeyConditionExpression="organization_id = :organization_id",
-        ExpressionAttributeValues={":organization_id": organization_id},
-    ).get("Items", [])
-    decision = plan_release(allocation, resource, request, related)
+    try:
+        lookup = lookup_other_holders(store["allocations"], allocation)
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code", "")
+        log_event(
+            "WARNING",
+            "auto-release",
+            "allocation.auto_release",
+            "skipped",
+            error_code=code,
+            allocation_id=allocation.get("allocation_id"),
+        )
+        return {
+            "action": "skip",
+            "reason": "holder lookup failed",
+            "allocation_id": allocation.get("allocation_id"),
+        }
+
+    if not lookup["complete"]:
+        log_event(
+            "WARNING",
+            "auto-release",
+            "allocation.auto_release",
+            "skipped",
+            error_code="HolderLookupIncomplete",
+            allocation_id=allocation.get("allocation_id"),
+        )
+        return {
+            "action": "skip",
+            "reason": "holder lookup incomplete",
+            "allocation_id": allocation.get("allocation_id"),
+        }
+
+    decision = plan_release(allocation, resource, request, lookup["holders"])
 
     if decision["action"] != "release":
         return decision
@@ -145,6 +261,18 @@ def release_allocation(store, allocation, now):
             "reason": emergency_release_conflict(error, free_resource=bool(decision["free_resource"])),
             "allocation_id": allocation_id,
         }
+
+    try:
+        emit_resource_released(resource_id, allocation_id, request_id, organization_id)
+    except Exception as error:
+        log_event(
+            "WARNING",
+            "auto-release",
+            "allocation.auto_release",
+            "event_failed",
+            error_code=error.__class__.__name__,
+            allocation_id=allocation_id,
+        )
 
     store["history"].put_item(
         Item={
@@ -186,7 +314,24 @@ def lambda_handler(event, context, store=None, now=None):
     skipped = []
 
     for allocation in query_expired(store["allocations"], cutoff):
-        decision = release_allocation(store, allocation, now)
+        try:
+            decision = release_allocation(store, allocation, now)
+        except Exception as error:
+            log_event(
+                "ERROR",
+                "auto-release",
+                "allocation.auto_release",
+                "skipped",
+                error_code=error.__class__.__name__,
+                allocation_id=allocation.get("allocation_id"),
+            )
+            skipped.append(
+                {
+                    "allocation_id": allocation.get("allocation_id"),
+                    "reason": "processing failed",
+                }
+            )
+            continue
 
         if decision.get("action") == "release":
             released.append({"allocation_id": decision["allocation_id"]})

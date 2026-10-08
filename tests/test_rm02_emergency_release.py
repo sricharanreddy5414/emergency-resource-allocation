@@ -142,6 +142,7 @@ def _wire(monkeypatch, resources, allocations, requests, history=None, audit=Non
     monkeypatch.setattr(resource_handler, "history_table", lambda: history)
     monkeypatch.setattr(resource_handler, "audit_table", lambda: audit)
     monkeypatch.setattr(resource_handler, "events_client", lambda: Events())
+    monkeypatch.setattr(auto_release, "events_client", lambda: Events())
     monkeypatch.setattr(access, "list_memberships", lambda *args, **kwargs: [
         {
             "organization_id": ORG,
