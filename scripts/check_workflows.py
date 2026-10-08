@@ -1,5 +1,6 @@
 """Check the workflow files without deploying."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -34,6 +35,25 @@ REQUIRED = {
         "refs/heads/main",
         "security_scan.py",
     ],
+    "release-resource.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "release_resource.py",
+        "release_provenance.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "get-resources",
+    ],
+    "rollback-resource.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "rollback_resource.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "get-resources",
+    ],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
 
@@ -66,6 +86,56 @@ def _exchange_rollback_is_unsafe(text):
     return any(item in text for item in forbidden)
 
 
+_OTHER_FUNCTIONS = (
+    "create-request",
+    "emergency-resource-allocation",
+    "emergency-resource-auto-release",
+    "erap-catalog",
+    "erap-public-resources",
+    "erap-locations",
+    "erap-create-organization",
+    "erap-get-organization",
+    "erap-billing",
+    "erap-exchange",
+    "erap-notifications",
+)
+
+
+def _resource_release_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "update-function-configuration",
+        "put-role-policy",
+        "push:",
+        *_OTHER_FUNCTIONS,
+    )
+    return any(item in text for item in forbidden)
+
+
+def _resource_rollback_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_resource.py",
+        "update-function-code",
+        "publish-version",
+        "update-function-configuration",
+        "put-role-policy",
+        "inputs.commit",
+        "push:",
+        *_OTHER_FUNCTIONS,
+    )
+    return any(item in text for item in forbidden)
+
+
+def _production_trust_refs():
+    trust = json.loads((ROOT / "infra" / "github-production-trust.json").read_text(encoding="utf-8"))
+    statement = trust["Statement"][0]
+    condition = statement["Condition"]["StringEquals"]
+    return condition["token.actions.githubusercontent.com:job_workflow_ref"]
+
+
 def main():
     try:
         import yaml
@@ -93,6 +163,12 @@ def main():
             raise SystemExit("exchange release must publish only erap-exchange")
         if name == "rollback-exchange.yml" and _exchange_rollback_is_unsafe(text):
             raise SystemExit("exchange rollback must move only an existing erap-exchange version")
+        if name == "release-resource.yml" and _resource_release_is_unsafe(text):
+            raise SystemExit("resource release must publish only get-resources")
+        if name == "rollback-resource.yml" and _resource_rollback_is_unsafe(text):
+            raise SystemExit("resource rollback must move only an existing get-resources version")
+        if name in {"release.yml", "rollback.yml", "release-exchange.yml", "rollback-exchange.yml"} and "release_resource.py" in text:
+            raise SystemExit(f"{name} must not publish get-resources")
         if yaml is not None:
             loaded = yaml.safe_load(text)
             if not isinstance(loaded, dict) or "jobs" not in loaded:
@@ -105,6 +181,38 @@ def main():
     deploy_trust = (ROOT / "infra" / "github-deploy-trust.json").read_text(encoding="utf-8")
     if "emergency-resource-allocation@1374188159:environment:development" not in deploy_trust:
         raise SystemExit("deploy trust is not limited to the development environment")
+    expected_refs = [
+        f"{REPO}/.github/workflows/{name}@refs/heads/main"
+        for name in (
+            "release.yml",
+            "rollback.yml",
+            "release-exchange.yml",
+            "rollback-exchange.yml",
+            "release-resource.yml",
+            "rollback-resource.yml",
+        )
+    ]
+    if _production_trust_refs() != expected_refs:
+        raise SystemExit("production trust workflow refs are not the approved main workflows")
+    policy = json.loads((ROOT / "infra" / "github-production-resource-policy.json").read_text(encoding="utf-8"))
+    allowed_actions = {
+        "lambda:GetAlias",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:PublishVersion",
+        "lambda:UpdateAlias",
+    }
+    allowed_resources = {
+        "arn:aws:lambda:eu-north-1:481838970142:function:get-resources",
+        "arn:aws:lambda:eu-north-1:481838970142:function:get-resources:*",
+    }
+    for statement in policy["Statement"]:
+        actions = statement["Action"]
+        resources = statement["Resource"]
+        action_set = set(actions if isinstance(actions, list) else [actions])
+        resource_set = set(resources if isinstance(resources, list) else [resources])
+        if action_set != allowed_actions or resource_set != allowed_resources:
+            raise SystemExit("resource production policy is not limited to get-resources")
     print("workflow check passed")
     return 0
 

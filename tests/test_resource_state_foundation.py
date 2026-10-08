@@ -117,7 +117,11 @@ def test_quantity_rejects_non_integer():
 
 def test_new_individual_defaults():
     fields = initialize_new_resource_fields({}, available=True)
-    assert fields == {"operational_status": "AVAILABLE", "tracking_mode": "INDIVIDUAL"}
+    assert fields == {
+        "operational_status": "AVAILABLE",
+        "tracking_mode": "INDIVIDUAL",
+        "Available": True,
+    }
 
 
 def test_new_quantity_initialization():

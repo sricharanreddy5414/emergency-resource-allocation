@@ -19,15 +19,23 @@ from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN
 from observability import begin_request, error_body, load_object, log_event, log_result
-from pages import decode_token, encode_token
+from resource_page_token import (
+    load_resource_page_secret,
+    read_resource_page_token,
+    sign_resource_page_token,
+)
 from everyday_operations import EverydayOperationError, dispatch_everyday
 from lifecycle_operations import LifecycleOperationError, dispatch_lifecycle
 from resource_state import (
+    QUANTITY_FIELD_NAMES,
+    RESOURCE_OPERATIONAL_STATUSES,
     ResourceStateError,
     initialize_new_resource_fields,
     lifecycle_fields_from_body,
     metadata_fields_from_body,
 )
+from emergency_release import commit_emergency_release
+from api_views import allocation_view, request_view, resource_history_view, resource_view
 from visibility import PRIVATE_INDEX_ATTRIBUTES, publication_fields
 
 
@@ -242,6 +250,11 @@ def lambda_handler(event, context):
         return response(500, {"message": "Failed to process resource request"})
 
 
+def _resource_page_secrets():
+    current, previous = load_resource_page_secret()
+    return [current, *previous]
+
+
 def list_resources(event, organization_id):
     from boto3.dynamodb.conditions import Key
 
@@ -251,13 +264,10 @@ def list_resources(event, organization_id):
     visibility = str(query.get("visibility") or "").strip().upper()
     status = str(query.get("status") or "").strip().upper()
 
-    if location_id:
-        require_location(locations_table(), organization_id, location_id)
-
     if visibility and visibility not in {"PRIVATE", "PUBLIC", "NETWORK"}:
         return response(400, {"message": "Visibility is invalid"})
 
-    if status and status not in {"AVAILABLE", "ALLOCATED"}:
+    if status and status not in RESOURCE_OPERATIONAL_STATUSES:
         return response(400, {"message": "Status is invalid"})
 
     try:
@@ -268,10 +278,28 @@ def list_resources(event, organization_id):
     if limit < 1 or limit > 100:
         return response(400, {"message": "Page size is invalid"})
 
-    start = decode_token(query.get("page_token"), ["organization_id", "location_id", "resource_id"])
+    # Signature is verified before the cursor is used. Status, location, and
+    # page size stay bound to this request. The DynamoDB key itself stays
+    # organization_id, location_id, resource_id.
+    supplied = query.get("page_token")
+    secrets = None
+    start = None
+    try:
+        if supplied is not None:
+            secrets = _resource_page_secrets()
+            start = read_resource_page_token(
+                supplied,
+                organization_id=organization_id,
+                location_id=location_id,
+                status=status,
+                limit=limit,
+                secrets=secrets,
+            )
+    except AccessError as error:
+        return response(error.status_code, {"message": error.message})
 
-    if start and start.get("organization_id") != organization_id:
-        return response(400, {"message": "Invalid page token"})
+    if location_id:
+        require_location(locations_table(), organization_id, location_id)
 
     key = Key("organization_id").eq(organization_id)
 
@@ -285,7 +313,11 @@ def list_resources(event, organization_id):
     }
 
     if start:
-        kwargs["ExclusiveStartKey"] = start
+        kwargs["ExclusiveStartKey"] = {
+            "organization_id": start["organization_id"],
+            "location_id": start["location_id"],
+            "resource_id": start["resource_id"],
+        }
 
     result = resources_table().query(**kwargs)
     resources = []
@@ -300,16 +332,29 @@ def list_resources(event, organization_id):
         if visibility and (item.get("visibility") or "PRIVATE") != visibility:
             continue
 
-        if status == "AVAILABLE" and not is_available(item.get("Available")):
+        if status and str(item.get("operational_status") or "").strip().upper() != status:
             continue
 
-        if status == "ALLOCATED" and is_available(item.get("Available")):
-            continue
-
-        resources.append(item)
+        resources.append(resource_view(item))
 
     payload = resources
-    token = encode_token(result.get("LastEvaluatedKey"))
+    last_key = result.get("LastEvaluatedKey")
+    token = None
+
+    try:
+        if last_key:
+            if secrets is None:
+                secrets = _resource_page_secrets()
+            token = sign_resource_page_token(
+                last_key,
+                organization_id=organization_id,
+                location_id=location_id,
+                status=status,
+                limit=limit,
+                secret=secrets[0],
+            )
+    except AccessError as error:
+        return response(error.status_code, {"message": error.message})
 
     if query.get("limit") or query.get("page_token"):
         payload = {"resources": resources, "next_token": token}
@@ -328,7 +373,7 @@ def resource_history(event, organization_id):
     require_owned(resource, organization_id)
     histories = query_history(history_table(), resource_id)
     histories.sort(key=lambda item: item.get("changed_at", ""), reverse=True)
-    return response(200, histories)
+    return response(200, [resource_history_view(item) for item in histories])
 
 
 def active_resource_type(organization_id, resource_type_id):
@@ -363,15 +408,9 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
     location = require_location(locations_table(), organization_id, location_id)
     resource_type = active_resource_type(organization_id, resource_type_id)
     attributes = validate_attributes(body.get("attributes") or {}, resource_type.get("attributes_schema"))
-    available = body.get("Available", True)
-
-    if isinstance(available, str):
-        available = available.lower() == "true"
-
-    available = bool(available)
 
     try:
-        state_fields = initialize_new_resource_fields(body, available=available)
+        state_fields = initialize_new_resource_fields(body)
     except ResourceStateError as error:
         return response(400, {"message": str(error)})
 
@@ -383,7 +422,6 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
         "Location": location.get("name", ""),
         "location_id": location["location_id"],
         "organization_id": organization_id,
-        "Available": available,
         "attributes": attributes,
     }
     item.update(state_fields)
@@ -448,7 +486,49 @@ def register_resource(body, organization_id, actor_sub="", actor_role=""):
             metadata={"resource_type_id": item["resource_type_id"], "visibility": item["visibility"]},
         ),
     )
-    return response(201, {"message": "Resource registered successfully", "resource": item})
+    return response(201, {"message": "Resource registered successfully", "resource": resource_view(item)})
+
+
+def _seen_state_condition(current, organization_id):
+    """Fail the write if lifecycle state changed after this read."""
+    clauses = ["organization_id = :organization_id"]
+    values = {":organization_id": organization_id}
+    if "Available" in current:
+        clauses.append("Available = :seen_available")
+        values[":seen_available"] = current.get("Available")
+    else:
+        clauses.append("attribute_not_exists(Available)")
+
+    status = current.get("operational_status")
+    if status is None or not str(status).strip():
+        clauses.append("attribute_not_exists(operational_status)")
+    else:
+        clauses.append("operational_status = :seen_status")
+        values[":seen_status"] = status
+
+    for name in QUANTITY_FIELD_NAMES:
+        if name in current and current.get(name) is not None:
+            token = ":seen_" + name
+            clauses.append(f"{name} = {token}")
+            values[token] = current[name]
+
+    for name in ("reserved_by", "reserved_at"):
+        if current.get(name):
+            token = ":seen_" + name
+            clauses.append(f"{name} = {token}")
+            values[token] = current[name]
+        else:
+            clauses.append(f"attribute_not_exists({name})")
+
+    return " AND ".join(clauses), values
+
+
+def _bind_set(assignments, names, values, attr, value):
+    placeholder = "#a_" + attr
+    token = ":v_" + attr
+    names[placeholder] = attr
+    values[token] = value
+    assignments.append(f"{placeholder} = {token}")
 
 
 def update_resource(body, organization_id, actor_sub="", actor_role=""):
@@ -459,32 +539,45 @@ def update_resource(body, organization_id, actor_sub="", actor_role=""):
 
     current = resources_table().get_item(Key={"resource_id": resource_id}).get("Item")
     require_owned(current, organization_id)
-    location_id = str(body.get("location_id") or current.get("location_id") or "").strip()
-    location = require_location(locations_table(), organization_id, location_id)
-    resource_type_id = str(body.get("resource_type_id") or current.get("resource_type_id") or "").strip()
-    resource_type = active_resource_type(organization_id, resource_type_id)
-    attributes = validate_attributes(
-        body.get("attributes", current.get("attributes") or {}),
-        resource_type.get("attributes_schema"),
-    )
-    available = is_available(current.get("Available"))
-    name = str(body.get("name") or current.get("name") or resource_type.get("name") or "").strip()
 
-    if len(name) > 80:
-        return response(400, {"message": "A resource field is too long"})
+    assignments = []
+    removes = []
+    names = {}
+    values = {}
+    changed = {}
 
-    updated = dict(current)
-    updated.update(
-        {
-            "name": name,
-            "Type": resource_type.get("name", ""),
-            "resource_type_id": resource_type["resource_type_id"],
-            "Location": location.get("name", ""),
-            "location_id": location["location_id"],
-            "organization_id": organization_id,
-            "attributes": attributes,
-        }
-    )
+    if "name" in body:
+        name = str(body.get("name") or "").strip()
+        if len(name) > 80:
+            return response(400, {"message": "A resource field is too long"})
+        if name:
+            _bind_set(assignments, names, values, "name", name)
+            changed["name"] = name
+
+    location = None
+    if "location_id" in body:
+        location_id = str(body.get("location_id") or "").strip()
+        location = require_location(locations_table(), organization_id, location_id)
+        _bind_set(assignments, names, values, "location_id", location["location_id"])
+        _bind_set(assignments, names, values, "Location", location.get("name", ""))
+        changed["location_id"] = location["location_id"]
+        changed["Location"] = location.get("name", "")
+
+    resource_type = None
+    if "resource_type_id" in body or "attributes" in body:
+        resource_type_id = str(body.get("resource_type_id") or current.get("resource_type_id") or "").strip()
+        resource_type = active_resource_type(organization_id, resource_type_id)
+
+    if "resource_type_id" in body:
+        _bind_set(assignments, names, values, "resource_type_id", resource_type["resource_type_id"])
+        _bind_set(assignments, names, values, "Type", resource_type.get("name", ""))
+        changed["resource_type_id"] = resource_type["resource_type_id"]
+        changed["Type"] = resource_type.get("name", "")
+
+    if "attributes" in body:
+        attributes = validate_attributes(body.get("attributes") or {}, resource_type.get("attributes_schema"))
+        _bind_set(assignments, names, values, "attributes", attributes)
+        changed["attributes"] = attributes
 
     try:
         meta = metadata_fields_from_body(body, current)
@@ -493,34 +586,84 @@ def update_resource(body, organization_id, actor_sub="", actor_role=""):
 
     for key, value in meta.items():
         if value is None or value == "":
-            updated.pop(key, None)
+            removes.append("#a_" + key)
+            names["#a_" + key] = key
+            changed[key] = None
         else:
-            updated[key] = value
+            _bind_set(assignments, names, values, key, value)
+            changed[key] = value
+
+    if "visibility" in body:
+        publication_location = location
+        if publication_location is None:
+            publication_location = require_location(
+                locations_table(),
+                organization_id,
+                str(current.get("location_id") or "").strip(),
+            )
+        type_name = changed.get("Type") or current.get("Type") or ""
+        publication_body = dict(body)
+        if not str(publication_body.get("name") or "").strip():
+            publication_body["name"] = current.get("name") or type_name
+        try:
+            published = publication_fields(
+                publication_body,
+                publication_location,
+                type_name,
+                resource_id,
+                is_available(current.get("Available")),
+                operational_status=current.get("operational_status"),
+            )
+        except ValueError as error:
+            return response(400, {"message": str(error)})
+        for key, value in published.items():
+            _bind_set(assignments, names, values, key, value)
+            changed[key] = value
+        if published.get("visibility") in {"PRIVATE", "NETWORK"}:
+            for attribute in PRIVATE_INDEX_ATTRIBUTES:
+                placeholder = "#a_" + attribute
+                if placeholder not in names:
+                    names[placeholder] = attribute
+                    removes.append(placeholder)
+                    changed[attribute] = None
+
+    if not assignments and not removes:
+        return response(200, {"message": "Resource updated", "resource": resource_view({"resource_id": resource_id})})
+
+    condition, seen = _seen_state_condition(current, organization_id)
+    values.update(seen)
+    expression = ""
+    if assignments:
+        expression = "SET " + ", ".join(assignments)
+    if removes:
+        expression = (expression + " " if expression else "") + "REMOVE " + ", ".join(removes)
 
     try:
-        updated.update(
-            publication_fields(
-                body,
-                location,
-                updated["Type"],
-                resource_id,
-                available,
-                operational_status=updated.get("operational_status") or current.get("operational_status"),
-            )
+        resources_table().update_item(
+            Key={"resource_id": resource_id},
+            UpdateExpression=expression,
+            ConditionExpression=condition,
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
         )
-    except ValueError as error:
-        return response(400, {"message": str(error)})
+    except ClientError as error:
+        code = error.response["Error"]["Code"]
+        if code == "ConditionalCheckFailedException":
+            return response(409, {"message": "Resource state conflict"})
+        log_event(
+            "ERROR",
+            "resources",
+            "resource.update",
+            "failed",
+            organization_id=organization_id,
+            resource_id=resource_id,
+            error_code=code,
+        )
+        return response(500, {"message": "Failed to update resource"})
 
-    if updated["visibility"] in {"PRIVATE", "NETWORK"}:
-        for attribute in PRIVATE_INDEX_ATTRIBUTES:
-            updated.pop(attribute, None)
-
-    resources_table().put_item(
-        Item=updated,
-        ConditionExpression="organization_id = :organization_id",
-        ExpressionAttributeValues={":organization_id": organization_id},
-    )
-    action = "visibility.change" if current.get("visibility", "PRIVATE") != updated["visibility"] else "resource.update"
+    updated = {"resource_id": resource_id, **{key: value for key, value in changed.items() if value is not None}}
+    visibility = changed.get("visibility", current.get("visibility", "PRIVATE"))
+    action = "visibility.change" if current.get("visibility", "PRIVATE") != visibility else "resource.update"
     record_audit(
         audit_table(),
         build_audit_event(
@@ -530,11 +673,40 @@ def update_resource(body, organization_id, actor_sub="", actor_role=""):
             action,
             "resource",
             resource_id,
-            location_id=location["location_id"],
-            metadata={"visibility": updated["visibility"], "resource_type_id": resource_type_id},
+            location_id=changed.get("location_id", current.get("location_id", "")),
+            metadata={
+                "visibility": visibility,
+                "resource_type_id": changed.get("resource_type_id", current.get("resource_type_id", "")),
+            },
         ),
     )
-    return response(200, {"message": "Resource updated", "resource": updated})
+    return response(200, {"message": "Resource updated", "resource": resource_view(updated)})
+
+
+def _allocated_for_resource(organization_id, resource_id, location_id):
+    """Find ALLOCATED rows for one resource.
+
+    The allocation table has no resource-id index. The location sort key
+    narrows the read. A miss falls back to the organization partition so a
+    resource that moved after allocation can still be released.
+    """
+
+    def selected(items):
+        return [
+            item
+            for item in items
+            if item.get("organization_id") == organization_id
+            and item.get("resource_id") == resource_id
+            and str(item.get("status", "")).upper() == "ALLOCATED"
+        ]
+
+    if location_id:
+        located = selected(query_by_organization(allocations_table(), organization_id, location_id))
+
+        if located:
+            return located
+
+    return selected(query_by_organization(allocations_table(), organization_id))
 
 
 def release_resource(body, organization_id, actor_sub="", actor_role=""):
@@ -549,12 +721,11 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
     if is_available(resource.get("Available", False)):
         return response(409, {"message": "Resource is already available"})
 
-    active = [
-        item
-        for item in query_by_organization(allocations_table(), organization_id)
-        if item.get("resource_id") == resource_id
-        and str(item.get("status", "")).upper() == "ALLOCATED"
-    ]
+    active = _allocated_for_resource(
+        organization_id,
+        resource_id,
+        str(resource.get("location_id") or "").strip(),
+    )
 
     if not active:
         return response(409, {"message": "No active allocation found for resource"})
@@ -580,43 +751,13 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
     released_at = datetime.now(timezone.utc).isoformat()
 
     try:
-        resources_table().update_item(
-            Key={"resource_id": resource_id},
-            UpdateExpression="SET Available = :available, operational_status = :op_available",
-            ConditionExpression=(
-                "attribute_exists(resource_id) AND Available = :allocated AND organization_id = :organization_id "
-                "AND (attribute_not_exists(operational_status) OR operational_status = :op_allocated)"
-            ),
-            ExpressionAttributeValues={
-                ":available": True,
-                ":allocated": False,
-                ":organization_id": organization_id,
-                ":op_available": "AVAILABLE",
-                ":op_allocated": "ALLOCATED",
-            },
-        )
-        allocations_table().update_item(
-            Key={"allocation_id": allocation_id},
-            UpdateExpression="SET #status = :released, released_at = :released_at",
-            ConditionExpression="attribute_exists(allocation_id) AND #status = :allocated AND organization_id = :organization_id",
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":released": "RELEASED",
-                ":allocated": "ALLOCATED",
-                ":released_at": released_at,
-                ":organization_id": organization_id,
-            },
-        )
-        requests_table().update_item(
-            Key={"request_id": request_id},
-            UpdateExpression="SET #status = :released",
-            ConditionExpression="attribute_exists(request_id) AND #status = :allocated AND organization_id = :organization_id",
-            ExpressionAttributeNames={"#status": "Status"},
-            ExpressionAttributeValues={
-                ":released": "RELEASED",
-                ":allocated": "ALLOCATED",
-                ":organization_id": organization_id,
-            },
+        commit_emergency_release(
+            resource_id=resource_id,
+            allocation_id=allocation_id,
+            request_id=request_id,
+            organization_id=organization_id,
+            released_at=released_at,
+            free_resource=True,
         )
     except ClientError as error:
         log_event(
@@ -630,6 +771,8 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
         )
         return response(409, {"message": "Resource could not be released"})
 
+    # The resource item was already updated in the transaction, so public_status
+    # cannot be added to that same transaction.
     if resource.get("visibility") == "PUBLIC" and resource.get("show_availability") is True:
         try:
             resources_table().update_item(
@@ -659,6 +802,7 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
             "reason": "RESOURCE_RELEASED",
             "allocation_id": allocation_id,
             "request_id": request_id,
+            "actor_sub": actor_sub,
         }
     )
 
@@ -700,8 +844,8 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
         200,
         {
             "message": "Resource released successfully",
-            "resource": {"resource_id": resource_id, "Available": True},
-            "allocation": {"allocation_id": allocation_id, "status": "RELEASED"},
-            "request": {"request_id": request_id, "status": "RELEASED"},
+            "resource": resource_view({"resource_id": resource_id, "Available": True}),
+            "allocation": allocation_view({"allocation_id": allocation_id, "status": "RELEASED"}),
+            "request": request_view({"request_id": request_id, "status": "RELEASED"}),
         },
     )

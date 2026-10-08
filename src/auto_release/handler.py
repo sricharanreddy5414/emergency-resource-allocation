@@ -6,7 +6,8 @@ import boto3
 from botocore.exceptions import ClientError
 
 from audit import build_audit_event, record_audit
-from observability import begin_request, log_result
+from emergency_release import commit_emergency_release, emergency_release_conflict
+from observability import begin_request, log_event, log_result
 
 
 RELEASE_AFTER_MINUTES = 30
@@ -119,56 +120,31 @@ def release_allocation(store, allocation, now):
     allocation_id = decision["allocation_id"]
 
     try:
-        store["allocations"].update_item(
-            Key={"allocation_id": allocation_id},
-            UpdateExpression="SET #status = :released, released_at = :released_at",
-            ConditionExpression="#status = :allocated AND organization_id = :organization_id",
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":released": "RELEASED",
-                ":allocated": "ALLOCATED",
-                ":released_at": now.isoformat(),
-                ":organization_id": organization_id,
-            },
+        commit_emergency_release(
+            resource_id=resource_id,
+            allocation_id=allocation_id,
+            request_id=request_id,
+            organization_id=organization_id,
+            released_at=now.isoformat(),
+            free_resource=bool(decision["free_resource"]),
         )
     except ClientError as error:
-        if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            return {"action": "skip", "reason": "already released", "allocation_id": allocation_id}
-
-        raise
-
-    if decision["free_resource"]:
-        try:
-            store["resources"].update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression="SET Available = :available",
-                ConditionExpression="organization_id = :organization_id AND Available = :held AND attribute_exists(resource_id)",
-                ExpressionAttributeValues={
-                    ":available": True,
-                    ":held": False,
-                    ":organization_id": organization_id,
-                },
-            )
-        except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
-
-    if request_id:
-        try:
-            store["requests"].update_item(
-                Key={"request_id": request_id},
-                UpdateExpression="SET #status = :released",
-                ConditionExpression="#status = :allocated AND organization_id = :organization_id",
-                ExpressionAttributeNames={"#status": "Status"},
-                ExpressionAttributeValues={
-                    ":released": "RELEASED",
-                    ":allocated": "ALLOCATED",
-                    ":organization_id": organization_id,
-                },
-            )
-        except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
+        code = error.response.get("Error", {}).get("Code", "")
+        if code not in {"TransactionCanceledException", "ConditionalCheckFailedException"}:
+            raise
+        log_event(
+            "WARNING",
+            "auto-release",
+            "allocation.auto_release",
+            "skipped",
+            error_code=code,
+            allocation_id=allocation_id,
+        )
+        return {
+            "action": "skip",
+            "reason": emergency_release_conflict(error, free_resource=bool(decision["free_resource"])),
+            "allocation_id": allocation_id,
+        }
 
     store["history"].put_item(
         Item={
@@ -182,6 +158,7 @@ def release_allocation(store, allocation, now):
             "reason": "AUTOMATIC_RESOURCE_RELEASE",
             "request_id": request_id,
             "allocation_id": allocation_id,
+            "actor_sub": "system",
         }
     )
     record_audit(

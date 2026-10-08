@@ -178,6 +178,55 @@ def lambda_handler(event, context):
         return response(500, {"message": "Unable to process allocation"})
 
 
+def _prefer_same_location(request):
+    config = request.get("matching_config") or {}
+
+    if not isinstance(config, dict):
+        return True
+
+    return config.get("same_location_preferred", True) is not False
+
+
+def _load_org_resources(organization_id, location_id=None):
+    """Read one organization partition, optionally one location sort key."""
+    return [
+        item
+        for item in query_by_organization(resources_table(), organization_id, location_id)
+        if item.get("organization_id") == organization_id
+    ]
+
+
+def _resources_for_match(organization_id, request, cache):
+    """Use the location key when a same-location candidate is enough.
+
+    Matching may fall back to another location in the same organization.
+    That fallback reads the organization partition once and reuses it.
+    """
+    location_id = str(request.get("location_id") or "").strip()
+
+    if _prefer_same_location(request) and location_id:
+        key = ("location", location_id)
+
+        if key not in cache:
+            cache[key] = _load_org_resources(organization_id, location_id)
+
+        if choose_resource(cache[key], request):
+            return cache[key]
+
+    if "organization" not in cache:
+        cache["organization"] = _load_org_resources(organization_id)
+
+    return cache["organization"]
+
+
+def _mark_unmatchable(cache, resource_id):
+    for pool in cache.values():
+        for item in pool:
+            if item.get("resource_id") == resource_id:
+                item["Available"] = False
+                item["operational_status"] = "ALLOCATED"
+
+
 def allocate(body, organization_id, actor_sub="", actor_role=""):
     request_id = str(body.get("request_id", "")).strip()
     resource_type = str(body.get("resource_type", "")).strip()
@@ -261,16 +310,13 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         if str(item.get("Status", "")).upper() == "PENDING"
         and item.get("organization_id") == organization_id
     ]
+    resource_cache = {}
 
     for request in sort_requests_by_priority(pending):
         if request.get("organization_id") != organization_id:
             continue
 
-        resources = [
-            item
-            for item in query_by_organization(resources_table(), organization_id)
-            if item.get("organization_id") == organization_id
-        ]
+        resources = _resources_for_match(organization_id, request, resource_cache)
         resource = choose_resource(resources, request)
 
         if not resource:
@@ -309,6 +355,7 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
             )
         except ClientError as error:
             if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                _mark_unmatchable(resource_cache, resource_id)
                 continue
 
             from observability import log_event
@@ -383,6 +430,7 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
                 "reason": "RESOURCE_ALLOCATED",
                 "request_id": current_request_id,
                 "allocation_id": allocation_id,
+                "actor_sub": actor_sub,
             }
         )
 
@@ -420,6 +468,8 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
                 location_id=resource.get("location_id", ""),
             ),
         )
+
+        _mark_unmatchable(resource_cache, resource_id)
 
         if current_request_id == request_id:
             from observability import log_event

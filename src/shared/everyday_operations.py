@@ -3,10 +3,15 @@
 import uuid
 from datetime import datetime, timezone
 
+from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
 from audit import build_audit_event, record_audit
-from resource_state import normalize_tracking_mode
+from resource_state import ResourceStateError, normalize_tracking_mode, validate_transition
+
+_serializer = TypeSerializer()
+RESOURCES_TABLE = "Resources"
+ALLOCATIONS_TABLE = "Allocations"
 
 
 class EverydayOperationError(Exception):
@@ -53,7 +58,58 @@ def _everyday_allocation_id(resource_id):
 
 
 def _write_history(history_table, **fields):
+    actor = str(fields.get("actor_sub") or "").strip()
+    if actor:
+        fields["actor_sub"] = actor
+    else:
+        fields.pop("actor_sub", None)
     history_table.put_item(Item=fields)
+
+
+def _encoded(values):
+    encoded = {}
+    for key, value in values.items():
+        if value is None:
+            continue
+        encoded[key] = _serializer.serialize(value)
+    return encoded
+
+
+def _transact_write(transact_items):
+    """Low-level TransactWriteItems. Tests replace the table client instead."""
+    import boto3
+
+    boto3.client("dynamodb").transact_write_items(TransactItems=transact_items)
+
+
+def _commit_everyday_allocation(tables, transact_items):
+    """Commit the resource update and allocation insert together."""
+    client = getattr(getattr(tables["resources"], "meta", None), "client", None)
+    if client is not None and hasattr(client, "transact_write_items"):
+        client.transact_write_items(TransactItems=transact_items)
+        return
+    _transact_write(transact_items)
+
+
+def _allocation_transact_items(resource_id, update_expression, condition, values, allocation):
+    return [
+        {
+            "Update": {
+                "TableName": RESOURCES_TABLE,
+                "Key": _encoded({"resource_id": resource_id}),
+                "UpdateExpression": update_expression,
+                "ConditionExpression": condition,
+                "ExpressionAttributeValues": _encoded(values),
+            }
+        },
+        {
+            "Put": {
+                "TableName": ALLOCATIONS_TABLE,
+                "Item": _encoded(allocation),
+                "ConditionExpression": "attribute_not_exists(allocation_id)",
+            }
+        },
+    ]
 
 
 def _conflict_from_client(error):
@@ -125,6 +181,7 @@ def reserve_individual(body, organization_id, actor_sub, actor_role, resource, t
         previous_status="AVAILABLE",
         new_status="RESERVED",
         changed_at=now,
+        actor_sub=actor_sub,
         reason="RESOURCE_RESERVED",
     )
     record_audit(
@@ -142,9 +199,81 @@ def reserve_individual(body, organization_id, actor_sub, actor_role, resource, t
     return {"message": "Resource reserved", "resource_id": resource_id, "operational_status": "RESERVED"}
 
 
+def release_quantity_reservation(body, organization_id, actor_sub, actor_role, resource, tables):
+    """Move reserved quantity back to available with one conditional update."""
+    if normalize_tracking_mode(resource.get("tracking_mode")) != "QUANTITY":
+        raise EverydayOperationError(409, "Resource is not a quantity pool")
+
+    quantity = _positive_quantity((body or {}).get("quantity"), "Quantity")
+    now = _now()
+    resource_id = resource["resource_id"]
+
+    try:
+        tables["resources"].update_item(
+            Key={"resource_id": resource_id},
+            UpdateExpression=(
+                "SET quantity_reserved = quantity_reserved - :qty, "
+                "quantity_available = quantity_available + :qty"
+            ),
+            ConditionExpression=(
+                "attribute_exists(resource_id) AND organization_id = :organization_id "
+                "AND tracking_mode = :quantity AND quantity_reserved >= :qty "
+                "AND quantity_available + :qty <= quantity_total "
+                "AND quantity_available + quantity_reserved + quantity_allocated = quantity_total "
+                "AND (attribute_not_exists(operational_status) OR operational_status <> :retired)"
+            ),
+            ExpressionAttributeValues={
+                ":qty": quantity,
+                ":organization_id": organization_id,
+                ":quantity": "QUANTITY",
+                ":retired": "RETIRED",
+            },
+        )
+    except ClientError as error:
+        _conflict_from_client(error)
+
+    _write_history(
+        tables["history"],
+        history_id=_history_id("HIST-QTY-UNRESERVE-", resource_id),
+        resource_id=resource_id,
+        organization_id=organization_id,
+        location_id=resource.get("location_id", ""),
+        resource_type=resource.get("Type", ""),
+        location=resource.get("Location", ""),
+        previous_status="RESERVED",
+        new_status="AVAILABLE",
+        changed_at=now,
+        actor_sub=actor_sub,
+        reason="QUANTITY_RESERVATION_RELEASED",
+        quantity=quantity,
+    )
+    record_audit(
+        tables["audit"],
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "resource.quantity_release_reservation",
+            "resource",
+            resource_id,
+            location_id=resource.get("location_id", ""),
+            metadata={"quantity": quantity},
+        ),
+    )
+    return {"message": "Quantity reservation released", "resource_id": resource_id, "quantity": quantity}
+
+
 def release_reservation(body, organization_id, actor_sub, actor_role, resource, tables):
+    if normalize_tracking_mode(resource.get("tracking_mode")) == "QUANTITY":
+        return release_quantity_reservation(body, organization_id, actor_sub, actor_role, resource, tables)
+
     if normalize_tracking_mode(resource.get("tracking_mode")) != "INDIVIDUAL":
         raise EverydayOperationError(409, "Resource is not an individual item")
+
+    try:
+        validate_transition("RESERVED", "AVAILABLE")
+    except ResourceStateError as error:
+        raise EverydayOperationError(409, "Resource state conflict") from error
 
     now = _now()
     resource_id = resource["resource_id"]
@@ -157,13 +286,15 @@ def release_reservation(body, organization_id, actor_sub, actor_role, resource, 
                 "REMOVE reserved_by, reserved_at"
             ),
             ConditionExpression=(
-                "organization_id = :organization_id AND operational_status = :reserved"
+                "organization_id = :organization_id AND operational_status = :reserved "
+                "AND reserved_by = :actor"
             ),
             ExpressionAttributeValues={
                 ":available": "AVAILABLE",
                 ":true": True,
                 ":reserved": "RESERVED",
                 ":organization_id": organization_id,
+                ":actor": actor_sub,
             },
         )
     except ClientError as error:
@@ -180,6 +311,7 @@ def release_reservation(body, organization_id, actor_sub, actor_role, resource, 
         previous_status="RESERVED",
         new_status="AVAILABLE",
         changed_at=now,
+        actor_sub=actor_sub,
         reason="RESOURCE_RESERVATION_RELEASED",
     )
     record_audit(
@@ -250,54 +382,17 @@ def everyday_allocate_individual(body, organization_id, actor_sub, actor_role, r
         previous = "AVAILABLE"
 
     allocation = _everyday_allocation_item(allocation_id, resource, organization_id, actor_sub, 1, purpose, now)
-
-    # Use high-level UpdateItem/PutItem (same path as reserve). Low-level TransactWrite
-    # Key encoding produced ValidationError against Resources in this environment.
-    try:
-        tables["resources"].update_item(
-            Key={"resource_id": resource_id},
-            UpdateExpression="SET operational_status = :allocated, Available = :false",
-            ConditionExpression=condition,
-            ExpressionAttributeValues=values,
-        )
-    except ClientError as error:
-        _conflict_from_client(error)
-
-    try:
-        tables["allocations"].put_item(
-            Item=allocation,
-            ConditionExpression="attribute_not_exists(allocation_id)",
-        )
-    except ClientError as error:
-        try:
-            revert_values = {
-                ":available": "AVAILABLE",
-                ":true": True,
-                ":organization_id": organization_id,
-                ":allocated": "ALLOCATED",
-            }
-            tables["resources"].update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression="SET operational_status = :available, Available = :true",
-                ConditionExpression=(
-                    "organization_id = :organization_id AND operational_status = :allocated"
-                ),
-                ExpressionAttributeValues=revert_values,
-            )
-        except ClientError:
-            pass
-        _conflict_from_client(error)
-
+    update_expression = "SET operational_status = :allocated, Available = :false"
     if from_reserved:
-        try:
-            tables["resources"].update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression="REMOVE reserved_by, reserved_at",
-                ConditionExpression="organization_id = :organization_id",
-                ExpressionAttributeValues={":organization_id": organization_id},
-            )
-        except ClientError:
-            pass
+        update_expression += " REMOVE reserved_by, reserved_at"
+
+    try:
+        _commit_everyday_allocation(
+            tables,
+            _allocation_transact_items(resource_id, update_expression, condition, values, allocation),
+        )
+    except ClientError as error:
+        _conflict_from_client(error)
 
     _write_history(
         tables["history"],
@@ -310,6 +405,7 @@ def everyday_allocate_individual(body, organization_id, actor_sub, actor_role, r
         previous_status=previous,
         new_status="ALLOCATED",
         changed_at=now,
+        actor_sub=actor_sub,
         reason="EVERYDAY_RESOURCE_ALLOCATED",
         allocation_id=allocation_id,
     )
@@ -425,6 +521,7 @@ def everyday_return(body, organization_id, actor_sub, actor_role, resource, tabl
         previous_status=previous if previous in {"ALLOCATED", "IN_USE"} else "ALLOCATED",
         new_status="AVAILABLE",
         changed_at=now,
+        actor_sub=actor_sub,
         reason="EVERYDAY_RESOURCE_RETURNED",
         allocation_id=allocation_id,
         quantity=quantity,
@@ -487,6 +584,7 @@ def reserve_quantity(body, organization_id, actor_sub, actor_role, resource, tab
         previous_status="AVAILABLE",
         new_status="RESERVED",
         changed_at=now,
+        actor_sub=actor_sub,
         reason="QUANTITY_RESERVED",
         quantity=quantity,
     )
@@ -517,24 +615,25 @@ def everyday_allocate_quantity(body, organization_id, actor_sub, actor_role, res
     allocation_id = _everyday_allocation_id(resource_id)
     purpose = (body or {}).get("purpose")
 
+    quantity_guard = (
+        "attribute_exists(resource_id) AND organization_id = :organization_id "
+        "AND tracking_mode = :quantity "
+        "AND quantity_allocated + :qty <= quantity_total "
+        "AND quantity_available + quantity_reserved + quantity_allocated = quantity_total "
+        "AND (attribute_not_exists(operational_status) OR operational_status <> :retired)"
+    )
     if from_reserved:
         update_expression = (
             "SET quantity_reserved = quantity_reserved - :qty, "
             "quantity_allocated = quantity_allocated + :qty"
         )
-        condition = (
-            "organization_id = :organization_id AND tracking_mode = :quantity "
-            "AND quantity_reserved >= :qty"
-        )
+        condition = quantity_guard + " AND quantity_reserved >= :qty"
     else:
         update_expression = (
             "SET quantity_available = quantity_available - :qty, "
             "quantity_allocated = quantity_allocated + :qty"
         )
-        condition = (
-            "organization_id = :organization_id AND tracking_mode = :quantity "
-            "AND quantity_available >= :qty"
-        )
+        condition = quantity_guard + " AND quantity_available >= :qty"
 
     allocation = _everyday_allocation_item(
         allocation_id, resource, organization_id, actor_sub, quantity, purpose, now
@@ -544,46 +643,15 @@ def everyday_allocate_quantity(body, organization_id, actor_sub, actor_role, res
         ":qty": quantity,
         ":organization_id": organization_id,
         ":quantity": "QUANTITY",
+        ":retired": "RETIRED",
     }
 
     try:
-        tables["resources"].update_item(
-            Key={"resource_id": resource_id},
-            UpdateExpression=update_expression,
-            ConditionExpression=condition,
-            ExpressionAttributeValues=values,
+        _commit_everyday_allocation(
+            tables,
+            _allocation_transact_items(resource_id, update_expression, condition, values, allocation),
         )
     except ClientError as error:
-        _conflict_from_client(error)
-
-    try:
-        tables["allocations"].put_item(
-            Item=allocation,
-            ConditionExpression="attribute_not_exists(allocation_id)",
-        )
-    except ClientError as error:
-        try:
-            if from_reserved:
-                revert_expression = (
-                    "SET quantity_reserved = quantity_reserved + :qty, "
-                    "quantity_allocated = quantity_allocated - :qty"
-                )
-            else:
-                revert_expression = (
-                    "SET quantity_available = quantity_available + :qty, "
-                    "quantity_allocated = quantity_allocated - :qty"
-                )
-            tables["resources"].update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression=revert_expression,
-                ConditionExpression=(
-                    "organization_id = :organization_id AND tracking_mode = :quantity "
-                    "AND quantity_allocated >= :qty"
-                ),
-                ExpressionAttributeValues=values,
-            )
-        except ClientError:
-            pass
         _conflict_from_client(error)
 
     _write_history(
@@ -597,6 +665,7 @@ def everyday_allocate_quantity(body, organization_id, actor_sub, actor_role, res
         previous_status="AVAILABLE",
         new_status="ALLOCATED",
         changed_at=now,
+        actor_sub=actor_sub,
         reason="EVERYDAY_QUANTITY_ALLOCATED",
         allocation_id=allocation_id,
         quantity=quantity,

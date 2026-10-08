@@ -107,6 +107,9 @@ class ConditionalTable:
         if "operational_status = :reserved" in condition and item.get("operational_status") != "RESERVED":
             raise _conditional_failed()
 
+        if "reserved_by = :actor" in condition and item.get("reserved_by") != values.get(":actor"):
+            raise _conditional_failed()
+
         if "operational_status = :allocated" in condition and "operational_status = :in_use" not in condition:
             if item.get("operational_status") != "ALLOCATED":
                 raise _conditional_failed()
@@ -134,6 +137,9 @@ class ConditionalTable:
         if "operational_status = :allocated" in expr:
             item["operational_status"] = values[":allocated"]
             item["Available"] = values.get(":false", False)
+            if "REMOVE" in expr:
+                for name in expr.split("REMOVE", 1)[1].split(","):
+                    item.pop(name.strip(), None)
             return
 
         if "operational_status = :reserved" in expr:
@@ -164,6 +170,26 @@ class ConditionalTable:
                 raise _conditional_failed()
             item["quantity_available"] -= qty
             item["quantity_allocated"] += qty
+            return
+
+        if (
+            "quantity_reserved = quantity_reserved - :qty" in expr
+            and "quantity_available = quantity_available + :qty" in expr
+        ):
+            qty = values[":qty"]
+            if item.get("organization_id") != values.get(":organization_id"):
+                raise _conditional_failed()
+            if "tracking_mode = :quantity" in condition and item.get("tracking_mode") != values.get(":quantity"):
+                raise _conditional_failed()
+            if "operational_status <> :retired" in condition and item.get("operational_status") == values.get(":retired"):
+                raise _conditional_failed()
+            if item.get("quantity_reserved", 0) < qty:
+                raise _conditional_failed()
+            if "quantity_available + :qty <= quantity_total" in condition:
+                if item.get("quantity_available", 0) + qty > item.get("quantity_total", 0):
+                    raise _conditional_failed()
+            item["quantity_reserved"] -= qty
+            item["quantity_available"] += qty
             return
 
         if "quantity_reserved = quantity_reserved - :qty" in expr:
@@ -841,6 +867,20 @@ def test_emergency_release_restores_resource(monkeypatch):
         ]
     )
     history = Table([])
+    import emergency_release
+    from transact_memory import apply_transact
+
+    def _transact(items):
+        apply_transact(
+            {
+                "Resources": resources.rows,
+                "Allocations": allocations.rows,
+                "EmergencyRequests": requests.rows,
+            },
+            items,
+        )
+
+    monkeypatch.setattr(emergency_release, "_transact_write", _transact)
     monkeypatch.setattr(resource_handler, "resources_table", lambda: resources)
     monkeypatch.setattr(resource_handler, "allocations_table", lambda: allocations)
     monkeypatch.setattr(resource_handler, "requests_table", lambda: requests)
@@ -855,3 +895,5 @@ def test_emergency_release_restores_resource(monkeypatch):
     assert result["statusCode"] == 200
     assert resources.rows[0]["Available"] is True
     assert resources.rows[0]["operational_status"] == "AVAILABLE"
+    assert allocations.rows[0]["status"] == "RELEASED"
+    assert requests.rows[0]["Status"] == "RELEASED"

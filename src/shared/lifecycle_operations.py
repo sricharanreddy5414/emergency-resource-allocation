@@ -52,6 +52,11 @@ def _conflict_from_client(error):
 
 
 def _write_history(history_table, **fields):
+    actor = str(fields.get("actor_sub") or "").strip()
+    if actor:
+        fields["actor_sub"] = actor
+    else:
+        fields.pop("actor_sub", None)
     history_table.put_item(Item=fields)
 
 
@@ -222,6 +227,7 @@ def _transition_resource(
         previous_status=current,
         new_status=target_status,
         changed_at=now,
+        actor_sub=actor_sub,
         reason=history_reason,
         notes=notes,
     )

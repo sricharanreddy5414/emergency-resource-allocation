@@ -2,6 +2,7 @@
 
 import copy
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -439,3 +440,196 @@ def test_public_view_hides_assignment_and_serial():
     assert "assigned_to" not in payload
     assert "department" not in payload
     assert "operational_status" not in payload
+
+
+resource_handler = load_module("resource_handler_rm01", "src/resource/handler.py")
+
+
+class MetadataTable:
+    """Applies the handler's UpdateItem condition instead of replacing the item."""
+
+    def __init__(self, item):
+        self.items = {item["resource_id"]: copy.deepcopy(item)}
+        self.after_read = None
+        self.puts = []
+        self.last_update = None
+
+    def get_item(self, Key):
+        item = copy.deepcopy(self.items[Key["resource_id"]])
+        hook = self.after_read
+        self.after_read = None
+        if hook:
+            hook()
+        return {"Item": item}
+
+    def put_item(self, Item, ConditionExpression=None):
+        self.puts.append(copy.deepcopy(Item))
+        raise AssertionError("metadata update must not put the whole item")
+
+    def update_item(self, **kwargs):
+        self.last_update = kwargs
+        item = self.items[kwargs["Key"]["resource_id"]]
+        values = kwargs.get("ExpressionAttributeValues") or {}
+        names = kwargs.get("ExpressionAttributeNames") or {}
+        if not _condition_holds(item, kwargs.get("ConditionExpression") or "", values):
+            raise _conditional_failed()
+        expression = kwargs.get("UpdateExpression") or ""
+        set_part, _, remove_part = expression.partition("REMOVE")
+        if "SET" in set_part:
+            for chunk in set_part.split("SET", 1)[1].split(","):
+                left, right = [part.strip() for part in chunk.split("=", 1)]
+                item[names[left]] = values[right]
+        if remove_part.strip():
+            for token in remove_part.split(","):
+                item.pop(names[token.strip()], None)
+
+
+def _condition_holds(item, condition, values):
+    for clause in [part.strip() for part in condition.split(" AND ") if part.strip()]:
+        if clause.startswith("attribute_not_exists(") and clause.endswith(")"):
+            if clause[len("attribute_not_exists("):-1] in item:
+                return False
+            continue
+        left, right = [part.strip() for part in clause.split("=", 1)]
+        if item.get(left) != values[right]:
+            return False
+    return True
+
+
+class _Lookup:
+    def __init__(self, items):
+        self.items = items
+
+    def get_item(self, Key):
+        if "resource_type_id" in Key:
+            found = self.items.get((Key["organization_id"], Key["resource_type_id"]))
+        else:
+            found = self.items.get((Key["organization_id"], Key["location_id"]))
+        return {"Item": copy.deepcopy(found)} if found else {}
+
+
+def _wire_update(monkeypatch, resource):
+    table = MetadataTable(resource)
+    locations = _Lookup({
+        (ORG, "LOC1"): {"organization_id": ORG, "location_id": "LOC1", "name": "HQ", "status": "ACTIVE", "city": "City"},
+        (ORG, "LOC2"): {"organization_id": ORG, "location_id": "LOC2", "name": "Depot", "status": "ACTIVE", "city": "Town"},
+    })
+    types = _Lookup({
+        (ORG, "TYPE1"): {"organization_id": ORG, "resource_type_id": "TYPE1", "name": "Kit", "status": "ACTIVE", "attributes_schema": {"fields": []}},
+    })
+    monkeypatch.setattr(resource_handler, "resources_table", lambda: table)
+    monkeypatch.setattr(resource_handler, "locations_table", lambda: locations)
+    monkeypatch.setattr(resource_handler, "resource_types_table", lambda: types)
+    monkeypatch.setattr(resource_handler, "audit_table", lambda: AuditCapture())
+    return table
+
+
+def _body(result):
+    return result["statusCode"], json.loads(result["body"])
+
+
+def test_metadata_update_loses_to_concurrent_reserve(monkeypatch):
+    table = _wire_update(monkeypatch, individual(name="Old", visibility="PRIVATE", location_id="LOC1", Location="HQ"))
+
+    def reserve():
+        item = table.items["R1"]
+        item["Available"] = False
+        item["operational_status"] = "RESERVED"
+        item["reserved_by"] = "other-user"
+        item["reserved_at"] = "2026-10-08T00:00:00+00:00"
+
+    table.after_read = reserve
+    status, body = _body(resource_handler.update_resource({"resource_id": "R1", "name": "New Name"}, ORG, USER, "OPERATOR"))
+    saved = table.items["R1"]
+    assert status == 409
+    assert body["message"] == "Resource state conflict"
+    assert saved["name"] == "Old"
+    assert saved["Available"] is False
+    assert saved["operational_status"] == "RESERVED"
+    assert saved["reserved_by"] == "other-user"
+    assert table.puts == []
+
+
+def test_metadata_update_changes_name_location_and_visibility(monkeypatch):
+    table = _wire_update(
+        monkeypatch,
+        individual(name="Old", visibility="PRIVATE", location_id="LOC1", Location="HQ", resource_type_id="TYPE1"),
+    )
+    status, body = _body(
+        resource_handler.update_resource(
+            {
+                "resource_id": "R1",
+                "name": "Renamed",
+                "location_id": "LOC2",
+                "visibility": "NETWORK",
+            },
+            ORG,
+            USER,
+            "OPERATOR",
+        )
+    )
+    saved = table.items["R1"]
+    assert status == 200
+    assert body["message"] == "Resource updated"
+    assert saved["name"] == "Renamed"
+    assert saved["location_id"] == "LOC2"
+    assert saved["Location"] == "Depot"
+    assert saved["visibility"] == "NETWORK"
+    assert saved["Available"] is True
+    assert saved["operational_status"] == "AVAILABLE"
+    assert "Available" not in table.last_update["UpdateExpression"].split("REMOVE")[0].split("SET", 1)[-1]
+    assert table.puts == []
+
+
+def test_name_only_update_leaves_other_fields(monkeypatch):
+    table = _wire_update(
+        monkeypatch,
+        individual(
+            name="Old",
+            visibility="PUBLIC",
+            location_id="LOC1",
+            Location="HQ",
+            tracking_mode="QUANTITY",
+            quantity_total=10,
+            quantity_available=6,
+            quantity_reserved=1,
+            quantity_allocated=3,
+            public_name="Public",
+        ),
+    )
+    status, _body_payload = _body(resource_handler.update_resource({"resource_id": "R1", "name": "Renamed"}, ORG, USER, "OPERATOR"))
+    saved = table.items["R1"]
+    set_clause = table.last_update["UpdateExpression"].split("REMOVE")[0]
+    assert status == 200
+    assert saved["name"] == "Renamed"
+    assert saved["location_id"] == "LOC1"
+    assert saved["visibility"] == "PUBLIC"
+    assert saved["Available"] is True
+    assert saved["operational_status"] == "AVAILABLE"
+    assert saved["quantity_total"] == 10
+    assert saved["quantity_available"] == 6
+    assert saved["quantity_reserved"] == 1
+    assert saved["quantity_allocated"] == 3
+    assert "reserved_by" not in saved
+    assert "Available =" not in set_clause
+    assert "operational_status =" not in set_clause
+    assert "quantity_" not in set_clause
+
+
+def test_metadata_update_loses_to_concurrent_allocation(monkeypatch):
+    table = _wire_update(monkeypatch, individual(name="Old", visibility="PRIVATE"))
+
+    def allocate():
+        item = table.items["R1"]
+        item["Available"] = False
+        item["operational_status"] = "ALLOCATED"
+
+    table.after_read = allocate
+    status, body = _body(resource_handler.update_resource({"resource_id": "R1", "name": "New Name"}, ORG, USER, "OPERATOR"))
+    saved = table.items["R1"]
+    assert status == 409
+    assert body["message"] == "Resource state conflict"
+    assert saved["name"] == "Old"
+    assert saved["Available"] is False
+    assert saved["operational_status"] == "ALLOCATED"
+    assert table.puts == []

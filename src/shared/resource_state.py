@@ -152,20 +152,21 @@ def validate_quantity_fields(resource):
     quantity_snapshot(resource)
 
 
-def initialize_new_resource_fields(body, *, available):
-    """Defaults and validation for a new resource row. Side-effect free."""
+def initialize_new_resource_fields(body, *, available=True):
+    """Initial state for a new resource row.
+
+    A new individual resource is AVAILABLE and emergency-available.
+    A new quantity pool is AVAILABLE with Available false and a full
+    available counter. Client Available and operational_status are not
+    authoritative. ``available`` remains only so existing callers keep working.
+    """
+    del available
     if not isinstance(body, dict):
         raise ResourceStateError("Resource is invalid")
 
     tracking_mode = normalize_tracking_mode(body.get("tracking_mode"))
-
-    if body.get("operational_status") is None or not str(body.get("operational_status") or "").strip():
-        operational_status = "AVAILABLE"
-    else:
-        operational_status = normalize_operational_status(body.get("operational_status"))
-
     fields = {
-        "operational_status": operational_status,
+        "operational_status": "AVAILABLE",
         "tracking_mode": tracking_mode,
     }
 
@@ -174,6 +175,7 @@ def initialize_new_resource_fields(body, *, available):
             if body.get(name) is not None:
                 raise ResourceStateError("Quantity fields are not allowed for individual resources")
 
+        fields["Available"] = True
         return fields
 
     if body.get("quantity_total") is None:
