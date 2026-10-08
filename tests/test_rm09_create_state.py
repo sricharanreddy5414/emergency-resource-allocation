@@ -311,7 +311,22 @@ def test_created_individual_can_reserve_and_return(monkeypatch):
         def get_item(self, Key):
             return {"Item": dict(self.item)}
 
+        def transact_write_items(self, TransactItems):
+            for step in TransactItems:
+                update = step["Update"]
+                if "resource_id" not in update["Key"]:
+                    continue
+                expression = update.get("UpdateExpression") or ""
+                values = {
+                    key: next(iter(value.values()))
+                    for key, value in update["ExpressionAttributeValues"].items()
+                }
+                if "operational_status = :available" in expression:
+                    self.item["operational_status"] = values[":available"]
+                    self.item["Available"] = values[":true"]
+
     table = Mutable(item)
+    table.meta = type("Meta", (), {"client": table})()
     tables = {
         "resources": table,
         "allocations": type("Alloc", (), {"get_item": lambda self, Key: {"Item": {}}, "update_item": lambda self, **kwargs: None})(),
@@ -327,8 +342,10 @@ def test_created_individual_can_reserve_and_return(monkeypatch):
     assert table.item["operational_status"] == "AVAILABLE"
     assert table.item["Available"] is True
 
+    commit_allocation = everyday._commit_everyday_allocation
     monkeypatch.setattr(everyday, "_commit_everyday_allocation", lambda *args, **kwargs: None)
     everyday.everyday_allocate_individual({}, ORG, ACTOR, "OPERATOR", table.item, tables)
+    monkeypatch.setattr(everyday, "_commit_everyday_allocation", commit_allocation)
     assert table.history[-1]["reason"] == "EVERYDAY_RESOURCE_ALLOCATED"
     assert table.history[-1]["actor_sub"] == ACTOR
 
