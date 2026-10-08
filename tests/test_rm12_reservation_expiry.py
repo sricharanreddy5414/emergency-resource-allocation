@@ -630,7 +630,10 @@ def test_infrastructure_is_least_privilege_and_not_applied():
         "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry",
         "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry:*",
     ]
+    assert "lambda:CreateAlias" in policy["Statement"][0]["Action"]
+    assert "lambda:DeleteAlias" not in policy["Statement"][0]["Action"]
     assert "lambda:UpdateFunctionConfiguration" not in policy["Statement"][0]["Action"]
+    assert "lambda:*" not in policy["Statement"][0]["Action"]
     backend = (ROOT / "scripts" / "deploy_backend.py").read_text(encoding="utf-8")
     assert "erap-reservation-expiry" not in backend
     assert "erap-reservation-expiry" not in PACKAGES

@@ -1,5 +1,6 @@
 """First and later erap-reservation-expiry releases. These tests do not call AWS."""
 
+import json
 import sys
 import zipfile
 from pathlib import Path
@@ -208,6 +209,36 @@ def test_rollback_rejects_non_versions(version):
     with pytest.raises(SystemExit, match="version"):
         rollback.rollback_reservation_expiry(_aws(state), version)
     assert state["calls"] == []
+
+
+def test_create_alias_is_limited_to_the_expiry_function():
+    policy = json.loads((ROOT / "infra" / "github-production-reservation-expiry-policy.json").read_text(encoding="utf-8"))
+    statement = policy["Statement"][0]
+    actions = set(statement["Action"])
+    resources = statement["Resource"]
+    assert actions == {
+        "lambda:GetAlias",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:PublishVersion",
+        "lambda:CreateAlias",
+        "lambda:UpdateAlias",
+    }
+    assert resources == [
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry:*",
+    ]
+    assert "lambda:DeleteAlias" not in actions
+    assert "lambda:UpdateFunctionConfiguration" not in actions
+    assert "lambda:*" not in actions
+    assert all("erap-reservation-expiry" in resource for resource in resources)
+    assert not any("get-resources" in resource or "erap-exchange" in resource for resource in resources)
+    resource_policy = json.loads((ROOT / "infra" / "github-production-resource-policy.json").read_text(encoding="utf-8"))
+    resource_actions = []
+    for item in resource_policy["Statement"]:
+        action = item["Action"]
+        resource_actions.extend(action if isinstance(action, list) else [action])
+    assert "lambda:CreateAlias" not in resource_actions
 
 
 def test_release_script_targets_only_the_expiry_function():

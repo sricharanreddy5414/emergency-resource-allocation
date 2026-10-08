@@ -280,13 +280,16 @@ def main():
         "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry",
         "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry:*",
     }
+    expiry_actions = allowed_actions | {"lambda:CreateAlias"}
     for statement in expiry_policy["Statement"]:
         actions = statement["Action"]
         resources = statement["Resource"]
         action_set = set(actions if isinstance(actions, list) else [actions])
         resource_set = set(resources if isinstance(resources, list) else [resources])
-        if action_set != allowed_actions or resource_set != expiry_resources:
+        if action_set != expiry_actions or resource_set != expiry_resources:
             raise SystemExit("reservation expiry production policy is not limited to erap-reservation-expiry")
+        if "lambda:CreateAlias" not in action_set:
+            raise SystemExit("reservation expiry production policy must allow CreateAlias")
     print("workflow check passed")
     return 0
 
