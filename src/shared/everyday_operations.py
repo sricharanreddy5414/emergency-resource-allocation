@@ -97,6 +97,37 @@ def _commit_everyday_allocation(tables, transact_items):
     _transact_write(transact_items)
 
 
+def _return_transact_items(resource_id, resource_expression, resource_condition, resource_values, allocation_id, allocation_values):
+    """Resource return and allocation return are one conditional transaction."""
+    return [
+        {
+            "Update": {
+                "TableName": RESOURCES_TABLE,
+                "Key": _encoded({"resource_id": resource_id}),
+                "UpdateExpression": resource_expression,
+                "ConditionExpression": resource_condition,
+                "ExpressionAttributeValues": _encoded(resource_values),
+            }
+        },
+        {
+            "Update": {
+                "TableName": ALLOCATIONS_TABLE,
+                "Key": _encoded({"allocation_id": allocation_id}),
+                "UpdateExpression": (
+                    "SET #status = :returned, returned_at = :now, returned_by = :actor, updated_at = :now"
+                ),
+                "ConditionExpression": (
+                    "attribute_exists(allocation_id) AND #status = :open "
+                    "AND organization_id = :organization_id AND resource_id = :resource_id "
+                    "AND allocation_type = :everyday"
+                ),
+                "ExpressionAttributeNames": {"#status": "status"},
+                "ExpressionAttributeValues": _encoded(allocation_values),
+            }
+        },
+    ]
+
+
 def _allocation_transact_items(resource_id, update_expression, condition, values, allocation):
     return [
         {
@@ -464,58 +495,56 @@ def everyday_return(body, organization_id, actor_sub, actor_role, resource, tabl
     quantity = int(allocation.get("quantity") or 1)
     previous = str(resource.get("operational_status") or "ALLOCATED").upper() or "ALLOCATED"
 
-    try:
-        if mode == "INDIVIDUAL":
-            tables["resources"].update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression="SET operational_status = :available, Available = :true",
-                ConditionExpression=(
-                    "organization_id = :organization_id AND "
-                    "(operational_status = :allocated OR operational_status = :in_use)"
-                ),
-                ExpressionAttributeValues={
-                    ":available": "AVAILABLE",
-                    ":true": True,
-                    ":allocated": "ALLOCATED",
-                    ":in_use": "IN_USE",
-                    ":organization_id": organization_id,
-                },
-            )
-        else:
-            tables["resources"].update_item(
-                Key={"resource_id": resource_id},
-                UpdateExpression=(
-                    "SET quantity_allocated = quantity_allocated - :qty, "
-                    "quantity_available = quantity_available + :qty"
-                ),
-                ConditionExpression=(
-                    "organization_id = :organization_id AND tracking_mode = :quantity "
-                    "AND quantity_allocated >= :qty"
-                ),
-                ExpressionAttributeValues={
-                    ":qty": quantity,
-                    ":organization_id": organization_id,
-                    ":quantity": "QUANTITY",
-                },
-            )
-    except ClientError as error:
-        _conflict_from_client(error)
+    if mode == "INDIVIDUAL":
+        resource_expression = "SET operational_status = :available, Available = :true"
+        resource_condition = (
+            "organization_id = :organization_id AND "
+            "(operational_status = :allocated OR operational_status = :in_use)"
+        )
+        resource_values = {
+            ":available": "AVAILABLE",
+            ":true": True,
+            ":allocated": "ALLOCATED",
+            ":in_use": "IN_USE",
+            ":organization_id": organization_id,
+        }
+    else:
+        resource_expression = (
+            "SET quantity_allocated = quantity_allocated - :qty, "
+            "quantity_available = quantity_available + :qty"
+        )
+        resource_condition = (
+            "attribute_exists(resource_id) AND organization_id = :organization_id "
+            "AND tracking_mode = :quantity AND quantity_allocated >= :qty "
+            "AND quantity_available + quantity_reserved + quantity_allocated = quantity_total"
+        )
+        resource_values = {
+            ":qty": quantity,
+            ":organization_id": organization_id,
+            ":quantity": "QUANTITY",
+        }
+
+    allocation_values = {
+        ":returned": EVERYDAY_STATUS_RETURNED,
+        ":open": EVERYDAY_STATUS_OPEN,
+        ":now": now,
+        ":actor": actor_sub,
+        ":organization_id": organization_id,
+        ":resource_id": resource_id,
+        ":everyday": ALLOCATION_TYPE_EVERYDAY,
+    }
 
     try:
-        tables["allocations"].update_item(
-            Key={"allocation_id": allocation_id},
-            UpdateExpression=(
-                "SET #status = :returned, returned_at = :now, returned_by = :actor, updated_at = :now"
+        _commit_everyday_allocation(
+            tables,
+            _return_transact_items(
+                resource_id,
+                resource_expression,
+                resource_condition,
+                resource_values,
+                allocation_id,
+                allocation_values,
             ),
-            ConditionExpression="#status = :open AND organization_id = :organization_id",
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":returned": EVERYDAY_STATUS_RETURNED,
-                ":open": EVERYDAY_STATUS_OPEN,
-                ":now": now,
-                ":actor": actor_sub,
-                ":organization_id": organization_id,
-            },
         )
     except ClientError as error:
         _conflict_from_client(error)
