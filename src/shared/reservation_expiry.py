@@ -184,11 +184,11 @@ def expire_reservation(tables, item, now_text):
     return "expired"
 
 
-def run_reservation_expiry(now=None, tables=None, limit=BATCH_LIMIT):
+def run_reservation_expiry(now=None, tables=None, limit=BATCH_LIMIT, invocation_id=""):
     """Expire at most one indexed page. A later run continues with whatever is still due."""
     from observability import begin_request, log_event
 
-    correlation = begin_request({"requestContext": {"requestId": "reservation-expiry"}})
+    correlation = begin_request({"requestContext": {"requestId": invocation_id}})
     now_text = _now_text(now)
     if tables is None:
         import boto3
