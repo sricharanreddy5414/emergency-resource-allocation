@@ -405,19 +405,37 @@ def test_duplicate_allocation_is_rejected(monkeypatch):
         ]
     )
 
-    class ExistingAllocation(Store):
-        def put_item(self, Item, ConditionExpression=None):
-            raise ClientError(
-                {"Error": {"Code": "ConditionalCheckFailedException", "Message": "exists"}},
-                "PutItem",
-            )
+    allocations = Store(
+        [
+            {
+                "allocation_id": "ALLOC-Q1",
+                "request_id": "Q1",
+                "organization_id": ORG_A,
+                "status": "ALLOCATED",
+            }
+        ]
+    )
+    history = Store()
+
+    def _transact(items):
+        from transact_memory import apply_transact
+
+        apply_transact(
+            {
+                "Resources": resources.items,
+                "Allocations": allocations.items,
+                "EmergencyRequests": requests.items,
+            },
+            items,
+        )
 
     monkeypatch.setattr(allocation_service, "locations_table", lambda: locations)
     monkeypatch.setattr(allocation_service, "requests_table", lambda: requests)
     monkeypatch.setattr(allocation_service, "resources_table", lambda: resources)
-    monkeypatch.setattr(allocation_service, "allocations_table", lambda: ExistingAllocation())
-    monkeypatch.setattr(allocation_service, "history_table", lambda: Store())
+    monkeypatch.setattr(allocation_service, "allocations_table", lambda: allocations)
+    monkeypatch.setattr(allocation_service, "history_table", lambda: history)
     monkeypatch.setattr(allocation_service, "audit_table", lambda: None)
+    monkeypatch.setattr(allocation_service, "_transact_write", _transact)
 
     result = allocation_service.lambda_handler(
         event(
@@ -437,7 +455,10 @@ def test_duplicate_allocation_is_rejected(monkeypatch):
     assert "ORG-B" not in result["body"]
     assert "Traceback" not in result["body"]
     assert body["message"] == "Request is not eligible for allocation"
-    assert resources.updates
+    assert resources.items[0]["Available"] is True
+    assert requests.items[0]["Status"] == "PENDING"
+    assert [item["allocation_id"] for item in allocations.items] == ["ALLOC-Q1"]
+    assert history.puts == []
 
 
 def test_completed_request_cannot_be_allocated(monkeypatch):

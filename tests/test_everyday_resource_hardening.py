@@ -777,6 +777,27 @@ def test_emergency_allocation_still_writes_alloc_id(monkeypatch):
         lambda: type("Events", (), {"put_events": lambda self, **kwargs: {}})(),
     )
 
+    def _transact(items):
+        from transact_memory import apply_transact
+        from boto3.dynamodb.types import TypeDeserializer
+
+        apply_transact(
+            {
+                "Resources": resources.items,
+                "Allocations": allocations.items,
+                "EmergencyRequests": requests.items,
+            },
+            items,
+        )
+        decoder = TypeDeserializer()
+        for entry in items:
+            if "Put" in entry:
+                allocations.puts.append(
+                    {key: decoder.deserialize(value) for key, value in entry["Put"]["Item"].items()}
+                )
+
+    monkeypatch.setattr(allocation_service, "_transact_write", _transact)
+
     result = allocation_service.lambda_handler(
         {
             "httpMethod": "POST",

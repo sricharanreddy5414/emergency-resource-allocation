@@ -16,20 +16,18 @@ def apply_transact(tables, transact_items):
     failed = False
 
     for entry in transact_items:
-        update = entry["Update"]
-        names = update.get("ExpressionAttributeNames") or {}
-        values = _decode(update.get("ExpressionAttributeValues") or {})
-        key = _decode(update["Key"])
-        current = _find(tables[update["TableName"]], key)
-        condition = _substitute(update.get("ConditionExpression") or "", names)
-        if current is None or not _holds(current, condition, values):
-            reasons.append({"Code": "ConditionalCheckFailed"})
-            failed = True
-            pending.append(None)
+        if "Update" in entry:
+            ready, action = _prepare_update(tables, entry["Update"])
+        elif "Put" in entry:
+            ready, action = _prepare_put(tables, entry["Put"])
+        else:
+            raise AssertionError("unsupported transaction action")
+        if ready:
+            reasons.append({"Code": "None"})
+            pending.append(action)
             continue
-        reasons.append({"Code": "None"})
-        expression = _substitute(update.get("UpdateExpression") or "", names)
-        pending.append((current, _assignments(expression, values)))
+        reasons.append({"Code": "ConditionalCheckFailed"})
+        failed = True
 
     if failed:
         raise ClientError(
@@ -43,8 +41,44 @@ def apply_transact(tables, transact_items):
             "TransactWriteItems",
         )
 
-    for current, fields in pending:
+    for action in pending:
+        action()
+
+
+def _prepare_update(tables, update):
+    names = update.get("ExpressionAttributeNames") or {}
+    values = _decode(update.get("ExpressionAttributeValues") or {})
+    key = _decode(update["Key"])
+    current = _find(tables[update["TableName"]], key)
+    condition = _substitute(update.get("ConditionExpression") or "", names)
+    if current is None or not _holds(current, condition, values):
+        return False, None
+    fields = _assignments(_substitute(update.get("UpdateExpression") or "", names), values)
+
+    def apply(current=current, fields=fields):
         current.update(fields)
+
+    return True, apply
+
+
+def _prepare_put(tables, put):
+    item = _decode(put["Item"])
+    rows = tables[put["TableName"]]
+    names = put.get("ExpressionAttributeNames") or {}
+    values = _decode(put.get("ExpressionAttributeValues") or {})
+    key_name = next(
+        (name for name in ("allocation_id", "resource_id", "request_id") if name in item),
+        None,
+    )
+    current = _find(rows, {key_name: item[key_name]}) if key_name else None
+    condition = _substitute(put.get("ConditionExpression") or "", names)
+    if not _holds(current or {}, condition, values):
+        return False, None
+
+    def apply(rows=rows, item=item):
+        rows.append(dict(item))
+
+    return True, apply
 
 
 def _decode(values):
