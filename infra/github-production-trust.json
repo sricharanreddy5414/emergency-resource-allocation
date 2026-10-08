@@ -20,7 +20,9 @@
             "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-exchange.yml@refs/heads/main",
             "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-exchange.yml@refs/heads/main",
             "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-resource.yml@refs/heads/main",
-            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-resource.yml@refs/heads/main"
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-resource.yml@refs/heads/main",
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-reservation-expiry.yml@refs/heads/main",
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-reservation-expiry.yml@refs/heads/main"
           ]
         }
       }

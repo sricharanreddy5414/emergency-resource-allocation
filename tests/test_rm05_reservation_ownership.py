@@ -57,6 +57,8 @@ class Resources:
             item["Available"] = values[":false"]
             item["reserved_by"] = values[":actor"]
             item["reserved_at"] = values[":now"]
+            item["reservation_expires_at"] = values[":expires"]
+            item["reservation_due_key"] = values[":due"]
             return
         if "operational_status = :available" in expression:
             item["operational_status"] = values[":available"]
@@ -64,6 +66,8 @@ class Resources:
             if "REMOVE" in expression:
                 item.pop("reserved_by", None)
                 item.pop("reserved_at", None)
+                item.pop("reservation_expires_at", None)
+                item.pop("reservation_due_key", None)
 
     def transact_write_items(self, TransactItems):
         before = copy.deepcopy(self.item)
@@ -83,6 +87,8 @@ class Resources:
                         if "REMOVE" in expression:
                             self.item.pop("reserved_by", None)
                             self.item.pop("reserved_at", None)
+                            self.item.pop("reservation_expires_at", None)
+                            self.item.pop("reservation_due_key", None)
                 if "Put" in step:
                     allocation = {key: _decode(value) for key, value in step["Put"]["Item"].items()}
                     if allocation["allocation_id"] in self.allocation_items:

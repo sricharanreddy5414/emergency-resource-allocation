@@ -14,6 +14,17 @@ RESOURCE_OPERATIONAL_STATUSES = frozenset(
 
 TRACKING_MODES = frozenset({"INDIVIDUAL", "QUANTITY"})
 
+# Fixed for every organization. This is not the 30-minute emergency auto-release.
+RESERVATION_DURATION_HOURS = 2
+RESERVATION_DUE_INDEX = "ReservationDueIndex"
+RESERVATION_DUE_KEY = "RESERVATION_DUE"
+RESERVATION_HELD_ATTRIBUTES = (
+    "reserved_by",
+    "reserved_at",
+    "reservation_expires_at",
+    "reservation_due_key",
+)
+
 RESOURCE_CONDITIONS = frozenset({"GOOD", "FAIR", "POOR", "CRITICAL"})
 
 QUANTITY_FIELD_NAMES = (
@@ -199,6 +210,21 @@ def initialize_new_resource_fields(body, *, available=True):
     return fields
 
 
+def reservation_due_values(reserved_at):
+    """Server-owned due time for one individual reservation."""
+    from datetime import datetime, timedelta, timezone
+
+    text = str(reserved_at or "").strip()
+    moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    expires = moment.astimezone(timezone.utc) + timedelta(hours=RESERVATION_DURATION_HOURS)
+    return {
+        "reservation_expires_at": expires.isoformat(),
+        "reservation_due_key": RESERVATION_DUE_KEY,
+    }
+
+
 def emergency_matchable(resource):
     """True when the legacy emergency matcher may claim this resource."""
     if not isinstance(resource, dict):
@@ -237,6 +263,8 @@ def lifecycle_fields_from_body(body):
         "assigned_to",
         "reserved_by",
         "reserved_at",
+        "reservation_expires_at",
+        "reservation_due_key",
         *QUANTITY_FIELD_NAMES,
     }
 

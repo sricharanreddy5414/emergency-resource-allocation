@@ -197,11 +197,26 @@ BILLING_PACKAGES = {
 }
 
 
+# Reservation expiry stays outside PACKAGES and outside deploy_backend.py.
+# The general release must not publish this worker.
+RESERVATION_EXPIRY_PACKAGES = {
+    "erap-reservation-expiry": {
+        "handler.py": "src/reservation_expiry_handler.py",
+        "reservation_expiry.py": "src/shared/reservation_expiry.py",
+        "resource_state.py": "src/shared/resource_state.py",
+        "notifications.py": "src/shared/notifications.py",
+        "observability.py": "src/shared/observability.py",
+        "audit.py": "src/shared/audit.py",
+    },
+}
+
+
 def package_map():
     mapping = dict(PACKAGES)
     mapping.update(BILLING_PACKAGES)
     mapping.update(EXCHANGE_PACKAGES)
     mapping.update(NOTIFICATION_PACKAGES)
+    mapping.update(RESERVATION_EXPIRY_PACKAGES)
     return mapping
 
 

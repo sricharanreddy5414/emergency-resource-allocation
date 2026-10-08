@@ -184,6 +184,8 @@ def test_secret_scan_runs_before_deployment_eligibility():
         "rollback-exchange.yml",
         "release-resource.yml",
         "rollback-resource.yml",
+        "release-reservation-expiry.yml",
+        "rollback-reservation-expiry.yml",
     ):
         text = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert "python scripts/security_scan.py" in text

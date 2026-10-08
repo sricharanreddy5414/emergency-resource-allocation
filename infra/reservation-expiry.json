@@ -1,0 +1,119 @@
+{
+  "applied": false,
+  "region": "eu-north-1",
+  "note": "Individual reservations last 2 hours. The schedule below is only how often the worker looks for due rows. Rows reserved before ReservationDueIndex exists have no due key and stay reserved until an operator releases them.",
+  "function": {
+    "name": "erap-reservation-expiry",
+    "handler": "handler.lambda_handler",
+    "alias": "live",
+    "timeout_seconds": 60,
+    "memory_size": 256,
+    "runtime": "python3.14"
+  },
+  "index": {
+    "table": "Resources",
+    "name": "ReservationDueIndex",
+    "partition_key": "reservation_due_key",
+    "partition_value": "RESERVATION_DUE",
+    "sort_key": "reservation_expires_at",
+    "projection": "INCLUDE",
+    "non_key_attributes": [
+      "organization_id",
+      "reserved_by",
+      "reserved_at",
+      "location_id",
+      "Type",
+      "Location",
+      "name",
+      "operational_status"
+    ],
+    "purpose": "Sparse due-time index. Only an active individual reservation has reservation_due_key. The worker reads one page whose sort key is at or before now."
+  },
+  "schedule": {
+    "service": "EventBridge Scheduler",
+    "name": "erap-reservation-expiry",
+    "schedule_expression": "rate(5 minutes)",
+    "timezone": "UTC",
+    "intended_state_after_deploy": "ENABLED",
+    "target": "erap-reservation-expiry",
+    "alias": "live",
+    "note": "Poll interval only. Reservation lifetime is 2 hours."
+  },
+  "iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "QueryDueReservations",
+        "Effect": "Allow",
+        "Action": "dynamodb:Query",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/Resources/index/ReservationDueIndex"
+      },
+      {
+        "Sid": "ExpireOneResource",
+        "Effect": "Allow",
+        "Action": "dynamodb:UpdateItem",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/Resources"
+      },
+      {
+        "Sid": "ReservationExpiryHistoryAndAudit",
+        "Effect": "Allow",
+        "Action": "dynamodb:PutItem",
+        "Resource": [
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/ResourceStatusHistory",
+          "arn:aws:dynamodb:eu-north-1:481838970142:table/AuditEvents"
+        ]
+      },
+      {
+        "Sid": "ReservationExpiryNotifications",
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
+        ],
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/Notifications"
+      },
+      {
+        "Sid": "ReservationExpiryRecipients",
+        "Effect": "Allow",
+        "Action": "dynamodb:Query",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/OrganizationMembers"
+      },
+      {
+        "Sid": "ReservationExpiryOrganizationStatus",
+        "Effect": "Allow",
+        "Action": "dynamodb:GetItem",
+        "Resource": "arn:aws:dynamodb:eu-north-1:481838970142:table/Organizations"
+      },
+      {
+        "Sid": "ReservationExpiryLogGroup",
+        "Effect": "Allow",
+        "Action": "logs:CreateLogGroup",
+        "Resource": "arn:aws:logs:eu-north-1:481838970142:log-group:/aws/lambda/erap-reservation-expiry"
+      },
+      {
+        "Sid": "ReservationExpiryLogStream",
+        "Effect": "Allow",
+        "Action": [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        "Resource": "arn:aws:logs:eu-north-1:481838970142:log-group:/aws/lambda/erap-reservation-expiry:*"
+      }
+    ]
+  },
+  "scheduler_iam": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "InvokeReservationExpiry",
+        "Effect": "Allow",
+        "Action": "lambda:InvokeFunction",
+        "Resource": [
+          "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry",
+          "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry:live"
+        ]
+      }
+    ]
+  }
+}

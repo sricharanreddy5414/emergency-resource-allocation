@@ -54,6 +54,25 @@ REQUIRED = {
         "security_scan.py",
         "get-resources",
     ],
+    "release-reservation-expiry.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "release_reservation_expiry.py",
+        "release_provenance.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "erap-reservation-expiry",
+    ],
+    "rollback-reservation-expiry.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        PRODUCTION_ROLE,
+        "rollback_reservation_expiry.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "erap-reservation-expiry",
+    ],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
 
@@ -113,6 +132,41 @@ def _resource_release_is_unsafe(text):
     return any(item in text for item in forbidden)
 
 
+def _reservation_expiry_release_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_resource.py",
+        "release_exchange.py",
+        "ensure_reservation_expiry.py",
+        "update-function-configuration",
+        "put-role-policy",
+        "push:",
+        "get-resources",
+        *_OTHER_FUNCTIONS,
+    )
+    return any(item in text for item in forbidden)
+
+
+def _reservation_expiry_rollback_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_reservation_expiry.py",
+        "release_resource.py",
+        "update-function-code",
+        "publish-version",
+        "update-function-configuration",
+        "put-role-policy",
+        "ensure_reservation_expiry.py",
+        "inputs.commit",
+        "push:",
+        "get-resources",
+        *_OTHER_FUNCTIONS,
+    )
+    return any(item in text for item in forbidden)
+
+
 def _resource_rollback_is_unsafe(text):
     forbidden = (
         "deploy_backend.py",
@@ -167,6 +221,10 @@ def main():
             raise SystemExit("resource release must publish only get-resources")
         if name == "rollback-resource.yml" and _resource_rollback_is_unsafe(text):
             raise SystemExit("resource rollback must move only an existing get-resources version")
+        if name == "release-reservation-expiry.yml" and _reservation_expiry_release_is_unsafe(text):
+            raise SystemExit("reservation expiry release must publish only erap-reservation-expiry")
+        if name == "rollback-reservation-expiry.yml" and _reservation_expiry_rollback_is_unsafe(text):
+            raise SystemExit("reservation expiry rollback must move only an existing erap-reservation-expiry version")
         if name in {"release.yml", "rollback.yml", "release-exchange.yml", "rollback-exchange.yml"} and "release_resource.py" in text:
             raise SystemExit(f"{name} must not publish get-resources")
         if yaml is not None:
@@ -190,6 +248,8 @@ def main():
             "rollback-exchange.yml",
             "release-resource.yml",
             "rollback-resource.yml",
+            "release-reservation-expiry.yml",
+            "rollback-reservation-expiry.yml",
         )
     ]
     if _production_trust_refs() != expected_refs:
@@ -213,6 +273,20 @@ def main():
         resource_set = set(resources if isinstance(resources, list) else [resources])
         if action_set != allowed_actions or resource_set != allowed_resources:
             raise SystemExit("resource production policy is not limited to get-resources")
+    expiry_policy = json.loads(
+        (ROOT / "infra" / "github-production-reservation-expiry-policy.json").read_text(encoding="utf-8")
+    )
+    expiry_resources = {
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-reservation-expiry:*",
+    }
+    for statement in expiry_policy["Statement"]:
+        actions = statement["Action"]
+        resources = statement["Resource"]
+        action_set = set(actions if isinstance(actions, list) else [actions])
+        resource_set = set(resources if isinstance(resources, list) else [resources])
+        if action_set != allowed_actions or resource_set != expiry_resources:
+            raise SystemExit("reservation expiry production policy is not limited to erap-reservation-expiry")
     print("workflow check passed")
     return 0
 

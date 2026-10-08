@@ -512,7 +512,7 @@ def _seen_state_condition(current, organization_id):
             clauses.append(f"{name} = {token}")
             values[token] = current[name]
 
-    for name in ("reserved_by", "reserved_at"):
+    for name in ("reserved_by", "reserved_at", "reservation_expires_at", "reservation_due_key"):
         if current.get(name):
             token = ":seen_" + name
             clauses.append(f"{name} = {token}")
