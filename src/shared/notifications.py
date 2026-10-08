@@ -29,6 +29,7 @@ EVENT_TRANSFER_STARTED = "exchange.transfer.started"
 EVENT_HANDOVER_COMPLETED = "exchange.handover.completed"
 EVENT_REQUEST_CANCELLED = "exchange.request.cancelled"
 EVENT_REQUEST_EXPIRED = "exchange.request.expired"
+EVENT_RESERVATION_EXPIRED = "resource.reservation.expired"
 
 COPY = {
     EVENT_OFFER_RECEIVED: (
@@ -66,6 +67,10 @@ COPY = {
     EVENT_REQUEST_EXPIRED: (
         "Exchange expired",
         "An exchange request expired.",
+    ),
+    EVENT_RESERVATION_EXPIRED: (
+        "Reservation expired",
+        "A reserved resource is available again.",
     ),
 }
 
@@ -224,6 +229,11 @@ def resolve_recipients(organization_id, actor_sub, *, members=None, organization
 
 def _copy_for(event_code, payload):
     title, body = COPY.get(event_code, ("Exchange update", "An exchange event occurred."))
+    if event_code == EVENT_RESERVATION_EXPIRED:
+        name = str((payload or {}).get("resource_name") or "").strip()
+        if name:
+            body = f"{name} is available again. Its reservation expired."
+        return title, body
     type_name = str((payload or {}).get("resource_type_name") or "").strip()
     quantity = (payload or {}).get("quantity")
     destination_mode = str((payload or {}).get("destination_mode") or "").strip().upper()
@@ -246,8 +256,18 @@ def _identifier(value, prefix):
     return ""
 
 
-def _safe_payload(payload):
+def _safe_payload(payload, event_code=""):
     raw = payload or {}
+    if event_code == EVENT_RESERVATION_EXPIRED:
+        out = {}
+        resource_id = str(raw.get("resource_id") or "").strip()
+        if resource_id and len(resource_id) <= 80 and "://" not in resource_id and "#" not in resource_id:
+            out["resource_id"] = resource_id
+        name = str(raw.get("resource_name") or "").strip()
+        if name and "://" not in name and "#" not in name:
+            out["resource_name"] = name[:80]
+        out["href_kind"] = "resource"
+        return out
     out = {}
     request_id = _identifier(raw.get("exchange_request_id"), "EXREQ-")
     offer_id = _identifier(raw.get("offer_id"), "EXOFF-")
@@ -342,7 +362,7 @@ def _emit_notification_event(
     eid = event_id_for(code, subject, org_id)
     created_at = now_iso()
     expires_at = ttl_epoch(created_at)
-    safe_payload = _safe_payload(payload)
+    safe_payload = _safe_payload(payload, code)
     title, body = _copy_for(code, safe_payload)
     request_id = current_request_id()
 

@@ -6,6 +6,7 @@ from botocore.exceptions import ClientError
 
 from audit import build_audit_event, record_audit
 from resource_state import (
+    RESERVATION_HELD_ATTRIBUTES,
     ResourceStateError,
     available_for_status,
     effective_operational_status,
@@ -178,8 +179,9 @@ def _transition_resource(
         parts.append(f"{key} = {token}")
         values[token] = value
 
-    if target_status == "AVAILABLE":
-        for name in ("reserved_by", "reserved_at"):
+    closing_reservation = current == "RESERVED" and target_status != "RESERVED"
+    if target_status == "AVAILABLE" or closing_reservation:
+        for name in RESERVATION_HELD_ATTRIBUTES:
             if name not in remove:
                 remove.append(name)
 

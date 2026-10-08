@@ -7,7 +7,13 @@ from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
 from audit import build_audit_event, record_audit
-from resource_state import ResourceStateError, normalize_tracking_mode, validate_transition
+from resource_state import (
+    RESERVATION_HELD_ATTRIBUTES,
+    ResourceStateError,
+    normalize_tracking_mode,
+    reservation_due_values,
+    validate_transition,
+)
 
 _serializer = TypeSerializer()
 RESOURCES_TABLE = "Resources"
@@ -144,6 +150,7 @@ def reserve_individual(body, organization_id, actor_sub, actor_role, resource, t
         raise EverydayOperationError(409, "Resource is not an individual item")
 
     now = _now()
+    due = reservation_due_values(now)
     resource_id = resource["resource_id"]
 
     try:
@@ -151,7 +158,8 @@ def reserve_individual(body, organization_id, actor_sub, actor_role, resource, t
             Key={"resource_id": resource_id},
             UpdateExpression=(
                 "SET operational_status = :reserved, Available = :false, "
-                "reserved_by = :actor, reserved_at = :now"
+                "reserved_by = :actor, reserved_at = :now, "
+                "reservation_expires_at = :expires, reservation_due_key = :due"
             ),
             ConditionExpression=(
                 "organization_id = :organization_id AND Available = :true AND "
@@ -165,6 +173,8 @@ def reserve_individual(body, organization_id, actor_sub, actor_role, resource, t
                 ":organization_id": organization_id,
                 ":actor": actor_sub,
                 ":now": now,
+                ":expires": due["reservation_expires_at"],
+                ":due": due["reservation_due_key"],
             },
         )
     except ClientError as error:
@@ -283,7 +293,7 @@ def release_reservation(body, organization_id, actor_sub, actor_role, resource, 
             Key={"resource_id": resource_id},
             UpdateExpression=(
                 "SET operational_status = :available, Available = :true "
-                "REMOVE reserved_by, reserved_at"
+                "REMOVE " + ", ".join(RESERVATION_HELD_ATTRIBUTES)
             ),
             ConditionExpression=(
                 "organization_id = :organization_id AND operational_status = :reserved "
@@ -384,7 +394,7 @@ def everyday_allocate_individual(body, organization_id, actor_sub, actor_role, r
     allocation = _everyday_allocation_item(allocation_id, resource, organization_id, actor_sub, 1, purpose, now)
     update_expression = "SET operational_status = :allocated, Available = :false"
     if from_reserved:
-        update_expression += " REMOVE reserved_by, reserved_at"
+        update_expression += " REMOVE " + ", ".join(RESERVATION_HELD_ATTRIBUTES)
 
     try:
         _commit_everyday_allocation(

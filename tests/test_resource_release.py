@@ -236,4 +236,6 @@ def test_resource_workflows_are_manual_production_and_scoped():
         f"{prefix}rollback-exchange.yml@refs/heads/main",
         f"{prefix}release-resource.yml@refs/heads/main",
         f"{prefix}rollback-resource.yml@refs/heads/main",
+        f"{prefix}release-reservation-expiry.yml@refs/heads/main",
+        f"{prefix}rollback-reservation-expiry.yml@refs/heads/main",
     ]
