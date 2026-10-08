@@ -17,7 +17,7 @@ from access import (
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
-from matching import choose_resource, explain_match, sort_requests_by_priority
+from matching import choose_resource, explain_match
 from resource_state import EMERGENCY_CLAIM_CONDITION
 from api_views import allocation_view, request_view
 from observability import begin_request, error_body, load_object, log_result
@@ -301,22 +301,12 @@ def _claim_cancelled(error):
     return [str((reason or {}).get("Code") or "None") for reason in reasons]
 
 
-def _mark_unmatchable(cache, resource_id):
-    for pool in cache.values():
-        for item in pool:
-            if item.get("resource_id") == resource_id:
-                item["Available"] = False
-                item["operational_status"] = "ALLOCATED"
-
-
 def allocate(body, organization_id, actor_sub="", actor_role=""):
     request_id = str(body.get("request_id", "")).strip()
     resource_type = str(body.get("resource_type", "")).strip()
     request_type_id = str(body.get("request_type_id") or "").strip()
     location_id = str(body.get("location_id", "")).strip()
     request_type = None
-    attributes = {}
-    matching_config = {}
 
     if request_type_id:
         request_type = request_types_table().get_item(
@@ -331,12 +321,11 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
             return response(404, {"message": "Request type not found"})
 
         try:
-            attributes = validate_attributes(body.get("attributes") or {}, request_type.get("attributes_schema"))
+            validate_attributes(body.get("attributes") or {}, request_type.get("attributes_schema"))
         except AccessError as error:
             return response(error.status_code, access_body(error))
 
         resource_type = resource_type or request_type.get("name", "")
-        matching_config = request_type.get("matching_config") or {}
 
     try:
         priority = int(body.get("priority", request_type.get("default_priority") if request_type else 999))
@@ -348,202 +337,151 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
 
     location = require_location(locations_table(), organization_id, location_id)
     existing = requests_table().get_item(Key={"request_id": request_id}).get("Item")
+    require_owned(existing, organization_id)
 
-    if existing:
-        require_owned(existing, organization_id)
+    if str(existing.get("Status", "")).upper() != "PENDING":
+        return response(409, {"message": "Request is not eligible for allocation"})
 
-        if str(existing.get("Status", "")).upper() != "PENDING":
-            return response(409, {"message": "Request is not eligible for allocation"})
+    if existing.get("location_id") != location["location_id"]:
+        return response(409, {"message": "Request location does not match"})
 
-        if existing.get("location_id") != location["location_id"]:
-            return response(409, {"message": "Request location does not match"})
-    else:
-        existing = {
-            "request_id": request_id,
-            "ResourceType": resource_type,
-            "Location": location.get("name", ""),
-            "location_id": location["location_id"],
-            "organization_id": organization_id,
-            "Priority": priority,
-            "Status": "PENDING",
-        }
-
-        if request_type:
-            existing["request_type_id"] = request_type["request_type_id"]
-            existing["attributes"] = attributes
-            existing["matching_config"] = matching_config
-
-        try:
-            requests_table().put_item(
-                Item=existing,
-                ConditionExpression="attribute_not_exists(request_id)",
-            )
-        except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                print("Request create error:", error.response["Error"]["Code"])
-                return response(500, {"message": "Unable to process allocation"})
-
-            existing = requests_table().get_item(Key={"request_id": request_id}).get("Item")
-            require_owned(existing, organization_id)
-
-    pending = [
-        item
-        for item in query_by_organization(requests_table(), organization_id)
-        if str(item.get("Status", "")).upper() == "PENDING"
-        and item.get("organization_id") == organization_id
-    ]
     resource_cache = {}
+    resources = _resources_for_match(organization_id, existing, resource_cache)
+    resource = choose_resource(resources, existing)
 
-    for request in sort_requests_by_priority(pending):
-        if request.get("organization_id") != organization_id:
-            continue
+    if (
+        not resource
+        or resource.get("organization_id") != organization_id
+        or existing.get("organization_id") != organization_id
+        or resource.get("location_id") is None
+    ):
+        return response(404, {"message": "No suitable resource available", "request_id": request_id})
 
-        resources = _resources_for_match(organization_id, request, resource_cache)
-        resource = choose_resource(resources, request)
-
-        if not resource:
-            continue
-
-        if (
-            resource.get("organization_id") != organization_id
-            or request.get("organization_id") != organization_id
-            or resource.get("location_id") is None
-        ):
-            continue
-
-        resource_location = require_location(
-            locations_table(),
-            organization_id,
-            resource.get("location_id"),
+    resource_location = require_location(
+        locations_table(),
+        organization_id,
+        resource.get("location_id"),
+    )
+    resource_id = resource.get("resource_id")
+    allocated_at = datetime.now(timezone.utc).isoformat()
+    allocation_id = "ALLOC-" + request_id
+    allocation = {
+        "allocation_id": allocation_id,
+        "request_id": request_id,
+        "resource_id": resource_id,
+        "resource_type": existing.get("ResourceType", resource_type),
+        "location": resource_location.get("name", ""),
+        "location_id": resource.get("location_id"),
+        "organization_id": organization_id,
+        "priority": existing.get("Priority", priority),
+        "status": "ALLOCATED",
+        "allocated_at": allocated_at,
+    }
+    try:
+        _commit_emergency_claim(
+            _claim_transact_items(
+                resource_id,
+                organization_id,
+                allocation,
+                request_id,
+            )
         )
-        current_request_id = request.get("request_id")
-        resource_id = resource.get("resource_id")
-        allocated_at = datetime.now(timezone.utc).isoformat()
+    except ClientError as error:
+        code = error.response["Error"]["Code"]
+        if code == "TransactionCanceledException":
+            reasons = _claim_cancelled(error)
+            if reasons and reasons[0] == "ConditionalCheckFailed":
+                return response(404, {"message": "No suitable resource available", "request_id": request_id})
+            if any(reason == "ConditionalCheckFailed" for reason in reasons[1:]):
+                return response(409, {"message": "Request is not eligible for allocation"})
 
-        allocation_id = "ALLOC-" + current_request_id
-        allocation = {
-            "allocation_id": allocation_id,
-            "request_id": current_request_id,
+        from observability import log_event
+
+        log_event(
+            "ERROR",
+            "allocation",
+            "reserve",
+            "failed",
+            organization_id=organization_id,
+            resource_id=resource_id,
+            error_code=code,
+        )
+        return response(500, {"message": "Unable to process allocation"})
+
+    history_table().put_item(
+        Item={
+            "history_id": "HIST-" + request_id + "-" + resource_id,
             "resource_id": resource_id,
-            "resource_type": request.get("ResourceType", resource_type),
-            "location": resource_location.get("name", ""),
-            "location_id": resource.get("location_id"),
             "organization_id": organization_id,
-            "priority": request.get("Priority", priority),
+            "location_id": resource.get("location_id"),
+            "resource_type": allocation["resource_type"],
+            "location": allocation["location"],
+            "previous_status": "AVAILABLE",
+            "new_status": "ALLOCATED",
+            "changed_at": allocated_at,
+            "reason": "RESOURCE_ALLOCATED",
+            "request_id": request_id,
+            "allocation_id": allocation_id,
+            "actor_sub": actor_sub,
+        }
+    )
+
+    try:
+        events_client().put_events(
+            Entries=[
+                {
+                    "Source": "emergency.resource.allocation",
+                    "DetailType": "ResourceAllocated",
+                    "Detail": json.dumps(
+                        {
+                            "request_id": request_id,
+                            "resource_id": resource_id,
+                            "allocation_id": allocation_id,
+                            "organization_id": organization_id,
+                            "status": "ALLOCATED",
+                        }
+                    ),
+                    "EventBusName": "default",
+                }
+            ]
+        )
+    except Exception as error:
+        print("Allocation event error:", error.__class__.__name__)
+
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "allocation.create",
+            "allocation",
+            allocation_id,
+            location_id=resource.get("location_id", ""),
+        ),
+    )
+
+    from observability import log_event
+
+    log_event(
+        "INFO",
+        "allocation",
+        "allocate",
+        "committed",
+        organization_id=organization_id,
+        actor_sub=actor_sub,
+        request_id=request_id,
+        resource_id=resource_id,
+    )
+    return response(
+        200,
+        {
+            "message": "Resource allocated successfully",
+            "request_id": request_id,
+            "resource_id": resource_id,
+            "allocation_id": allocation_id,
             "status": "ALLOCATED",
             "allocated_at": allocated_at,
-        }
-        try:
-            _commit_emergency_claim(
-                _claim_transact_items(
-                    resource_id,
-                    organization_id,
-                    allocation,
-                    current_request_id,
-                )
-            )
-        except ClientError as error:
-            code = error.response["Error"]["Code"]
-            if code == "TransactionCanceledException":
-                reasons = _claim_cancelled(error)
-                if reasons and reasons[0] == "ConditionalCheckFailed":
-                    _mark_unmatchable(resource_cache, resource_id)
-                    continue
-                if any(reason == "ConditionalCheckFailed" for reason in reasons[1:]):
-                    return response(409, {"message": "Request is not eligible for allocation"})
-
-            from observability import log_event
-
-            log_event(
-                "ERROR",
-                "allocation",
-                "reserve",
-                "failed",
-                organization_id=organization_id,
-                resource_id=resource_id,
-                error_code=code,
-            )
-            return response(500, {"message": "Unable to process allocation"})
-
-        history_table().put_item(
-            Item={
-                "history_id": "HIST-" + current_request_id + "-" + resource_id,
-                "resource_id": resource_id,
-                "organization_id": organization_id,
-                "location_id": resource.get("location_id"),
-                "resource_type": allocation["resource_type"],
-                "location": allocation["location"],
-                "previous_status": "AVAILABLE",
-                "new_status": "ALLOCATED",
-                "changed_at": allocated_at,
-                "reason": "RESOURCE_ALLOCATED",
-                "request_id": current_request_id,
-                "allocation_id": allocation_id,
-                "actor_sub": actor_sub,
-            }
-        )
-
-        try:
-            events_client().put_events(
-                Entries=[
-                    {
-                        "Source": "emergency.resource.allocation",
-                        "DetailType": "ResourceAllocated",
-                        "Detail": json.dumps(
-                            {
-                                "request_id": current_request_id,
-                                "resource_id": resource_id,
-                                "allocation_id": allocation_id,
-                                "organization_id": organization_id,
-                                "status": "ALLOCATED",
-                            }
-                        ),
-                        "EventBusName": "default",
-                    }
-                ]
-            )
-        except Exception as error:
-            print("Allocation event error:", error.__class__.__name__)
-
-        record_audit(
-            audit_table(),
-            build_audit_event(
-                organization_id,
-                actor_sub,
-                actor_role,
-                "allocation.create",
-                "allocation",
-                allocation_id,
-                location_id=resource.get("location_id", ""),
-            ),
-        )
-
-        _mark_unmatchable(resource_cache, resource_id)
-
-        if current_request_id == request_id:
-            from observability import log_event
-
-            log_event(
-                "INFO",
-                "allocation",
-                "allocate",
-                "committed",
-                organization_id=organization_id,
-                actor_sub=actor_sub,
-                request_id=current_request_id,
-                resource_id=resource_id,
-            )
-            return response(
-                200,
-                {
-                    "message": "Resource allocated successfully",
-                    "request_id": current_request_id,
-                    "resource_id": resource_id,
-                    "allocation_id": allocation_id,
-                    "status": "ALLOCATED",
-                    "allocated_at": allocated_at,
-                    "match": explain_match(resource, request),
-                },
-            )
-
-    return response(404, {"message": "No suitable resource available", "request_id": request_id})
+            "match": explain_match(resource, existing),
+        },
+    )
