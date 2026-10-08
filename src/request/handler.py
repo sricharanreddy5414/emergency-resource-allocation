@@ -58,6 +58,65 @@ def request_types_table():
     return boto3.resource("dynamodb").Table(os.environ.get("REQUEST_TYPES_TABLE", "RequestTypes"))
 
 
+def request_path(event):
+    return str((event or {}).get("path") or (event or {}).get("rawPath") or "")
+
+
+def cancel_request(organization_id, actor_sub, actor_role, request_id):
+    """Cancel one pending request. Allocation can still win the status condition."""
+    if not request_id:
+        return response(400, {"message": "Request ID is required"})
+
+    current = requests_table().get_item(Key={"request_id": request_id}).get("Item")
+    require_owned(current, organization_id)
+
+    if str(current.get("Status", "")).upper() != "PENDING":
+        return response(409, {"message": "Request is not eligible for cancellation"})
+
+    try:
+        requests_table().update_item(
+            Key={"request_id": request_id},
+            UpdateExpression="SET #status = :cancelled",
+            ConditionExpression="organization_id = :organization_id AND #status = :pending",
+            ExpressionAttributeNames={"#status": "Status"},
+            ExpressionAttributeValues={
+                ":cancelled": "CANCELLED",
+                ":organization_id": organization_id,
+                ":pending": "PENDING",
+            },
+        )
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code")
+        if code != "ConditionalCheckFailedException":
+            raise
+        log_event(
+            "WARNING",
+            "requests",
+            "request.cancel",
+            "conflict",
+            organization_id=organization_id,
+            request_id=request_id,
+            error_code=code,
+        )
+        return response(409, {"message": "Request is not eligible for cancellation"})
+
+    updated = dict(current)
+    updated["Status"] = "CANCELLED"
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "request.cancel",
+            "request",
+            request_id,
+            location_id=current.get("location_id") or "",
+        ),
+    )
+    return response(200, {"message": "Request cancelled", "request": request_view(updated)})
+
+
 def update_request(proposed, organization_id, actor_sub, actor_role, request_id):
     """Update the fields PUT /requests already changes, only while the request is pending.
 
@@ -183,6 +242,10 @@ def lambda_handler(event, context):
         _user_sub, membership = authorize(event, body, allowed_roles=REQUEST_ROLES, access="write")
         organization_id = membership["organization_id"]
         request_id = str(body.get("request_id", "")).strip()
+
+        if method == "POST" and request_path(event).rstrip("/").endswith("/requests/cancel"):
+            return cancel_request(organization_id, _user_sub, membership.get("role"), request_id)
+
         request_type_id = str(body.get("request_type_id") or "").strip()
         resource_type = str(body.get("resource_type", "")).strip().upper()
         location_id = str(body.get("location_id", "")).strip()
