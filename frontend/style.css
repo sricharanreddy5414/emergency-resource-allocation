@@ -885,6 +885,7 @@ td {
 
 .status-badge.allocated,
 .status-badge.released,
+.status-badge.status-cancelled,
 .status-badge.private {
     color: var(--hold);
 }

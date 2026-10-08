@@ -2803,7 +2803,7 @@ async function loadRequests() {
 
     table.innerHTML = `
         <tr>
-            <td colspan="6">
+            <td colspan="7">
                 Loading requests...
             </td>
         </tr>
@@ -2862,6 +2862,7 @@ async function loadRequests() {
         updateAdminDashboard();
 
         renderRequests();
+        syncCancelRequestDialog();
 
     } catch (error) {
 
@@ -2873,7 +2874,7 @@ async function loadRequests() {
 
         table.innerHTML = `
             <tr>
-                <td colspan="6">
+                <td colspan="7">
                     Unable to load requests from AWS.
                 </td>
             </tr>
@@ -2909,7 +2910,7 @@ function renderActiveOperations() {
     const active = requests
         .filter(request => {
             const status = requestRecordStatus(request);
-            return status && status !== "RELEASED" && status !== "COMPLETED";
+            return status && status !== "RELEASED" && status !== "COMPLETED" && status !== "CANCELLED";
         })
         .sort((left, right) =>
             Number(left.priority ?? left.Priority ?? 99) -
@@ -3088,7 +3089,7 @@ function renderRequests() {
 
         table.innerHTML = `
             <tr>
-                <td colspan="6">
+                <td colspan="7">
                     No matching requests. Create a request when your organization needs a resource.
                 </td>
             </tr>
@@ -3150,9 +3151,19 @@ const createdAt =
             statusClass += " status-waiting";
             statusLabel = "WAITING";
 
+        } else if (status === "CANCELLED") {
+
+            statusClass += " status-cancelled";
+            statusLabel = "CANCELLED";
+
         }
 
         const high = Number(priority) <= 2 ? " request-high" : "";
+        const canCancel = status === "PENDING" && requestId !== "—";
+        const cancelLabel = requestCancelInFlight ? "Cancelling..." : "Cancel";
+        const cancelAction = canCancel
+            ? `<button class="secondary-btn js-cancel-request" type="button" data-request-id="${escapeHtml(requestId)}"${requestCancelInFlight ? " disabled" : ""}>${cancelLabel}</button>`
+            : "";
 
         return `
             <tr class="${high.trim()}">
@@ -3185,6 +3196,10 @@ const createdAt =
 
                 <td>
                     ${escapeHtml(createdAt)}
+                </td>
+
+                <td>
+                    ${cancelAction}
                 </td>
 
             </tr>
@@ -3279,6 +3294,221 @@ function initializeRequestControls() {
             "click",
             loadRequests
         );
+
+    }
+
+    document.getElementById("requestsTable")
+        ?.addEventListener("click", event => {
+
+            const button = event.target.closest(".js-cancel-request");
+
+            if (!button || button.disabled) {
+
+                return;
+
+            }
+
+            openCancelRequestDialog(button.getAttribute("data-request-id"));
+
+        });
+
+    $("cancelRequestClose")?.addEventListener("click", closeCancelRequestDialog);
+    $("cancelRequestDismiss")?.addEventListener("click", closeCancelRequestDialog);
+    $("cancelRequestConfirm")?.addEventListener("click", confirmCancelRequest);
+    $("cancelRequestModal")?.addEventListener("click", event => {
+
+        if (event.target === $("cancelRequestModal")) {
+
+            closeCancelRequestDialog();
+
+        }
+
+    });
+
+}
+
+
+let requestCancelInFlight = false;
+let cancelRequestId = "";
+
+
+function syncCancelRequestDialog() {
+
+    if (requestCancelInFlight || !cancelRequestId) {
+
+        return;
+
+    }
+
+    const current = requests.find(request => String(request.request_id || "") === cancelRequestId);
+
+    if (!current || requestRecordStatus(current) !== "PENDING") {
+
+        closeCancelRequestDialog();
+
+    }
+
+}
+
+
+function closeCancelRequestDialog() {
+
+    if (requestCancelInFlight) {
+
+        return;
+
+    }
+
+    cancelRequestId = "";
+    $("cancelRequestModal")?.classList.add("hidden");
+
+}
+
+
+function abandonCancelRequestDialog() {
+
+    cancelRequestId = "";
+    $("cancelRequestModal")?.classList.add("hidden");
+
+}
+
+
+function openCancelRequestDialog(requestId) {
+
+    const id = String(requestId || "").trim();
+    const current = requests.find(request => String(request.request_id || "") === id);
+
+    if (!id || !current || requestRecordStatus(current) !== "PENDING" || requestCancelInFlight) {
+
+        return;
+
+    }
+
+    cancelRequestId = id;
+    const prompt = $("cancelRequestPrompt");
+
+    if (prompt) {
+
+        prompt.textContent = "Cancellation cannot be undone.";
+
+    }
+
+    const confirm = $("cancelRequestConfirm");
+
+    if (confirm) {
+
+        confirm.disabled = false;
+        confirm.textContent = "Cancel request";
+
+    }
+
+    $("cancelRequestModal")?.classList.remove("hidden");
+    $("cancelRequestClose")?.focus();
+
+}
+
+
+async function confirmCancelRequest() {
+
+    if (requestCancelInFlight || !cancelRequestId) {
+
+        return;
+
+    }
+
+    const requestId = cancelRequestId;
+    const current = requests.find(request => String(request.request_id || "") === requestId);
+
+    if (!current || requestRecordStatus(current) !== "PENDING") {
+
+        closeCancelRequestDialog();
+        showToast("Request is not eligible for cancellation");
+
+        return;
+
+    }
+
+    requestCancelInFlight = true;
+    const button = $("cancelRequestConfirm");
+
+    if (button) {
+
+        button.disabled = true;
+        button.textContent = "Cancelling...";
+
+    }
+
+    renderRequests();
+    showToast("Cancelling request...");
+
+    try {
+
+        const idToken = getIdToken();
+
+        if (!idToken) {
+
+            throw new Error("Cognito ID token is not available");
+
+        }
+
+        const response = await fetch(REQUESTS_API_URL + "/cancel", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + idToken
+            },
+            body: JSON.stringify({
+                request_id: requestId
+            })
+        });
+
+        const raw = await response.text();
+        let data = {};
+
+        try {
+
+            data = raw ? JSON.parse(raw) : {};
+
+        } catch (error) {
+
+            data = { message: raw };
+
+        }
+
+        if (!response.ok) {
+
+            showToast(getApiMessage(data) || `Request could not be cancelled (${response.status})`);
+
+            if (response.status === 409) {
+
+                await loadRequests();
+
+            }
+
+            return;
+
+        }
+
+        showToast(getApiMessage(data) || "Request cancelled");
+        await loadRequests();
+
+    } catch (error) {
+
+        showToast(error.message || "Request could not be cancelled.");
+
+    } finally {
+
+        requestCancelInFlight = false;
+
+        if (button) {
+
+            button.disabled = false;
+            button.textContent = "Cancel request";
+
+        }
+
+        closeCancelRequestDialog();
+        renderRequests();
 
     }
 
@@ -7902,6 +8132,12 @@ function clearTenantData() {
     resources = [];
 
     requests = [];
+
+    if (typeof abandonCancelRequestDialog === "function") {
+
+        abandonCancelRequestDialog();
+
+    }
 
     allocations = [];
 
