@@ -14,4 +14,7 @@ def test_released_movement_uses_release_time_not_allocation_time():
     assert "item.released_at" in released_line
     assert "allocated_at" not in released_line
     assert "item.allocated_at" in open_line
-    assert 'released ? "Resource released" : "Allocation completed"' in block
+    assert 'released ? "Emergency release"' in block
+    assert '"Allocation returned"' in block
+    assert '"Resource allocated"' in block
+    assert '"Allocation completed"' not in block

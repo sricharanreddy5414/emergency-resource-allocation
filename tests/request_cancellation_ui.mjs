@@ -66,6 +66,7 @@ assert.equal(style.includes(".status-badge.status-cancelled"), true);
 const names = [
     "escapeHtml",
     "formatResourceType",
+    "emergencyStatusLabel",
     "requestRecordStatus",
     "renderActiveOperations",
     "renderRequests",
