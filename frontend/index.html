@@ -478,7 +478,7 @@
         <summary>Allocate an existing request</summary>
         <form id="allocationForm">
             <p id="allocationRequestHint" class="allocation-hint" aria-live="polite">
-                Allocates one available resource to a pending request. Cancelled, allocated, and released requests are not allocatable.
+                Find the matching resource, review it, then confirm the allocation. Cancelled, allocated, and released requests are not allocatable.
             </p>
             <div class="form-row">
                 <div class="form-group">
@@ -510,8 +510,17 @@
                     </select>
                 </div>
             </div>
-            <button type="submit" class="allocate-btn" id="allocateBtn">Allocate Resource</button>
+            <button type="submit" class="allocate-btn" id="allocateBtn">Preview match</button>
         </form>
+        <div id="allocationPreview" class="allocation-preview hidden" hidden role="region" aria-labelledby="allocationPreviewTitle">
+            <h3 id="allocationPreviewTitle">Proposed resource</h3>
+            <dl id="allocationPreviewDetails"></dl>
+            <p id="allocationPreviewMessage" class="allocation-hint" aria-live="polite"></p>
+            <div class="form-row">
+                <button type="button" class="allocate-btn" id="confirmAllocationBtn" disabled>Confirm allocation</button>
+                <button type="button" class="secondary-btn" id="cancelAllocationPreviewBtn">Cancel</button>
+            </div>
+        </div>
         <div id="result" class="result-box hidden"></div>
     </details>
 

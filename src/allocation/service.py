@@ -470,7 +470,35 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         organization_id,
         resource.get("location_id"),
     )
-    resource_id = resource.get("resource_id")
+    resource_id = str(resource.get("resource_id") or "").strip()
+    if not resource_id:
+        return response(404, {"message": "No suitable resource available", "request_id": request_id})
+
+    if body.get("preview") is True and body.get("confirm") is True:
+        return response(400, {"message": "Choose either a preview or a confirmation"})
+
+    proposal = {
+        "message": "Review the proposed resource before allocating.",
+        "preview": True,
+        "request_id": request_id,
+        "resource_id": resource_id,
+        "resource_type": existing.get("ResourceType", resource_type),
+        "name": str(resource.get("name") or ""),
+        "location_id": resource.get("location_id"),
+        "location": resource_location.get("name", ""),
+        "available": True,
+        "match": explain_match(resource, existing),
+    }
+    if body.get("confirm") is not True:
+        return response(200, proposal)
+
+    supplied = str(body.get("resource_id") or "").strip()
+    if supplied != resource_id or resource.get("organization_id") != organization_id:
+        return response(
+            409,
+            {"message": "The proposed resource is no longer available. Preview the match again."},
+        )
+
     allocated_at = datetime.now(timezone.utc).isoformat()
     allocation_id = "ALLOC-" + request_id
     allocation = {
