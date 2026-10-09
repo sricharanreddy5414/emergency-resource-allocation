@@ -57,7 +57,14 @@ const names = [
     "renderRequests",
     "renderAllocations",
     "submitRequestModal",
+    "allocationPayload",
+    "setAllocationBusy",
+    "clearAllocationPreview",
+    "renderAllocationPreview",
+    "cancelAllocationPreview",
+    "postAllocation",
     "submitAllocation",
+    "confirmAllocation",
     "releaseResource"
 ];
 
@@ -80,6 +87,8 @@ function element(id, extra = {}) {
         },
         setAttribute() {},
         removeAttribute() {},
+        focus() {},
+        hidden: false,
         reset() {}
     };
     if (extra.value !== undefined) {
@@ -99,6 +108,11 @@ element("allocationRequestHint");
 element("requestId", { value: "" });
 element("allocationForm");
 element("allocateBtn");
+element("confirmAllocationBtn", { textContent: "Confirm allocation" });
+element("cancelAllocationPreviewBtn", { textContent: "Cancel" });
+element("allocationPreview");
+element("allocationPreviewDetails");
+element("allocationPreviewMessage");
 element("requestModalResult");
 element("submitRequestModal");
 element("modalRequestId", { value: "REQ-NEW" });
@@ -123,6 +137,9 @@ const context = {
     requestCancelInFlight: false,
     requestCreateInFlight: false,
     allocationSubmitInFlight: false,
+    allocationPreviewResourceId: "",
+    allocationPreviewRequestId: "",
+    allocationPreviewEpoch: 0,
     emergencyReleaseInFlight: false,
     requestNextPageToken: null,
     tenantContextLoading: false,
@@ -146,6 +163,14 @@ const context = {
             method: options.method,
             body: options.body
         });
+        if (url === context.API_URL) {
+            calls.push({
+                busy: hosts.allocateBtn.textContent,
+                confirmBusy: hosts.confirmAllocationBtn.textContent,
+                previewDisabled: hosts.allocateBtn.disabled,
+                confirmDisabled: hosts.confirmAllocationBtn.disabled
+            });
+        }
         if (!spec) {
             throw new Error("unexpected fetch " + url);
         }
@@ -253,29 +278,82 @@ assert.equal(calls.length, 0);
 assert.equal(results.some(item => item.includes("Cancelled")), true);
 
 hosts.requestId.value = "REQ-P";
-confirmAnswer = false;
 calls.length = 0;
-await context.submitAllocation({ preventDefault() {} });
+await context.cancelAllocationPreview();
 assert.equal(calls.length, 0);
-assert.equal(confirms.length > 0, true);
+assert.equal(hosts.allocationPreview.hidden, true);
 
-confirmAnswer = true;
-context.http.queue.push({ status: 409, body: { message: "Request is no longer pending" } });
+const proposed = {
+    preview: true,
+    request_id: "REQ-P",
+    resource_id: "RES-1",
+    name: "Ward <bed>",
+    resource_type: "Bed",
+    location: "North",
+    location_id: "LOC-1",
+    available: true,
+    match: ["same location"]
+};
+context.http.queue.push({ status: 200, body: proposed });
 await context.submitAllocation({ preventDefault() {} });
-assert.equal(calls.some(call => call.url === "https://example.test/allocate"), true);
+const previewCall = calls.find(call => call.url === "https://example.test/allocate");
+assert.equal(JSON.parse(previewCall.body).preview, true);
+assert.equal(JSON.parse(previewCall.body).confirm, undefined);
+assert.equal(calls.some(call => call.busy === "Finding match..." && call.previewDisabled === true), true);
+assert.equal(hosts.allocationPreviewDetails.innerHTML.includes("RES-1"), true);
+assert.equal(hosts.allocationPreviewDetails.innerHTML.includes("Ward &lt;bed&gt;"), true);
+assert.equal(hosts.allocationPreviewDetails.innerHTML.includes("<bed>"), false);
+assert.equal(hosts.confirmAllocationBtn.disabled, false);
+assert.equal(hosts.allocateBtn.textContent, "Preview match");
+assert.equal(hosts.allocateBtn.disabled, false);
+
+calls.length = 0;
+await context.cancelAllocationPreview();
+assert.equal(calls.length, 0);
+assert.equal(context.allocationPreviewResourceId, "");
+assert.equal(hosts.confirmAllocationBtn.disabled, true);
+
+context.http.queue.push({ status: 404, body: { message: "No suitable resource available" } });
+await context.submitAllocation({ preventDefault() {} });
+assert.equal(results.some(item => item.includes("No matching resource is available.")), true);
+assert.equal(hosts.confirmAllocationBtn.disabled, true);
+
+calls.length = 0;
+results.length = 0;
+context.http.queue.push({ status: 200, body: proposed });
+await context.submitAllocation({ preventDefault() {} });
+context.http.queue.push({ status: 409, body: { message: "The proposed resource is no longer available. Preview the match again." } });
+await context.confirmAllocation();
+const confirmCalls = calls.filter(call => call.url === "https://example.test/allocate");
+assert.equal(confirmCalls.length, 2);
+assert.equal(JSON.parse(confirmCalls[1].body).confirm, true);
+assert.equal(JSON.parse(confirmCalls[1].body).resource_id, "RES-1");
+assert.equal(calls.some(call => call.confirmBusy === "Allocating..." && call.confirmDisabled === true), true);
+assert.equal(results.some(item => item.includes("The resource is no longer available. Preview the match again.")), true);
 assert.equal(calls.includes("loadRequests"), true);
 assert.equal(calls.includes("loadAllocations"), true);
-assert.equal(results.some(item => item.includes("may have changed")), true);
+assert.equal(calls.includes("loadResources"), true);
+assert.equal(context.allocationPreviewResourceId, "");
 assert.equal(context.allocations.length, 0);
 
 calls.length = 0;
 results.length = 0;
-context.http.queue.push({ status: 200, body: { message: "Allocated" } });
+context.http.queue.push({ status: 200, body: proposed });
 await context.submitAllocation({ preventDefault() {} });
-assert.equal(calls.filter(call => call.url === "https://example.test/allocate").length, 1);
+context.http.queue.push({
+    status: 200,
+    body: { message: "Resource allocated successfully", status: "ALLOCATED", resource_id: "RES-1", allocation_id: "ALLOC-REQ-P" }
+});
+await context.confirmAllocation();
+assert.equal(calls.filter(call => call.url === "https://example.test/allocate").length, 2);
+assert.equal(JSON.parse(calls.filter(call => call.url === "https://example.test/allocate")[1].body).confirm, true);
 assert.equal(calls.includes("loadRequests"), true);
-assert.equal(hosts.allocateBtn.textContent, "Allocate Resource");
+assert.equal(calls.includes("loadAllocations"), true);
+assert.equal(calls.includes("loadResources"), true);
+assert.equal(results.some(item => item.includes("Resource allocated successfully")), true);
+assert.equal(hosts.allocateBtn.textContent, "Preview match");
 assert.equal(hosts.allocateBtn.disabled, false);
+assert.equal(hosts.allocationPreview.hidden, true);
 
 context.allocationSubmitInFlight = true;
 const guarded = calls.length;

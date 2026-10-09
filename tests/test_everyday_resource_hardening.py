@@ -811,6 +811,8 @@ def test_emergency_allocation_still_writes_alloc_id(monkeypatch):
                     "location_id": "LOC-A",
                     "organization_id": ORG_A,
                     "priority": 1,
+                    "confirm": True,
+                    "resource_id": "R1",
                 }
             ),
         },

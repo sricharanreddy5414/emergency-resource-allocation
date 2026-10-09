@@ -445,6 +445,8 @@ def test_duplicate_allocation_is_rejected(monkeypatch):
                 "location_id": "LOC-A",
                 "organization_id": ORG_A,
                 "priority": 1,
+                "confirm": True,
+                "resource_id": "R1",
             }
         ),
         None,

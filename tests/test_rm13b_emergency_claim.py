@@ -131,6 +131,8 @@ def claim_body(request_id="Q1"):
         "location_id": "LOC-A",
         "priority": 1,
         "organization_id": ORG,
+        "confirm": True,
+        "resource_id": "R1",
     }
 
 

@@ -124,6 +124,8 @@ def claim_body(request_id="Q-A", **extra):
         "location_id": "LOC-A",
         "priority": 1,
         "organization_id": ORG,
+        "confirm": True,
+        "resource_id": "R1",
     }
     body.update(extra)
     return body

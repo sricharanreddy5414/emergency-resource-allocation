@@ -5814,6 +5814,9 @@ function applyResourcePageFilters() {
 ========================================================= */
 
 let allocationSubmitInFlight = false;
+let allocationPreviewResourceId = "";
+let allocationPreviewRequestId = "";
+let allocationPreviewEpoch = 0;
 
 
 function recordChangedMessage(message) {
@@ -5868,6 +5871,381 @@ function syncAllocationRequestHint() {
 }
 
 
+function allocationPayload(extra) {
+
+    const resourceType = $("resourceType").value;
+
+    return Object.assign(
+        {
+            request_id: $("requestId").value.trim(),
+            resource_type: $("resourceType")?.selectedOptions?.[0]?.textContent?.trim() || resourceType,
+            request_type_id: resourceType,
+            attributes: readAttributeValues("requestAttributeFields"),
+            location_id: $("location").value.trim(),
+            organization_id: selectedOrganizationId(),
+            priority: Number($("priority").value),
+        },
+        extra || {}
+    );
+
+}
+
+
+function setAllocationBusy(busy, label) {
+
+    const previewButton = $("allocateBtn");
+    const confirmButton = $("confirmAllocationBtn");
+    const cancelButton = $("cancelAllocationPreviewBtn");
+
+    [previewButton, confirmButton, cancelButton].forEach(button => {
+
+        if (!button) {
+
+            return;
+
+        }
+
+        button.disabled = busy;
+
+        if (busy) {
+
+            button.setAttribute("aria-busy", "true");
+            button.classList.add("loading");
+
+        } else {
+
+            button.removeAttribute("aria-busy");
+            button.classList.remove("loading");
+
+        }
+
+    });
+
+    if (previewButton) {
+
+        if (!busy) {
+
+            previewButton.disabled = false;
+            previewButton.textContent = "Preview match";
+
+        } else if (label === "Finding match...") {
+
+            previewButton.textContent = "Finding match...";
+
+        }
+
+    }
+
+    if (confirmButton && !busy) {
+
+        confirmButton.disabled = !allocationPreviewResourceId;
+        confirmButton.textContent = "Confirm allocation";
+
+    }
+
+    if (confirmButton && busy && label === "Allocating...") {
+
+        confirmButton.textContent = "Allocating...";
+
+    }
+
+    if (cancelButton && !busy) {
+
+        cancelButton.disabled = false;
+
+    }
+
+}
+
+
+function clearAllocationPreview() {
+
+    allocationPreviewEpoch += 1;
+    allocationPreviewResourceId = "";
+    allocationPreviewRequestId = "";
+
+    const panel = $("allocationPreview");
+    const details = $("allocationPreviewDetails");
+    const message = $("allocationPreviewMessage");
+    const confirmButton = $("confirmAllocationBtn");
+
+    if (details) {
+
+        details.innerHTML = "";
+
+    }
+
+    if (message) {
+
+        message.textContent = "";
+
+    }
+
+    if (confirmButton) {
+
+        confirmButton.disabled = true;
+
+    }
+
+    if (panel) {
+
+        panel.classList.add("hidden");
+        panel.hidden = true;
+
+    }
+
+}
+
+
+function renderAllocationPreview(result) {
+
+    const resourceId = String(result.resource_id || "").trim();
+    const panel = $("allocationPreview");
+    const details = $("allocationPreviewDetails");
+    const message = $("allocationPreviewMessage");
+    const confirmButton = $("confirmAllocationBtn");
+
+    if (!resourceId || result.available !== true || !panel || !details) {
+
+        clearAllocationPreview();
+        showResult(
+            "No matching resource is available to confirm.",
+            "error"
+        );
+
+        return;
+
+    }
+
+    allocationPreviewResourceId = resourceId;
+    allocationPreviewRequestId = String(result.request_id || "");
+
+    const rows = [
+        ["Resource ID", resourceId],
+        ["Name", result.name || ""],
+        ["Resource type", result.resource_type || ""],
+        ["Location", result.location || ""],
+        ["Location ID", result.location_id || ""],
+        ["Availability", "Available"],
+        ["Match", Array.isArray(result.match) ? result.match.join(", ") : ""],
+    ];
+
+    details.innerHTML = rows
+        .filter(([, value]) => String(value || "").trim())
+        .map(([label, value]) =>
+            "<dt>" + escapeHtml(label) + "</dt><dd>" + escapeHtml(value) + "</dd>"
+        )
+        .join("");
+
+    if (message) {
+
+        message.textContent = "Review this resource, then confirm the allocation or cancel.";
+
+    }
+
+    panel.classList.remove("hidden");
+    panel.hidden = false;
+
+    if (confirmButton) {
+
+        confirmButton.disabled = false;
+        confirmButton.textContent = "Confirm allocation";
+        confirmButton.focus();
+
+    }
+
+}
+
+
+function cancelAllocationPreview() {
+
+    if (allocationSubmitInFlight) {
+
+        return;
+
+    }
+
+    clearAllocationPreview();
+    hideResult();
+    $("allocateBtn")?.focus();
+
+}
+
+
+async function postAllocation(payload) {
+
+    const response = await fetch(
+        API_URL,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + getIdToken(),
+            },
+            body: JSON.stringify(payload),
+        }
+    );
+    const raw = await response.text();
+    let data;
+
+    try {
+
+        data = JSON.parse(raw);
+
+    } catch {
+
+        data = raw;
+
+    }
+
+    let result = data;
+
+    if (data && typeof data.body === "string") {
+
+        try {
+
+            result = JSON.parse(data.body);
+
+        } catch {
+
+            result = data.body;
+
+        }
+
+    }
+
+    return { response, result };
+
+}
+
+
+async function confirmAllocation() {
+
+    if (allocationSubmitInFlight || !allocationPreviewResourceId) {
+
+        return;
+
+    }
+
+    const requestId = allocationPreviewRequestId;
+    const resourceId = allocationPreviewResourceId;
+
+    if (!requestId || !resourceId || $("requestId").value.trim() !== requestId) {
+
+        clearAllocationPreview();
+        showResult(
+            "Preview the match again before confirming.",
+            "error"
+        );
+
+        return;
+
+    }
+
+    try {
+
+        allocationSubmitInFlight = true;
+        setAllocationBusy(true, "Allocating...");
+        hideResult();
+
+        const { response, result } = await postAllocation(
+            allocationPayload({
+                confirm: true,
+                resource_id: resourceId,
+            })
+        );
+
+        if (!response.ok) {
+
+            const failure = getApiMessage(result) || "Unable to process allocation request.";
+
+            clearAllocationPreview();
+
+            if (response.status === 409 || response.status === 404) {
+
+                const unavailable = failure.toLowerCase().includes("no longer available")
+                    || failure.toLowerCase().includes("no suitable");
+
+                showResult(
+                    unavailable
+                        ? "The resource is no longer available. Preview the match again."
+                        : recordChangedMessage(failure),
+                    "error"
+                );
+
+                try {
+
+                    await loadRequests();
+                    await loadAllocations();
+                    await loadResources();
+
+                } catch (reloadError) {
+
+                    showToast("Refresh the lists to see the current records.");
+
+                }
+
+                return;
+
+            }
+
+            throw new Error(failure);
+
+        }
+
+        if (!result || result.preview === true || result.status !== "ALLOCATED") {
+
+            clearAllocationPreview();
+            throw new Error("The allocation was not confirmed. Preview the match again.");
+
+        }
+
+        clearAllocationPreview();
+        showResult(
+            getApiMessage(result) || "Resource allocated successfully.",
+            "success"
+        );
+        addNotification(
+            "Allocation request processed",
+            getApiMessage(result) || "Resource allocated successfully."
+        );
+        $("allocationForm")?.reset();
+        syncAllocationRequestHint();
+
+        try {
+
+            await loadRequests();
+            await loadAllocations();
+            await loadResources();
+
+        } catch (reloadError) {
+
+            showToast("Allocation was processed. Refresh the lists to see it.");
+
+        }
+
+    } catch (error) {
+
+        console.error("Allocation error:", error);
+        showResult(
+            error.message || "Unable to process allocation request.",
+            "error"
+        );
+        addNotification(
+            "Allocation request failed",
+            error.message || "Unable to process the request."
+        );
+
+    } finally {
+
+        allocationSubmitInFlight = false;
+        setAllocationBusy(false);
+
+    }
+
+}
+
+
 async function submitAllocation(
     event
 ) {
@@ -5890,14 +6268,6 @@ async function submitAllocation(
         return;
 
     }
-
-
-    const form =
-        $("allocationForm");
-
-
-    const button =
-        $("allocateBtn");
 
 
     const requestId =
@@ -5958,112 +6328,37 @@ async function submitAllocation(
 
     }
 
-    const confirmed = window.confirm(
-        "Allocate an available resource to request " + requestId + "? The server checks that the request is still pending."
-    );
-
-    if (!confirmed) {
-
-        return;
-
-    }
+    const epoch = ++allocationPreviewEpoch;
 
     try {
 
         allocationSubmitInFlight = true;
+        setAllocationBusy(true, "Finding match...");
+        clearAllocationPreview();
+        allocationPreviewEpoch = epoch;
 
-        if (button) {
+        const { response, result } = await postAllocation(
+            allocationPayload({ preview: true })
+        );
 
-            button.disabled = true;
-            button.textContent = "Allocating...";
-            button.setAttribute("aria-busy", "true");
-            button.classList.add("loading");
+        if (epoch !== allocationPreviewEpoch) {
 
-        }
-
-        const payload = {
-
-            request_id:
-                requestId,
-
-            resource_type:
-                $("resourceType")?.selectedOptions?.[0]?.textContent?.trim() || resourceType,
-
-            request_type_id:
-                resourceType,
-
-            attributes:
-                readAttributeValues("requestAttributeFields"),
-
-            location_id:
-                location,
-
-            organization_id:
-                selectedOrganizationId(),
-
-            priority:
-                priority
-
-        };
-
-
-        const response =
-            await fetch(
-                API_URL,
-                {
-
-                    method:
-                        "POST",
-
-                    headers: {
-
-                        "Content-Type":
-                            "application/json",
-
-                        "Authorization":
-                            "Bearer " + getIdToken()
-
-                    },
-
-                    body:
-                        JSON.stringify(
-                            payload
-                        )
-
-                }
-            );
-
-
-        const raw =
-            await response.text();
-
-
-        let data;
-
-
-        try {
-
-            data =
-                JSON.parse(raw);
+            return;
 
         }
-
-        catch {
-
-            data =
-                raw;
-
-        }
-
 
         if (!response.ok) {
 
-            const failure = getApiMessage(data) || "Unable to process allocation request.";
+            const failure = getApiMessage(result) || "Unable to process allocation request.";
 
-            if (response.status === 409) {
+            clearAllocationPreview();
+
+            if (response.status === 404 || response.status === 409) {
 
                 showResult(
-                    recordChangedMessage(failure),
+                    response.status === 404 && failure.toLowerCase().includes("no suitable")
+                        ? "No matching resource is available."
+                        : recordChangedMessage(failure),
                     "error"
                 );
 
@@ -6086,68 +6381,14 @@ async function submitAllocation(
 
         }
 
+        renderAllocationPreview(result);
 
-        let result =
-            data;
+        if (allocationPreviewResourceId) {
 
-
-        if (
-            data &&
-            typeof data.body ===
-            "string"
-        ) {
-
-            try {
-
-                result =
-                    JSON.parse(
-                        data.body
-                    );
-
-            }
-
-            catch {
-
-                result =
-                    data.body;
-
-            }
-
-        }
-
-
-        const message =
-            getApiMessage(
-                result
-            ) ||
-
-            "Resource allocation request processed successfully.";
-
-
-        showResult(
-            message,
-            "success"
-        );
-
-
-        addNotification(
-            "Allocation request processed",
-            message
-        );
-
-
-        form.reset();
-        syncAllocationRequestHint();
-
-        try {
-
-            await loadRequests();
-            await loadAllocations();
-            await loadResources();
-
-        } catch (reloadError) {
-
-            showToast("Allocation was processed. Refresh the lists to see it.");
+            showResult(
+                "Review the proposed resource, then confirm or cancel.",
+                "success"
+            );
 
         }
 
@@ -6160,19 +6401,10 @@ async function submitAllocation(
             error
         );
 
-
         showResult(
             error.message ||
             "Unable to process allocation request.",
             "error"
-        );
-
-
-        addNotification(
-            "Allocation request failed",
-
-            error.message ||
-            "Unable to process the request."
         );
 
     }
@@ -6180,15 +6412,7 @@ async function submitAllocation(
     finally {
 
         allocationSubmitInFlight = false;
-
-        if (button) {
-
-            button.disabled = false;
-            button.textContent = "Allocate Resource";
-            button.removeAttribute("aria-busy");
-            button.classList.remove("loading");
-
-        }
+        setAllocationBusy(false, "Finding match...");
 
     }
 
@@ -7435,6 +7659,33 @@ function initializeEvents() {
         ?.addEventListener(
             "submit",
             submitAllocation
+        );
+
+    $("confirmAllocationBtn")
+        ?.addEventListener(
+            "click",
+            confirmAllocation
+        );
+
+    $("cancelAllocationPreviewBtn")
+        ?.addEventListener(
+            "click",
+            cancelAllocationPreview
+        );
+
+    $("allocationPreview")
+        ?.addEventListener(
+            "keydown",
+            event => {
+
+                if (event.key === "Escape") {
+
+                    event.preventDefault();
+                    cancelAllocationPreview();
+
+                }
+
+            }
         );
 
 
@@ -8818,6 +9069,14 @@ function setOperationalActionsEnabled(enabled) {
         }
 
     });
+
+    const confirmButton = $("confirmAllocationBtn");
+
+    if (confirmButton) {
+
+        confirmButton.disabled = !enabled || !allocationPreviewResourceId;
+
+    }
 
 }
 

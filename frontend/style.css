@@ -663,6 +663,10 @@ textarea {
         flex: 1 1 100%;
     }
 
+    .allocation-preview dl {
+        grid-template-columns: 1fr;
+    }
+
     .signup-dial-panel:not([hidden]) {
         position: fixed;
         left: 16px;
@@ -787,6 +791,35 @@ textarea {
 .faq-item summary {
     cursor: pointer;
     font-weight: 650;
+}
+
+.allocation-preview {
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.allocation-preview h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+}
+
+.allocation-preview dl {
+    display: grid;
+    grid-template-columns: minmax(8rem, 11rem) 1fr;
+    gap: 6px 12px;
+    margin: 0 0 14px;
+}
+
+.allocation-preview dt {
+    color: var(--muted);
+    font-weight: 650;
+}
+
+.allocation-preview dd {
+    margin: 0;
+    overflow-wrap: anywhere;
 }
 
 .table-toolbar,
