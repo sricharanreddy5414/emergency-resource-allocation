@@ -663,7 +663,8 @@ textarea {
         flex: 1 1 100%;
     }
 
-    .allocation-preview dl {
+    .allocation-preview dl,
+    .request-detail dl {
         grid-template-columns: 1fr;
     }
 
@@ -793,31 +794,36 @@ textarea {
     font-weight: 650;
 }
 
-.allocation-preview {
+.allocation-preview,
+.request-detail {
     margin-top: 16px;
     padding: 14px;
     border: 1px solid var(--line);
     border-radius: 8px;
 }
 
-.allocation-preview h3 {
+.allocation-preview h3,
+.request-detail h3 {
     margin: 0 0 8px;
     font-size: 1rem;
 }
 
-.allocation-preview dl {
+.allocation-preview dl,
+.request-detail dl {
     display: grid;
     grid-template-columns: minmax(8rem, 11rem) 1fr;
     gap: 6px 12px;
     margin: 0 0 14px;
 }
 
-.allocation-preview dt {
+.allocation-preview dt,
+.request-detail dt {
     color: var(--muted);
     font-weight: 650;
 }
 
-.allocation-preview dd {
+.allocation-preview dd,
+.request-detail dd {
     margin: 0;
     overflow-wrap: anywhere;
 }

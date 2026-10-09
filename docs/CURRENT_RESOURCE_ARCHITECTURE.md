@@ -58,6 +58,7 @@ API `4c6dni17l3`, stage `dev`, region `eu-north-1`.
 | `POST /allocate` | `emergency-resource-allocation` | Create or match an emergency request, then allocate one available resource |
 | `GET /allocate/allocations` | `emergency-resource-allocation` | List allocations for the organization |
 | `GET /requests` | `create-request` | Emergency requests |
+| `GET /requests/{request_id}` | `emergency-resource-allocation` | One owned emergency request. Membership selects the organization. `require_owned` returns not found for a missing or other-organization row. Response is `request_view`. The API Gateway resource is not created by this change. |
 | `GET /public/resources` | `erap-public-resources` | Unauthenticated public projection |
 | `GET/POST/PUT/PATCH/DELETE /resource-types` | `erap-catalog` | Organization resource types |
 

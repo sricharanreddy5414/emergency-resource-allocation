@@ -90,6 +90,7 @@ The current API routes are:
 Method	Endpoint	Purpose
 POST	/allocate	Process a resource allocation
 GET	/requests	Retrieve emergency requests
+GET	/requests/{request_id}	Read one emergency request for the caller's organization
 POST	/requests	Create an emergency request
 OPTIONS	/requests	Provide CORS support
 GET	/allocate/resources	Retrieve resources

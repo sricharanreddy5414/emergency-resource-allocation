@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 
 from boto3.dynamodb.conditions import Key
@@ -30,6 +31,9 @@ from matching import choose_resource, explain_match
 from resource_state import EMERGENCY_CLAIM_CONDITION
 from api_views import allocation_view, request_view
 from observability import begin_request, error_body, load_object, log_result
+
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_REQUEST_READ_PATH = re.compile(r"/requests/([^/]+)$")
 
 
 def response(status_code, body):
@@ -208,6 +212,26 @@ def _signed_page(table, organization_id, location_id, limit, endpoint, cursor_na
     return [view(item) for item in items], token
 
 
+def emergency_request_read_id(path):
+    """Return the id segment of GET /requests/{request_id}, not an exchange path."""
+    text = str(path or "")
+    if "/exchange/" in text:
+        return None
+    match = _REQUEST_READ_PATH.search(text)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def read_emergency_request(request_id, organization_id):
+    """Read one owned emergency request. Missing and other-org rows are not found."""
+    if not REQUEST_ID_PATTERN.fullmatch(str(request_id or "")):
+        return response(400, {"message": "Request ID is invalid"})
+    item = requests_table().get_item(Key={"request_id": request_id}).get("Item")
+    owned = require_owned(item, organization_id)
+    return response(200, {"message": "Request retrieved successfully", "request": request_view(owned)})
+
+
 def lambda_handler(event, context):
     begin_request(event)
     method = (
@@ -231,6 +255,10 @@ def lambda_handler(event, context):
             access="write" if writing else "read",
         )
         organization_id = membership["organization_id"]
+        if method == "GET":
+            request_read_id = emergency_request_read_id(path)
+            if request_read_id is not None:
+                return read_emergency_request(request_read_id, organization_id)
         query = event.get("queryStringParameters") or {}
         location_id = str(query.get("location_id") or "").strip()
 
