@@ -1842,6 +1842,7 @@ function navigateTo(sectionId) {
     "requests"
 ) {
 
+    hideEmergencyRequestDetail();
     loadRequests();
 
 }
@@ -2282,21 +2283,185 @@ async function markAllNotificationsRead() {
     }
 }
 
+const EMERGENCY_INBOX_EVENTS = new Set([
+    "emergency.request.created",
+    "emergency.request.cancelled",
+    "emergency.allocation.created",
+    "emergency.allocation.released"
+]);
+
+const EMERGENCY_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+function emergencyInboxRequestId(notification) {
+    const item = notification || {};
+    const href = item.href || {};
+    if (href.kind !== "emergency_request") {
+        return "";
+    }
+    if (!EMERGENCY_INBOX_EVENTS.has(String(item.event_code || ""))) {
+        return "";
+    }
+    const requestId = String(href.request_id || "").trim();
+    if (!EMERGENCY_REQUEST_ID.test(requestId)) {
+        return "";
+    }
+    return requestId;
+}
+
+function exchangeInboxRequestId(notification) {
+    const href = (notification || {}).href || {};
+    const requestId = String(href.exchange_request_id || "").trim();
+    if (href.kind === "exchange_request" && requestId.startsWith("EXREQ-")) {
+        return requestId;
+    }
+    return "";
+}
+
+function notificationCanOpen(notification) {
+    return Boolean(exchangeInboxRequestId(notification) || emergencyInboxRequestId(notification));
+}
+
+function hideEmergencyRequestDetail() {
+    const panel = $("emergencyRequestDetail");
+    if (!panel) {
+        return;
+    }
+    panel.hidden = true;
+    panel.classList.add("hidden");
+    const details = $("emergencyRequestDetailFields");
+    const message = $("emergencyRequestDetailMessage");
+    if (details) {
+        details.innerHTML = "";
+    }
+    if (message) {
+        message.textContent = "";
+    }
+}
+
+function renderEmergencyRequestDetail(state) {
+    const panel = $("emergencyRequestDetail");
+    const details = $("emergencyRequestDetailFields");
+    const message = $("emergencyRequestDetailMessage");
+    if (!panel || !details || !message) {
+        return;
+    }
+    panel.hidden = false;
+    panel.classList.remove("hidden");
+    const mode = state && state.mode;
+    if (mode === "loading") {
+        details.innerHTML = "";
+        message.textContent = "Loading request...";
+        return;
+    }
+    if (mode !== "ready") {
+        details.innerHTML = "";
+        message.textContent = (state && state.message) || "That request is not available.";
+        return;
+    }
+    const request = state.request || {};
+    const requestId = String(request.request_id || "");
+    const resourceType = request.resource_type ?? request.ResourceType ?? "";
+    const location = request.location ?? request.Location ?? "";
+    const priority = request.priority ?? request.Priority ?? "";
+    const status = String(request.status ?? request.Status ?? "");
+    const createdAt = request.CreatedAt ?? request.created_at ?? "";
+    details.innerHTML = `
+        <dt>Request</dt><dd>${escapeHtml(requestId)}</dd>
+        <dt>Request type</dt><dd>${formatResourceType(resourceType)}</dd>
+        <dt>Location</dt><dd>${escapeHtml(location || "—")}</dd>
+        <dt>Priority</dt><dd>${escapeHtml(priority === "" ? "—" : "P" + priority)}</dd>
+        <dt>Status</dt><dd>${escapeHtml(emergencyStatusLabel(status))}</dd>
+        <dt>Created</dt><dd>${escapeHtml(createdAt || "—")}</dd>`;
+    message.textContent = "";
+}
+
+function emergencyRequestReadUrl(requestId) {
+    const params = new URLSearchParams();
+    const organizationId = typeof selectedOrganizationId === "function" ? selectedOrganizationId() : "";
+    if (organizationId) {
+        params.set("organization_id", organizationId);
+    }
+    const query = params.toString();
+    return REQUESTS_API_URL + "/" + encodeURIComponent(requestId) + (query ? "?" + query : "");
+}
+
+async function loadEmergencyRequestDetail(requestId) {
+    if (!EMERGENCY_REQUEST_ID.test(String(requestId || ""))) {
+        renderEmergencyRequestDetail({ mode: "error", message: "That request is not available." });
+        return;
+    }
+    renderEmergencyRequestDetail({ mode: "loading" });
+    try {
+        const idToken = await waitForIdToken();
+        if (!idToken) {
+            renderEmergencyRequestDetail({ mode: "error", message: "Sign in again to view this request." });
+            return;
+        }
+        const response = await fetch(emergencyRequestReadUrl(requestId), {
+            method: "GET",
+            headers: {
+                "Accept": "application/json",
+                "Authorization": "Bearer " + idToken
+            }
+        });
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch (_error) {
+            payload = {};
+        }
+        if (response.status === 404 || !response.ok) {
+            renderEmergencyRequestDetail({
+                mode: "error",
+                message: response.status === 404
+                    ? "That request is not available."
+                    : "Unable to load this request."
+            });
+            return;
+        }
+        const request = payload.request || {};
+        if (request.request_id !== requestId) {
+            renderEmergencyRequestDetail({ mode: "error", message: "That request is not available." });
+            return;
+        }
+        renderEmergencyRequestDetail({ mode: "ready", request });
+    } catch (_error) {
+        renderEmergencyRequestDetail({ mode: "error", message: "Unable to load this request." });
+    }
+}
+
+async function openEmergencyRequestFromInbox(requestId) {
+    const id = emergencyInboxRequestId({
+        event_code: "emergency.request.created",
+        href: { kind: "emergency_request", request_id: requestId }
+    });
+    if (!id) {
+        renderEmergencyRequestDetail({ mode: "error", message: "That request is not available." });
+        return;
+    }
+    navigateTo("requests");
+    await loadEmergencyRequestDetail(id);
+}
+
 async function openNotificationTarget(index) {
     const item = notifications[index];
     if (!item) {
         return;
     }
     await markNotificationRead(index);
-    const href = item.href || {};
-    const requestId = String(href.exchange_request_id || "").trim();
-    if (href.kind === "exchange_request" && requestId.startsWith("EXREQ-")) {
+    const exchangeId = exchangeInboxRequestId(item);
+    if (exchangeId) {
         navigateTo("exchange");
         try {
-            await openExchangeRequest(requestId);
+            await openExchangeRequest(exchangeId);
         } catch (_error) {
             showToast("The exchange request could not be opened.");
         }
+        return;
+    }
+    const requestId = emergencyInboxRequestId(item);
+    if (requestId) {
+        await openEmergencyRequestFromInbox(requestId);
     }
 }
 
@@ -2333,8 +2498,7 @@ function renderNotifications() {
     }
     list.innerHTML = notifications.map((notification, index) => {
         const unread = !notification.read_at;
-        const href = notification.href || {};
-        const canOpen = href.kind === "exchange_request" && String(href.exchange_request_id || "").startsWith("EXREQ-");
+        const canOpen = notificationCanOpen(notification);
         return `
             <article class="notification-item${unread ? " unread" : ""}">
                 <div>
@@ -3590,6 +3754,12 @@ function initializeRequestControls() {
         );
 
     }
+
+    document.getElementById("emergencyRequestDetailList")
+        ?.addEventListener("click", hideEmergencyRequestDetail);
+
+    document.getElementById("emergencyRequestDetailNotifications")
+        ?.addEventListener("click", () => navigateTo("notifications"));
 
     document.getElementById("requestsTable")
         ?.addEventListener("click", event => {
