@@ -65,7 +65,7 @@ Audit writes are best-effort. A failed audit record does not fail the user opera
 
 ## Monitoring
 
-CloudWatch alarms cover API 5XX responses, allocation throttles, auto-release errors, public-discovery errors, and DynamoDB system errors on `Resources`. Those five alarms publish to the SNS topic `ERAP-Production-Alarms`. No email or other endpoint is subscribed yet. An existing allocation error alarm still publishes to `EmergencyResourceNotifications`. Lambda log groups are retained for 30 days.
+CloudWatch alarms cover API 5XX responses, allocation throttles, auto-release errors, public-discovery errors, and DynamoDB system errors on `Resources`. Those five alarms publish to the SNS topic `ERAP-Production-Alarms`. That topic has one confirmed email subscription. The address is not stored in this repository. An existing allocation error alarm still publishes to `EmergencyResourceNotifications`. Lambda log groups that already have a retention policy are retained for 30 days. The repository policy for `erap-reservation-expiry` is also 30 days, and that live log group has not had retention applied.
 
 ## States
 
@@ -85,8 +85,8 @@ On 27 September 2026, five calls to `GET /public/resources` from this workstatio
 
 ## Incidents
 
-The five `ERAP-*` alarms publish to `ERAP-Production-Alarms`. Subscribe an operator to that topic to receive them. A table restore would be a point-in-time restore to a new table name, then a cutover. Do not restore over the live tables. Legacy unscoped rows are still present and are excluded from tenant queries.
+The five `ERAP-*` alarms publish to `ERAP-Production-Alarms`. Alerts go to the existing confirmed email subscription on that topic. The address is not stored in this repository. A table restore would be a point-in-time restore to a new table name, then a cutover. Do not restore over the live tables. Legacy unscoped rows are still present and are excluded from tenant queries.
 
 ## Known limits
 
-There is no per-tenant throttle. The alarm topic has no subscriber until an operator adds one. Legacy operational rows remain unscoped and excluded from tenant queries. Attribute values are scalars only. The resource screen creates resources and does not edit an existing one. Signed-in browser flows were not repeated in this phase because the web client does not allow admin password authentication.
+There is no per-tenant throttle. `ERAP-Production-Alarms` already has one confirmed email subscription. Four lifecycle error alarms are defined in the repository and are not live CloudWatch alarms until an operator applies that definition. Legacy operational rows remain unscoped and excluded from tenant queries. Attribute values are scalars only. The resource screen creates resources and does not edit an existing one. Signed-in browser flows were not repeated in this phase because the web client does not allow admin password authentication.

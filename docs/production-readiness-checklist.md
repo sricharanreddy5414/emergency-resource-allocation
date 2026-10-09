@@ -41,14 +41,14 @@ Production launch is not decided by this list. See `docs/production-launch-gate.
 
 | Item | Status | Evidence |
 |---|---|---|
-| API Gateway | READY | API `4c6dni17l3` stage `dev`, deployment `tr1rz2` at baseline. |
+| API Gateway | READY | API `4c6dni17l3` stage `dev`, current deployment `59k29o`. The Phase 13 baseline was `tr1rz2`. |
 | Lambda | READY | 15 functions, Python 3.14, alias `live`. |
 | Cognito | READY | Pool exists. Users and MFA unchanged. |
 | DynamoDB | READY | 14 tables protected. |
 | EventBridge | READY | Two schedules and the auto-release rule. |
-| CloudWatch | READY | 30-day retention from Phase 11B. Structured fields in `docs/observability.md`. |
+| CloudWatch | READY | Live log groups that already have retention keep 30 days. The repository policy for reservation-expiry is 30 days, and that live retention is not applied yet. Structured fields in `docs/observability.md`. |
 | S3 | READY | Public access block on. Bucket is not on the request path. |
-| Alarm email | DEFERRED | SNS has no email subscriber. |
+| Alarm email | READY | `ERAP-Production-Alarms` has one confirmed email subscription. The address is not recorded here. |
 | Dashboards and custom metrics | NOT APPLICABLE | Out of scope for this phase. |
 
 ## DEPLOYMENT

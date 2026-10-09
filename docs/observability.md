@@ -52,9 +52,13 @@ The project already keeps Lambda logs for 30 days (`scripts/set_log_retention.py
 
 Those three were set to 30 days, the same period as the other owned functions. Log groups were not deleted. Groups that were already 30 days were left on that period.
 
+`/aws/lambda/erap-reservation-expiry` is included in the repository 30-day policy in `scripts/set_log_retention.py`. That retention has not been applied to the live log group.
+
 ## Alarms
 
-No new alarms were added because the existing project does not have an established alerting destination. The current alarms publish to SNS, and no email or other endpoint is subscribed.
+The existing production alarms publish to SNS topic `ERAP-Production-Alarms`. That topic has one confirmed email subscription. The address is not stored in this repository.
+
+Four lifecycle error alarms, for the billing webhook, billing expiry, exchange expiry, and reservation expiry, are defined in `infra/lifecycle-alarms.json`. They are repository definitions only. They are not live CloudWatch alarms, because that definition has not been applied.
 
 ## Limits
 

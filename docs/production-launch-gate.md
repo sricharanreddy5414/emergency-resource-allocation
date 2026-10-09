@@ -50,14 +50,15 @@ The running system is one account and one API. The stage name is `dev`. That sta
 | Cognito | `eu-north-1_vv7adAAC9`, authorizer `y0hzhr` | Same pool | Not separated |
 | Lambda | 15 functions, alias `live` | Same functions | Not separated |
 | DynamoDB | 14 tables | Same tables | Not separated |
-| Secrets Manager | `erap/billing/razorpay/test` | No production billing secret in code | TEST only |
-| Razorpay mode | Test key prefix required | Live mode rejected by code | TEST only |
-| Razorpay plans | `plan_ThiWT35Gf1jyio`, `plan_ThiWTXOzBHl2Qb` | Not provisioned | TEST only |
-| Webhook secret | Inside the test secret | Not provisioned | TEST only |
+| Secrets Manager | `erap/billing/razorpay/production` for deployed billing and the webhook | `erap/billing/razorpay/test` remains test mode | Production deployed |
+| Razorpay mode | Production mode on the deployed billing and webhook functions | Test mode stays separate | Production |
+| Razorpay plans | Production plans are distinct from the test plans | Test plans remain `plan_ThiWT35Gf1jyio` and `plan_ThiWTXOzBHl2Qb` | Production |
+| Webhook secret | Inside `erap/billing/razorpay/production` | Test mode uses the test secret | Production |
+| Alarm topic | `ERAP-Production-Alarms` | One confirmed email subscription. The address is not stored here. | Present |
 | Frontend API URL | The `dev` execute-api host in `frontend/app.js` | No production host | TEST stack |
 | Domain | `https://main.d3enpe7opotop5.amplifyapp.com` | No custom domain | Amplify hostname |
 | CORS | That Amplify origin | No second origin | Matches the hostname |
-| Logging | 30-day CloudWatch retention | Same | In place |
+| Logging | Live groups that already have retention keep 30 days. Reservation-expiry repository policy is 30 days and is not applied in AWS yet. | Same policy | Pending for reservation-expiry |
 | Schedules | Exchange hourly, billing daily 02:00 UTC, auto-release every 5 minutes | Same | In place |
 
 ## Business decisions this phase did not make

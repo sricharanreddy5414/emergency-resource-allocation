@@ -1,10 +1,10 @@
 # Billing architecture
 
-The billing resources below are deployed in `eu-north-1` on API `4c6dni17l3`, stage `dev`, deployment `tr1rz2`. `infra/billing-tables.json`, `infra/billing-checkout.json`, and `infra/billing-expiry.json` record `"applied": true`. Do not recreate those resources.
+The billing resources below are deployed in `eu-north-1` on API `4c6dni17l3`, stage `dev`, deployment `59k29o`. `infra/billing-tables.json`, `infra/billing-checkout.json`, and `infra/billing-expiry.json` record `"applied": true`. Do not recreate those resources.
 
 `OrganizationSubscriptions` and `BillingEvents` use on-demand billing, point-in-time recovery, and deletion protection. Neither table uses TTL. `ProviderSubscriptionIndex`, `LifecycleDueIndex`, and `OrganizationBillingEventsIndex` project all attributes. `erap-billing` alias `live` is version 6 from commit `c375842`. `erap-billing-webhook` and `erap-billing-expiry` alias `live` are version 1 from commit `3a38da8`; later checkout changes did not change their handlers. `deploy-backend.yml` still publishes only `PACKAGES`, so those three aliases are deployed separately.
 
-Razorpay stays in test mode. Monthly plan `plan_ThiWT35Gf1jyio` is ₹999 (`99900` paise) for 468 cycles. Yearly plan `plan_ThiWTXOzBHl2Qb` is ₹9,999 (`999900` paise) for 39 cycles. Both counts stay inside Razorpay's 40-year authorization limit. The test secret id is `erap/billing/razorpay/test`. Live keys are rejected.
+The deployed billing functions use production mode and read `erap/billing/razorpay/production`. Test mode remains separate and uses `erap/billing/razorpay/test`. The test monthly plan `plan_ThiWT35Gf1jyio` is ₹999 (`99900` paise) for 468 cycles. The test yearly plan `plan_ThiWTXOzBHl2Qb` is ₹9,999 (`999900` paise) for 39 cycles. Both counts stay inside Razorpay's 40-year authorization limit.
 
 Webhook `ThZihd32AsjaX2` posts to `/dev/billing/webhook` with no Cognito authorizer. Signature verification stays on. Enabled events are `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, and `payment.failed`. An eMandate registration can remain `created` until Razorpay completes its documented T+1 activation. ERAP stays `TRIALING` until a verified `subscription.activated` or `subscription.charged` event arrives. The current test subscription `sub_TiEekQFpwByhkU` for `ORG-17D0E2939B2D` is that case: the invoice is paid and the ERAP row is still `TRIALING`.
 

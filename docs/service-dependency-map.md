@@ -26,8 +26,8 @@ EXCHANGE
   -> QR HANDOVER  (session rows on ResourceExchanges; raw tokens are not logged)
 
 BILLING
-  -> RAZORPAY test mode
-  -> WEBHOOK  (erap-billing-webhook)
+  -> RAZORPAY production mode
+  -> WEBHOOK  (erap-billing-webhook; test mode stays on the separate test secret)
   -> BILLING STATE  (OrganizationSubscriptions, BillingEvents)
 
 EXPIRY
@@ -46,7 +46,7 @@ RESOURCE AUTO-RELEASE
 | Service | Purpose | AWS resource | Runtime / deploy | Depends on | Failure impact | Recovery |
 |---|---|---|---|---|---|---|
 | Frontend | Operator UI | Amplify `d3enpe7opotop5`, `https://main.d3enpe7opotop5.amplifyapp.com` | Amplify build of `main` in us-east-1 | API Gateway, Cognito | UI unavailable; API can still run | Redeploy the last successful Amplify job. See `docs/rollback.md`. |
-| API | HTTPS edge | API `4c6dni17l3` stage `dev` | Stage deployment `tr1rz2` at the Phase 13 baseline. Routes are not recreated by the Lambda deploy. | Lambda aliases, Cognito | All callers fail | Point the stage at the previous deployment id. Do not delete deployments. |
+| API | HTTPS edge | API `4c6dni17l3` stage `dev` | Current stage deployment `59k29o`. The Phase 13 baseline was `tr1rz2`. Routes are not recreated by the Lambda deploy. | Lambda aliases, Cognito | All callers fail | Point the stage at the previous deployment id. Do not delete deployments. |
 | Authorizer | JWT check | Cognito authorizer `y0hzhr` | Pool `eu-north-1_vv7adAAC9`. MFA OPTIONAL, software token on, SMS off. | Cognito | Protected routes reject or fail closed | Do not change MFA or users from a runbook. |
 | Organizations | Create and read orgs, members | `erap-create-organization`, `erap-get-organization` | Python 3.14, 15s, 256 MB, role `ERAP-Organization-Lambda-Role`. In `PACKAGES`, so push to `main` publishes them. | Organizations, OrganizationMembers, Cognito `sub` | Sign-in cannot resolve a tenant | Alias rollback for those functions. Restore Organizations and OrganizationMembers together. |
 | Locations | Location CRUD | `erap-locations` | Same role and package path as organizations. 15s. | Locations | Location pickers fail | Alias rollback. PITR to a new table. |
@@ -57,13 +57,13 @@ RESOURCE AUTO-RELEASE
 | Exchange | Requests, offers, handover | `erap-exchange` | Python 3.14, 15s, `ERAP-Exchange-Lambda-Role`. Not in `PACKAGES`. Production release is the manual workflow Release exchange, from `main`, after production approval. | ResourceExchanges, membership, notifications, QR helper | Exchange UI fails | Rollback exchange moves alias `live` to an existing published version. Restore ResourceExchanges with Organizations and members in mind. |
 | Exchange expiry | Close expired exchanges | `erap-exchange-expiry` | Python 3.14, 60s, `ERAP-Exchange-Expiry-Lambda-Role`. Schedule `erap-exchange-expiry-hourly`, `cron(15 * * * ? *)`. Deploy with `scripts/deploy_exchange_expiry.py`. | ResourceExchanges | Expired rows stay open until the next hour | `python scripts/verify_recovery.py`. |
 | Notifications | In-app inbox | `erap-notifications` | Python 3.14, 15s, `ERAP-Notifications-Lambda-Role`. Not in `PACKAGES`. Deploy with `scripts/deploy_notifications.py`. | Notifications table, `UnreadByUserIndex`, TTL `expires_at` | Inbox fails. Exchange writes stay committed. | Alias rollback. PITR copy does not copy TTL; re-enable `expires_at` on a cutover table. See `docs/disaster-recovery.md`. |
-| Billing API | Checkout, summary, events | `erap-billing` | Python 3.14, 29s, `ERAP-Billing-Lambda-Role`. Not in `PACKAGES`. | OrganizationSubscriptions, BillingEvents, Cognito, Razorpay test secret | Billing pages fail. Other operations follow entitlement rules already deployed. | Do not create a subscription to test this. Do not edit `sub_TiEekQFpwByhkU`. |
-| Billing webhook | Provider events | `erap-billing-webhook` | Python 3.14, 29s, `ERAP-Billing-Webhook-Lambda-Role`. Public route, signature required. | Secret `erap/billing/razorpay/test`, subscriptions, events | Payments stop updating state | Invalid signatures stay 401 and write no event. Do not print the secret. |
+| Billing API | Checkout, summary, events | `erap-billing` | Python 3.14, 29s, `ERAP-Billing-Lambda-Role`. Not in `PACKAGES`. | OrganizationSubscriptions, BillingEvents, Cognito, secret `erap/billing/razorpay/production` | Billing pages fail. Other operations follow entitlement rules already deployed. | Do not create a subscription to test this. Do not edit `sub_TiEekQFpwByhkU`. |
+| Billing webhook | Provider events | `erap-billing-webhook` | Python 3.14, 29s, `ERAP-Billing-Webhook-Lambda-Role`. Public route, signature required. | Secret `erap/billing/razorpay/production`, subscriptions, events | Payments stop updating state | Invalid signatures stay 401 and write no event. Do not print the secret. |
 | Billing expiry | Trial and lapse transitions | `erap-billing-expiry` | Python 3.14, 60s, `ERAP-Billing-Expiry-Lambda-Role`. Schedule `erap-billing-expiry-daily`, `cron(0 2 * * ? *)`. | OrganizationSubscriptions | Trials and past-due rows wait until the next day | Confirm the schedule target ends with `function:erap-billing-expiry:live`. |
 | Data | System of record | 14 tables in `scripts/lambda_manifest.py` `TABLES` | On-demand, AWS-owned encryption, PITR, deletion protection | IAM roles above | Data loss or lockout | Restore to a new table. Never over a live table in a drill. |
 | Object storage | Not on the request path | Bucket `emergency-resource-allocation-sricharan-2026` | Block Public Access on. No application reference. | None for API calls | Not a product dependency | Leave the block on. Do not list objects from a runbook. |
-| Secrets | Razorpay test credential | Secrets Manager `erap/billing/razorpay/test` | Read at runtime by checkout and webhook roles | Billing only | Checkout and webhook fail | Restore access on the existing secret. Do not rotate it from this runbook. |
-| Logs | Operator evidence | CloudWatch log groups, 30-day retention | Phase 11B JSON lines | Lambda | Diagnosis is harder. The API still runs. | Retention script `scripts/set_log_retention.py`. No dashboard in this phase. |
+| Secrets | Razorpay credentials | Secrets Manager `erap/billing/razorpay/production` for deployed billing and the webhook. `erap/billing/razorpay/test` remains the test-mode secret. | Read at runtime by checkout and webhook roles | Billing only | Checkout and webhook fail | Restore access on the existing secret. Do not rotate it from this runbook. Do not print either value. |
+| Logs | Operator evidence | CloudWatch log groups. Live groups that already have retention keep 30 days. Reservation-expiry has a repository 30-day policy that is not applied in AWS yet. | Phase 11B JSON lines | Lambda | Diagnosis is harder. The API still runs. | Retention script `scripts/set_log_retention.py`. No dashboard in this phase. |
 | Deploy | Publish nine functions | GitHub workflow Deploy backend, role `ERAP-GitHub-Deploy` | Push to `main`. `scripts/deploy_backend.py`. | OIDC, `PACKAGES` | A bad publish is reverted only if `live` is still that publish | `docs/production-release-runbook.md` and `docs/rollback.md`. |
 
 Operational importance: API, Cognito, Organizations, OrganizationMembers, Resources, Allocations, ResourceExchanges, and OrganizationSubscriptions are critical. Notifications are not the exchange source of truth. Razorpay is the payment source of truth. The S3 bucket is not on the request path.

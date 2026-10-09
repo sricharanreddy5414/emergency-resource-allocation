@@ -134,7 +134,7 @@ Restore `OrganizationSubscriptions` and `BillingEvents` to the same time. The su
 
 Razorpay remains the source of truth for provider payment and subscription status. Restoring AWS tables does not change `sub_TiEekQFpwByhkU` or any other provider subscription. After a restore, compare the organization row with the provider before accepting new webhooks. Do not create a subscription or take a payment as part of recovery.
 
-The webhook secret is `erap/billing/razorpay/test`. Recovery needs that secret to stay in Secrets Manager. It is not in Git.
+The deployed webhook reads `erap/billing/razorpay/production`. Test mode still uses `erap/billing/razorpay/test`. Recovery needs both secret names to stay in Secrets Manager. Neither value is in Git.
 
 ## 12. Notification recovery considerations
 
@@ -154,7 +154,7 @@ No Lambda was published in Phase 11C.
 
 ## 14. API Gateway recovery
 
-API `4c6dni17l3`, stage `dev`, deployment `tr1rz2`. Authorizer `y0hzhr`. Default throttle is 20 requests per second, burst 40. `GET /public/resources` is 5 per second, burst 10. Gateway error CORS allows only the Amplify origin. `scripts/verify_hardening.py` checks those values.
+API `4c6dni17l3`, stage `dev`, deployment `59k29o`. Authorizer `y0hzhr`. Default throttle is 20 requests per second, burst 40. `GET /public/resources` is 5 per second, burst 10. Gateway error CORS allows only the Amplify origin. `scripts/verify_hardening.py` checks those values.
 
 Routes are live on the API. The repository has route notes in `infra/` for billing and exchange, not a full export of every method. Recreate a bad deployment by updating the stage `deploymentId` to the previous id, then run the hardening check. Do not create a second API.
 
@@ -188,7 +188,7 @@ Role documents that the deploy scripts own can be reapplied by those scripts. Th
 
 ## 18. CloudWatch recovery
 
-Lambda log groups for the owned functions are retained for 30 days. Logs are not a data backup. An expired log line cannot be restored by this runbook. Alarms `ERAP-ApiGateway-5XX`, `ERAP-Allocation-Throttles`, `ERAP-AutoRelease-Errors`, `ERAP-Public-Lambda-Errors`, `ERAP-Resources-SystemErrors`, and `EmergencyResourceAllocation-Lambda-Errors` exist and have an alarm action. The SNS topic has no email subscription, so an alarm does not page anyone.
+Lambda log groups that already have a retention policy are retained for 30 days. The repository policy for `/aws/lambda/erap-reservation-expiry` is 30 days, and that live retention has not been applied. Logs are not a data backup. An expired log line cannot be restored by this runbook. Alarms `ERAP-ApiGateway-5XX`, `ERAP-Allocation-Throttles`, `ERAP-AutoRelease-Errors`, `ERAP-Public-Lambda-Errors`, `ERAP-Resources-SystemErrors`, and `EmergencyResourceAllocation-Lambda-Errors` exist and have an alarm action. `ERAP-Production-Alarms` has one confirmed email subscription. The address is not stored in this repository.
 
 ## 19. RPO
 
