@@ -30,6 +30,17 @@ EVENT_HANDOVER_COMPLETED = "exchange.handover.completed"
 EVENT_REQUEST_CANCELLED = "exchange.request.cancelled"
 EVENT_REQUEST_EXPIRED = "exchange.request.expired"
 EVENT_RESERVATION_EXPIRED = "resource.reservation.expired"
+EVENT_EMERGENCY_REQUEST_CREATED = "emergency.request.created"
+EVENT_EMERGENCY_REQUEST_CANCELLED = "emergency.request.cancelled"
+EVENT_EMERGENCY_ALLOCATION_CREATED = "emergency.allocation.created"
+EVENT_EMERGENCY_ALLOCATION_RELEASED = "emergency.allocation.released"
+
+EMERGENCY_EVENT_CODES = {
+    EVENT_EMERGENCY_REQUEST_CREATED,
+    EVENT_EMERGENCY_REQUEST_CANCELLED,
+    EVENT_EMERGENCY_ALLOCATION_CREATED,
+    EVENT_EMERGENCY_ALLOCATION_RELEASED,
+}
 
 COPY = {
     EVENT_OFFER_RECEIVED: (
@@ -71,6 +82,22 @@ COPY = {
     EVENT_RESERVATION_EXPIRED: (
         "Reservation expired",
         "A reserved resource is available again.",
+    ),
+    EVENT_EMERGENCY_REQUEST_CREATED: (
+        "Emergency request created",
+        "A pending emergency request was created.",
+    ),
+    EVENT_EMERGENCY_REQUEST_CANCELLED: (
+        "Emergency request cancelled",
+        "A pending emergency request was cancelled.",
+    ),
+    EVENT_EMERGENCY_ALLOCATION_CREATED: (
+        "Resource allocated",
+        "An available resource was allocated to an emergency request.",
+    ),
+    EVENT_EMERGENCY_ALLOCATION_RELEASED: (
+        "Allocation released",
+        "An emergency allocation was released and the resource is available again.",
     ),
 }
 
@@ -227,8 +254,29 @@ def resolve_recipients(organization_id, actor_sub, *, members=None, organization
     return unique[:FANOUT_CAP]
 
 
+def _bounded_token(value):
+    text = str(value or "").strip()
+    if not text or len(text) > 80:
+        return ""
+    if any(char in text for char in ("#", "/", "\\", " ", ":", "?")):
+        return ""
+    return text
+
+
+def _bounded_label(value):
+    text = str(value or "").strip()
+    if not text or "://" in text or "#" in text:
+        return ""
+    return text[:80]
+
+
 def _copy_for(event_code, payload):
     title, body = COPY.get(event_code, ("Exchange update", "An exchange event occurred."))
+    if event_code in EMERGENCY_EVENT_CODES:
+        request_id = _bounded_token((payload or {}).get("request_id"))
+        if request_id:
+            body = f"{body} Request {request_id}."
+        return title, body
     if event_code == EVENT_RESERVATION_EXPIRED:
         name = str((payload or {}).get("resource_name") or "").strip()
         if name:
@@ -256,8 +304,24 @@ def _identifier(value, prefix):
     return ""
 
 
+def _emergency_payload(raw):
+    out = {}
+    for key in ("request_id", "allocation_id", "resource_id"):
+        token = _bounded_token(raw.get(key))
+        if token:
+            out[key] = token
+    for key in ("resource_type", "location"):
+        label = _bounded_label(raw.get(key))
+        if label:
+            out[key] = label
+    out["href_kind"] = "emergency_request"
+    return out
+
+
 def _safe_payload(payload, event_code=""):
     raw = payload or {}
+    if event_code in EMERGENCY_EVENT_CODES:
+        return _emergency_payload(raw)
     if event_code == EVENT_RESERVATION_EXPIRED:
         out = {}
         resource_id = str(raw.get("resource_id") or "").strip()
@@ -513,6 +577,21 @@ def public_notification_view(item):
     if read_at == "":
         read_at = None
     payload = item.get("payload") or {}
+    if str(payload.get("href_kind") or item.get("href_kind") or "") == "emergency_request":
+        return {
+            "notification_id": item.get("notification_id"),
+            "event_code": item.get("event_code"),
+            "title": item.get("title") or "",
+            "body": item.get("body") or "",
+            "created_at": item.get("created_at") or "",
+            "read_at": read_at,
+            "href": {
+                "kind": "emergency_request",
+                "request_id": _bounded_token(payload.get("request_id")),
+                "allocation_id": _bounded_token(payload.get("allocation_id")),
+                "resource_id": _bounded_token(payload.get("resource_id")),
+            },
+        }
     request_id = _identifier(
         item.get("href_exchange_request_id") or payload.get("exchange_request_id"),
         "EXREQ-",

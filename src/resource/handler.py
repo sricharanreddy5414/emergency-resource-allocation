@@ -17,6 +17,7 @@ from access import (
 )
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
+from emergency_notify import notify_allocation_released
 from common import ALLOWED_ORIGIN
 from observability import begin_request, error_body, load_object, log_event, log_result
 from resource_page_token import (
@@ -840,6 +841,27 @@ def release_resource(body, organization_id, actor_sub="", actor_role=""):
             location_id=resource.get("location_id", ""),
         ),
     )
+    try:
+        notify_allocation_released(
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            request_id=request_id,
+            allocation_id=allocation_id,
+            resource_id=resource_id,
+            resource_type=resource.get("Type", ""),
+            location=resource.get("Location", ""),
+        )
+    except Exception as error:
+        log_event(
+            "ERROR",
+            "resources",
+            "resource.release",
+            "notification_failed",
+            organization_id=organization_id,
+            request_id=request_id,
+            resource_id=resource_id,
+            error=error.__class__.__name__,
+        )
     return response(
         200,
         {

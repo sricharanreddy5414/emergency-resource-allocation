@@ -48,12 +48,21 @@ PACKAGES = {
         **SHARED,
         "emergency_release.py": "src/shared/emergency_release.py",
         "resource_page_token.py": "src/shared/resource_page_token.py",
+        "notifications.py": "src/shared/notifications.py",
+        "emergency_notify.py": "src/shared/emergency_notify.py",
         "lambda_function.py": "src/resource/handler.py",
     },
-    "create-request": {**SHARED, "lambda_function.py": "src/request/handler.py"},
+    "create-request": {
+        **SHARED,
+        "notifications.py": "src/shared/notifications.py",
+        "emergency_notify.py": "src/shared/emergency_notify.py",
+        "lambda_function.py": "src/request/handler.py",
+    },
     "emergency-resource-allocation": {
         **SHARED,
         "emergency_page_token.py": "src/shared/emergency_page_token.py",
+        "notifications.py": "src/shared/notifications.py",
+        "emergency_notify.py": "src/shared/emergency_notify.py",
         "lambda_function.py": "src/allocation/service.py",
     },
     "emergency-resource-auto-release": {

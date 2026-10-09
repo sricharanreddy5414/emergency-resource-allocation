@@ -2327,7 +2327,7 @@ function renderNotifications() {
         list.innerHTML = `
             <div class="empty-state">
                 <h3>No notifications</h3>
-                <p>Exchange updates for this organization appear here.</p>
+                <p>Exchange and emergency updates for this organization appear here.</p>
             </div>`;
         return;
     }

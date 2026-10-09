@@ -686,3 +686,20 @@ Design phase expectation: **existing 545 tests remain green** with docs-only cha
 - `docs/CURRENT_RESOURCE_ARCHITECTURE.md` — table discipline; notifications justify a new table under D2.
 - `docs/billing-architecture.md` — entitlements for read/write gates.
 - `src/shared/audit.py`, `src/shared/access.py`, `frontend/app.js` Notifications section.
+
+---
+
+## Emergency request and allocation inbox
+
+These events reuse the same post-commit `emit_notification_event` path. They are not part of the claim or request transaction. A notification failure is logged and does not change the request, allocation, or resource.
+
+| Code | After |
+|---|---|
+| `emergency.request.created` | A new emergency request is stored |
+| `emergency.request.cancelled` | A pending request is cancelled |
+| `emergency.allocation.created` | The conditional allocation claim succeeds |
+| `emergency.allocation.released` | An operator release succeeds |
+
+`event_id` stays `{event_code}#{subject_id}#{organization_id}`. The subject is the request id for request events and the allocation id for allocation events. Retries of the same event do not add another inbox row. Recipients are active OWNER, ADMIN, and OPERATOR members of that organization, excluding the actor. MEMBER is not notified. The payload may contain the request id, allocation id, resource id, resource type, and location name. It does not contain another organization's records. The inbox shows the title and body. The Open action remains limited to exchange requests.
+
+Automatic reservation expiry already emits `resource.reservation.expired`. The unattended emergency auto-release worker and everyday quantity allocation do not emit these four events. Repository Phase 14 remains the commercial model in `docs/saas-commercial-readiness.md`. This section does not authorize a production launch.

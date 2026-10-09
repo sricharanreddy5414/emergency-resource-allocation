@@ -9,6 +9,7 @@ from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
 from api_views import request_view
+from emergency_notify import notify_request_cancelled, notify_request_created
 from observability import begin_request, error_body, load_object, log_event, log_result
 
 
@@ -114,6 +115,24 @@ def cancel_request(organization_id, actor_sub, actor_role, request_id):
             location_id=current.get("location_id") or "",
         ),
     )
+    try:
+        notify_request_cancelled(
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            request_id=request_id,
+            resource_type=current.get("ResourceType") or "",
+            location=current.get("Location") or "",
+        )
+    except Exception as error:
+        log_event(
+            "ERROR",
+            "requests",
+            "request.cancel",
+            "notification_failed",
+            organization_id=organization_id,
+            request_id=request_id,
+            error=error.__class__.__name__,
+        )
     return response(200, {"message": "Request cancelled", "request": request_view(updated)})
 
 
@@ -312,6 +331,24 @@ def lambda_handler(event, context):
                 location_id=location["location_id"],
             ),
         )
+        try:
+            notify_request_created(
+                organization_id=organization_id,
+                actor_sub=_user_sub,
+                request_id=request_id,
+                resource_type=resource_type,
+                location=location.get("name", ""),
+            )
+        except Exception as error:
+            log_event(
+                "ERROR",
+                "requests",
+                "request.create",
+                "notification_failed",
+                organization_id=organization_id,
+                request_id=request_id,
+                error=error.__class__.__name__,
+            )
         return response(201, {"message": "Request created successfully", "request": request_view(item)})
     except AccessError as error:
         return response(error.status_code, access_body(error))
