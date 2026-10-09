@@ -25,6 +25,7 @@ from emergency_page_token import (
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
+from emergency_notify import notify_allocation_created
 from matching import choose_resource, explain_match
 from resource_state import EMERGENCY_CLAIM_CONDITION
 from api_views import allocation_view, request_view
@@ -598,6 +599,28 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
     )
 
     from observability import log_event
+
+    try:
+        notify_allocation_created(
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            request_id=request_id,
+            allocation_id=allocation_id,
+            resource_id=resource_id,
+            resource_type=allocation["resource_type"],
+            location=allocation["location"],
+        )
+    except Exception as error:
+        log_event(
+            "ERROR",
+            "allocation",
+            "allocate",
+            "notification_failed",
+            organization_id=organization_id,
+            request_id=request_id,
+            resource_id=resource_id,
+            error=error.__class__.__name__,
+        )
 
     log_event(
         "INFO",
