@@ -1,0 +1,92 @@
+{
+  "purpose": "erap-verification",
+  "account_id": "917320177579",
+  "region": "eu-north-1",
+  "environment": "verification",
+  "teardown_enabled": false,
+  "frontend_origin": "UNRESOLVED",
+  "lambda_alias": "verify",
+  "api": {
+    "id": "UNRESOLVED",
+    "stage": "verify",
+    "arn": "UNRESOLVED",
+    "routes": [
+      {"method": "POST", "path": "/organization", "function": "erap-create-organization", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "GET", "path": "/organization", "function": "erap-get-organization", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "POST", "path": "/locations", "function": "erap-locations", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "POST", "path": "/resource-types", "function": "erap-catalog", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "POST", "path": "/request-types", "function": "erap-catalog", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "POST", "path": "/requests", "function": "create-request", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "GET", "path": "/requests/{request_id}", "function": "emergency-resource-allocation", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "GET", "path": "/notifications", "function": "erap-notifications", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "POST", "path": "/notifications/{notification_id}/read", "function": "erap-notifications", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "POST", "path": "/exchange/requests", "function": "erap-exchange", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"},
+      {"method": "GET", "path": "/exchange/requests/{exchange_request_id}", "function": "erap-exchange", "authorizer_id": "UNRESOLVED", "integration_arn": "UNRESOLVED"}
+    ]
+  },
+  "cognito": {
+    "pool_id": "UNRESOLVED",
+    "arn": "UNRESOLVED",
+    "authorizer": {
+      "id": "UNRESOLVED",
+      "type": "COGNITO_USER_POOLS",
+      "pool_id": "UNRESOLVED",
+      "api_id": "UNRESOLVED"
+    }
+  },
+  "amplify": {
+    "app_id": "UNRESOLVED",
+    "branch": "verification",
+    "region": "UNRESOLVED",
+    "arn": "UNRESOLVED",
+    "origin": "UNRESOLVED"
+  },
+  "cors": {
+    "allow_origin": "UNRESOLVED",
+    "allow_methods": ["GET", "POST", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"]
+  },
+  "functions": [
+    {"name": "erap-create-organization", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"},
+    {"name": "erap-get-organization", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"},
+    {"name": "erap-locations", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"},
+    {"name": "erap-catalog", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"},
+    {"name": "create-request", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"},
+    {"name": "emergency-resource-allocation", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"},
+    {"name": "erap-notifications", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"},
+    {"name": "erap-exchange", "arn": "UNRESOLVED", "environment": "verification", "role_arn": "UNRESOLVED"}
+  ],
+  "tables": [
+    {"name": "Organizations", "arn": "UNRESOLVED"},
+    {"name": "OrganizationMembers", "arn": "UNRESOLVED"},
+    {"name": "OrganizationSubscriptions", "arn": "UNRESOLVED"},
+    {"name": "Locations", "arn": "UNRESOLVED"},
+    {"name": "RequestTypes", "arn": "UNRESOLVED"},
+    {"name": "ResourceTypes", "arn": "UNRESOLVED"},
+    {"name": "EmergencyRequests", "arn": "UNRESOLVED"},
+    {"name": "Notifications", "arn": "UNRESOLVED"},
+    {"name": "ResourceExchanges", "arn": "UNRESOLVED"}
+  ],
+  "roles": [
+    {"name": "erap-verification-deploy", "arn": "UNRESOLVED"},
+    {"name": "erap-verification-operator", "arn": "UNRESOLVED"},
+    {"name": "erap-verification-lambda", "arn": "UNRESOLVED"}
+  ],
+  "protected": {
+    "account_id": "481838970142",
+    "api_id": "4c6dni17l3",
+    "api_stage": "dev",
+    "lambda_alias": "emergency-resource-allocation:live",
+    "cognito_pool_id": "eu-north-1_vv7adAAC9",
+    "amplify_app_id": "d3enpe7opotop5",
+    "authorizer_id": "y0hzhr"
+  },
+  "approvals": [
+    {"id": "dedicated-account", "status": "pending"},
+    {"id": "guarded-deployer", "status": "pending"},
+    {"id": "verification-stack", "status": "pending"},
+    {"id": "verification-users", "status": "pending"},
+    {"id": "synthetic-data", "status": "pending"},
+    {"id": "teardown-arns", "status": "pending"}
+  ]
+}
