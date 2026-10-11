@@ -1,0 +1,19 @@
+{
+    "purpose":  "erap-phase-14g-fresh-caller-identity-observation",
+    "status":  "observed",
+    "source":  "operator-terminal",
+    "command":  "aws sts get-caller-identity --profile erap-verification --region eu-north-1 --query Account --output text --no-cli-pager",
+    "profile":  "erap-verification",
+    "region":  "eu-north-1",
+    "working_directory":  "C:\\Users\\sri charan reddy",
+    "started_at_utc":  "2026-10-11T16:10:39Z",
+    "completed_at_utc":  "2026-10-11T16:10:42Z",
+    "exit_code":  0,
+    "actual_output":  "917320177579",
+    "expected_account_id":  "917320177579",
+    "account_id_matches_expected":  true,
+    "authorization_ref":  "docs/evidence/phase-14g-aws-account-review/owner-authorization-fresh-caller-identity-check-corrected-20261011-161039Z.md",
+    "evidence_ref":  "docs/evidence/phase-14g-aws-account-review/aws-sts-caller-identity-observation-20261011-161042Z.json",
+    "independent_review":  "pending",
+    "deployment_authorized":  false
+}
