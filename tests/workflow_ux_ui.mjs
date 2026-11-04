@@ -54,6 +54,7 @@ const names = [
     "formatResourceType",
     "recordChangedMessage",
     "syncAllocationRequestHint",
+    "canOperateResources",
     "renderRequests",
     "renderAllocations",
     "submitRequestModal",
@@ -134,6 +135,7 @@ const context = {
     RELEASE_RESOURCE_API_URL: "https://example.test/allocate/resources/release",
     requests: [],
     allocations: [],
+    currentUser: { organization: { role: "OPERATOR" } },
     requestCancelInFlight: false,
     requestCreateInFlight: false,
     allocationSubmitInFlight: false,
@@ -241,12 +243,21 @@ context.allocations = [
 hosts.allocationStatusFilter.value = "ALL";
 hosts.allocationSearch.value = "";
 context.renderAllocations();
+assert.equal(hosts.allocationsTable.innerHTML.includes("Create Delivery"), true);
+assert.equal(hosts.allocationsTable.innerHTML.includes('data-create-delivery="AL-A"'), true);
 assert.equal(hosts.allocationsTable.innerHTML.includes("Emergency release"), true);
 assert.equal(hosts.allocationsTable.innerHTML.includes("Returned"), true);
 assert.equal(hosts.allocationsTable.innerHTML.includes("status-released"), true);
 assert.equal(hosts.allocationsTable.innerHTML.includes("status-returned"), true);
 assert.equal((hosts.allocationsTable.innerHTML.match(/releaseResource/g) || []).length, 1);
 
+context.currentUser.organization.role = "MEMBER";
+context.renderAllocations();
+assert.equal(hosts.allocationsTable.innerHTML.includes("Create Delivery"), false);
+assert.equal(hosts.allocationsTable.innerHTML.includes("data-create-delivery"), false);
+assert.equal(hosts.allocationsTable.innerHTML.includes("Emergency release"), true);
+
+context.currentUser.organization.role = "OPERATOR";
 hosts.allocationStatusFilter.value = "RETURNED";
 context.renderAllocations();
 assert.equal(hosts.allocationsTable.innerHTML.includes("AL-T"), true);

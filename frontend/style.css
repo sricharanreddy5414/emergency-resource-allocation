@@ -1454,6 +1454,53 @@ td {
     min-height: 1.2em;
 }
 
+#deliveries .queue-summary strong {
+    font-size: 20px;
+}
+
+#deliveries .table-toolbar {
+    flex-wrap: wrap;
+}
+
+.delivery-form {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 720px) {
+    .delivery-form {
+        grid-template-columns: 1fr 1fr;
+    }
+    .delivery-form button {
+        grid-column: 1 / -1;
+        justify-self: start;
+    }
+}
+
+.delivery-form label {
+    display: grid;
+    gap: 4px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.ops-timeline {
+    margin: 16px 0 0;
+    padding-left: 18px;
+}
+
+.ops-timeline li {
+    margin: 0 0 12px;
+}
+
+.ops-timeline span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
 @media (max-width: 390px) {
     .qr-scan-card {
         padding: 20px 16px 32px;
