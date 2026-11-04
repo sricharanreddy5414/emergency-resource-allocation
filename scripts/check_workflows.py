@@ -7,6 +7,8 @@ from pathlib import Path
 
 from lambda_manifest import DEPLOY_ROLE, PRODUCTION_ROLE, REPO, ROOT
 
+ORGANIZATION_PRODUCTION_ROLE = "ERAP-GitHub-Production-Organization"
+
 
 REQUIRED = {
     "ci.yml": ["pull_request", "pytest", "security_scan.py", "package_lambdas.py", "check_frontend.py"],
@@ -130,6 +132,29 @@ REQUIRED = {
         "refs/heads/main",
         "security_scan.py",
         "emergency-resource-auto-release",
+    ],
+    "release-organization.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        ORGANIZATION_PRODUCTION_ROLE,
+        "release_organization.py",
+        "release_provenance.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "erap-get-organization",
+        "erap-create-organization",
+        "erap-locations",
+    ],
+    "rollback-organization.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        ORGANIZATION_PRODUCTION_ROLE,
+        "rollback_organization.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "erap-get-organization",
+        "erap-create-organization",
+        "erap-locations",
     ],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
@@ -379,6 +404,59 @@ def _auto_release_release_is_unsafe(text):
     return any(item in text for item in forbidden)
 
 
+def _organization_release_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_resource.py",
+        "release_allocation.py",
+        "release_create_request.py",
+        "release_exchange.py",
+        "release_reservation_expiry.py",
+        "release_auto_release.py",
+        "update-function-configuration",
+        "put-role-policy",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-allocation",
+        "emergency-resource-auto-release",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+    )
+    return any(item in text for item in forbidden)
+
+
+def _organization_rollback_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_organization.py",
+        "release_resource.py",
+        "update-function-code",
+        "publish-version",
+        "update-function-configuration",
+        "put-role-policy",
+        "inputs.commit",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-allocation",
+        "emergency-resource-auto-release",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+    )
+    return any(item in text for item in forbidden)
+
+
 def _auto_release_rollback_is_unsafe(text):
     forbidden = (
         "deploy_backend.py",
@@ -482,6 +560,15 @@ def main():
             raise SystemExit("auto-release release must publish only emergency-resource-auto-release")
         if name == "rollback-auto-release.yml" and _auto_release_rollback_is_unsafe(text):
             raise SystemExit("auto-release rollback must move only an existing emergency-resource-auto-release version")
+        if name == "release-organization.yml" and _organization_release_is_unsafe(text):
+            raise SystemExit("organization release must publish only the three organization functions")
+        if name == "rollback-organization.yml" and _organization_rollback_is_unsafe(text):
+            raise SystemExit("organization rollback must move only existing organization function versions")
+        if name in {"release-organization.yml", "rollback-organization.yml"}:
+            if ORGANIZATION_PRODUCTION_ROLE not in text:
+                raise SystemExit(f"{name} must assume {ORGANIZATION_PRODUCTION_ROLE}")
+            if re.search(r"role/ERAP-GitHub-Production(?!-Organization)", text):
+                raise SystemExit(f"{name} must not assume the shared production role")
         if name in {"release.yml", "rollback.yml", "release-exchange.yml", "rollback-exchange.yml"} and "release_resource.py" in text:
             raise SystemExit(f"{name} must not publish get-resources")
         if yaml is not None:
@@ -489,7 +576,11 @@ def main():
             if not isinstance(loaded, dict) or "jobs" not in loaded:
                 raise SystemExit(f"{name} has no jobs")
         print(f"ok {name}")
-    for name in ("github-deploy-trust.json", "github-production-trust.json"):
+    for name in (
+        "github-deploy-trust.json",
+        "github-production-trust.json",
+        "github-production-organization-trust.json",
+    ):
         trust = (ROOT / "infra" / name).read_text(encoding="utf-8")
         if REPO not in trust or "repo:*" in trust or '"*"' in trust:
             raise SystemExit(f"{name} is not limited to this repository")
@@ -612,6 +703,43 @@ def main():
             raise SystemExit("auto-release production policy is not limited to emergency-resource-auto-release")
         if "lambda:CreateAlias" in action_set:
             raise SystemExit("auto-release production policy must not allow CreateAlias")
+    organization_policy = json.loads(
+        (ROOT / "infra" / "github-production-organization-policy.json").read_text(encoding="utf-8")
+    )
+    organization_resources = {
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-get-organization",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-get-organization:*",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-create-organization",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-create-organization:*",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-locations",
+        "arn:aws:lambda:eu-north-1:481838970142:function:erap-locations:*",
+    }
+    for statement in organization_policy["Statement"]:
+        actions = statement["Action"]
+        resources = statement["Resource"]
+        action_set = set(actions if isinstance(actions, list) else [actions])
+        resource_set = set(resources if isinstance(resources, list) else [resources])
+        if action_set != allowed_actions or resource_set != organization_resources:
+            raise SystemExit("organization production policy is not limited to the three organization functions")
+        if "lambda:CreateAlias" in action_set or "iam:PassRole" in action_set:
+            raise SystemExit("organization production policy must not allow CreateAlias or PassRole")
+    organization_trust = json.loads(
+        (ROOT / "infra" / "github-production-organization-trust.json").read_text(encoding="utf-8")
+    )
+    org_condition = organization_trust["Statement"][0]["Condition"]
+    if "StringLike" in org_condition or "StringEqualsIgnoreCase" in org_condition:
+        raise SystemExit("organization trust must not use a wildcard workflow condition")
+    org_equals = org_condition["StringEquals"]
+    if org_equals.get("token.actions.githubusercontent.com:aud") != "sts.amazonaws.com":
+        raise SystemExit("organization trust audience restriction changed")
+    if org_equals.get("token.actions.githubusercontent.com:sub") != _PRODUCTION_SUB:
+        raise SystemExit("organization trust repository or environment restriction changed")
+    org_refs = org_equals["token.actions.githubusercontent.com:job_workflow_ref"]
+    if org_refs != [
+        "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-organization.yml@refs/heads/main",
+        "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-organization.yml@refs/heads/main",
+    ]:
+        raise SystemExit("organization trust workflow refs are not the two approved files")
     print("workflow check passed")
     return 0
 
