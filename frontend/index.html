@@ -298,37 +298,89 @@
 
 <header class="topbar context-strip">
 
+    <div class="topbar-main">
 
-    <div class="topbar-left">
+        <div class="topbar-left">
 
+            <button
+                class="mobile-menu-btn"
+                id="mobileMenuBtn"
+                type="button"
+                aria-label="Open menu"
+                aria-expanded="false"
+                aria-controls="sidebar"
+            >
+                <span></span><span></span><span></span>
+            </button>
 
-        <button
-            class="mobile-menu-btn"
-            id="mobileMenuBtn"
-            type="button"
-            aria-label="Open menu"
-            aria-expanded="false"
-            aria-controls="sidebar"
-        >
-            <span></span><span></span><span></span>
-        </button>
+            <erap-logo size="header"></erap-logo>
 
-        <erap-logo size="header"></erap-logo>
+            <h1 id="pageTitle" class="page-title">Operations</h1>
 
-        <h1 id="pageTitle" class="sr-only">Operations</h1>
+        </div>
 
+        <div class="topbar-tools">
+
+            <strong id="opsState" class="ops-state">Awaiting organization</strong>
+
+            <button
+                class="notification-btn"
+                id="notificationBtn"
+                type="button"
+                aria-label="Notifications"
+            >
+
+                <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 16h12l-1.2-2.2V10a4.8 4.8 0 0 0-9.6 0v3.8z"></path></svg>
+                </span>
+
+                <span
+                    class="notification-count"
+                    id="notificationCount"
+                >
+                    0
+                </span>
+
+            </button>
+
+            <div
+                class="profile"
+                id="profileMenu"
+                tabindex="0"
+                role="button"
+                aria-label="Open profile"
+            >
+
+                <div
+                    class="profile-icon"
+                    id="profileIcon"
+                >
+                    ER
+                </div>
+
+                <div class="profile-info">
+
+                    <span id="userName">
+                        Loading...
+                    </span>
+
+                </div>
+
+                <span class="profile-arrow">
+                    ▾
+                </span>
+
+            </div>
+
+        </div>
 
     </div>
 
+    <div class="topbar-context">
 
-
-    <div class="topbar-right">
-
-        <p class="context-line" id="operationalContext">
+        <p class="context-line sr-only" id="operationalContext">
             Select an organization
         </p>
-
-        <strong id="opsState" class="ops-state">Awaiting organization</strong>
 
         <label class="context-field">
             Organization
@@ -339,7 +391,6 @@
             ></select>
         </label>
 
-
         <button
             class="secondary-btn"
             id="organizationOnboardingBtn"
@@ -348,7 +399,6 @@
         >
             Create organization
         </button>
-
 
         <label class="context-field">
             Location
@@ -359,64 +409,7 @@
             ></select>
         </label>
 
-
-        <button
-            class="notification-btn"
-            id="notificationBtn"
-            type="button"
-            aria-label="Notifications"
-        >
-
-            <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 16h12l-1.2-2.2V10a4.8 4.8 0 0 0-9.6 0v3.8z"></path></svg>
-            </span>
-
-            <span
-                class="notification-count"
-                id="notificationCount"
-            >
-                0
-            </span>
-
-        </button>
-
-
-        <!-- PROFILE -->
-
-        <div
-            class="profile"
-            id="profileMenu"
-            tabindex="0"
-            role="button"
-            aria-label="Open profile"
-        >
-
-            <div
-                class="profile-icon"
-                id="profileIcon"
-            >
-                ER
-            </div>
-
-
-            <div class="profile-info">
-
-                <span id="userName">
-                    Loading...
-                </span>
-
-            </div>
-
-
-            <span class="profile-arrow">
-                ▾
-            </span>
-
-        </div>
-
-
     </div>
-
 
 </header>
 
@@ -436,7 +429,7 @@
         <div class="desk-kicker">
             <span>Operations</span>
         </div>
-        <h2 id="commandContext">No organization selected</h2>
+        <h2 id="commandContext" class="sr-only">No organization selected</h2>
         <div class="desk-situation" aria-label="Operational snapshot">
             <p class="situation-ready">
                 <span id="availableResources">0</span>
