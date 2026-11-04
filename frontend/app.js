@@ -52,6 +52,9 @@ const REQUESTS_API_URL =
 const ALLOCATIONS_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/allocations";
 
+const DELIVERIES_API_URL =
+    "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/allocate/deliveries";
+
 const ORGANIZATION_API_URL =
     "https://4c6dni17l3.execute-api.eu-north-1.amazonaws.com/dev/organization";
 
@@ -1650,6 +1653,9 @@ const pageTitles = {
     allocations:
         "Allocations",
 
+    deliveries:
+        "Deliveries",
+
     exchange:
         "Exchange",
 
@@ -1854,6 +1860,14 @@ function navigateTo(sectionId) {
     ) {
 
         loadAllocations();
+
+    }
+
+    if (sectionId === "deliveries") {
+
+        if (typeof loadDeliveries === "function") {
+            loadDeliveries();
+        }
 
     }
 
@@ -7264,6 +7278,15 @@ function renderAllocations() {
                             status === "ALLOCATED"
 
                                 ? `
+                                    ${canOperateResources() ? `
+                                    <button
+                                        type="button"
+                                        class="secondary-btn"
+                                        data-create-delivery="${escapeHtml(item.allocation_id || "")}"
+                                    >
+                                        Create Delivery
+                                    </button>
+                                    ` : ""}
                                     <button
                                         type="button"
                                         class="release-resource-btn"
@@ -9208,6 +9231,10 @@ function clearTenantData() {
     }
 
     allocations = [];
+
+    if (typeof loadDeliveries === "function") {
+        loadDeliveries();
+    }
 
     resourceTypes = [];
 
@@ -12814,6 +12841,10 @@ async function initializeApp() {
     initializeResourceDesk();
 
     initializeEvents();
+
+    if (typeof initializeDeliveryTracking === "function") {
+        initializeDeliveryTracking();
+    }
 
     initializeNotifications();
 

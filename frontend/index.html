@@ -181,6 +181,18 @@
 
         <button
             class="nav-item"
+            data-section="deliveries"
+            type="button"
+            hidden
+        >
+            <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h11l5 5v7H4z"></path><path d="M15 7v5h5"></path></svg>
+            </span>
+            <span>Deliveries</span>
+        </button>
+
+        <button
+            class="nav-item"
             data-section="exchange"
             type="button"
         >
@@ -1422,6 +1434,97 @@
 
     </section>
 
+
+</section>
+
+
+
+<!-- =====================================================
+     DELIVERY TRACKING
+====================================================== -->
+
+<section class="page-section" id="deliveries">
+
+    <div class="section-hero">
+        <div>
+            <span class="panel-label">DELIVERY TRACKING</span>
+            <h2>Deliveries</h2>
+            <p>
+                Transport, receipt, and physical handover for allocated resources.
+                Allocation status is separate and is not treated as delivery completion.
+            </p>
+            <p class="queue-note" id="deliverySourceNote">
+                Delivery rows load from the authenticated ERAP API for the selected organization. They are not browser session records and not GPS proof.
+            </p>
+            <div class="queue-summary" aria-label="Delivery counts">
+                <div><span>Total</span><strong id="deliveryCountTotal">0</strong></div>
+                <div><span>Allocated</span><strong id="deliveryCountAllocated">0</strong></div>
+                <div><span>Ready</span><strong id="deliveryCountReady">0</strong></div>
+                <div><span>Dispatched</span><strong id="deliveryCountDispatched">0</strong></div>
+                <div><span>In transit</span><strong id="deliveryCountTransit">0</strong></div>
+                <div><span>Delivered</span><strong id="deliveryCountDelivered">0</strong></div>
+                <div><span>Partial</span><strong id="deliveryCountPartial">0</strong></div>
+                <div><span>Receipt pending</span><strong id="deliveryCountReceipt">0</strong></div>
+                <div><span>Handover pending</span><strong id="deliveryCountHandover">0</strong></div>
+                <div><span>Completed</span><strong id="deliveryCountCompleted">0</strong></div>
+                <div><span>Failed</span><strong id="deliveryCountFailed">0</strong></div>
+            </div>
+        </div>
+        <button class="secondary-btn" id="deliveriesRefreshBtn" type="button">↻ Refresh</button>
+    </div>
+
+    <section class="panel">
+        <div class="table-toolbar">
+            <input type="search" id="deliverySearchId" placeholder="Delivery ID" aria-label="Search by Delivery ID">
+            <input type="search" id="deliverySearchAllocation" placeholder="Allocation ID" aria-label="Search by Allocation ID">
+            <input type="search" id="deliverySearchResource" placeholder="Resource search" aria-label="Search by resource">
+            <select id="deliveryStatusFilter" aria-label="Filter deliveries by status">
+                <option value="ALL">All statuses</option>
+                <option value="ALLOCATED">Allocated</option>
+                <option value="READY_FOR_DISPATCH">Ready for dispatch</option>
+                <option value="DISPATCHED">Dispatched</option>
+                <option value="IN_TRANSIT">In transit</option>
+                <option value="DELIVERED">Delivered</option>
+                <option value="PARTIALLY_DELIVERED">Partially delivered</option>
+                <option value="RECEIVED">Received</option>
+                <option value="PARTIALLY_RECEIVED">Partially received</option>
+                <option value="HANDOVER_PENDING">Handover pending</option>
+                <option value="HANDOVER_COMPLETED">Completed</option>
+                <option value="DELIVERY_FAILED">Failed</option>
+                <option value="CANCELLED">Cancelled</option>
+            </select>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Delivery ID</th>
+                        <th>Allocation ID</th>
+                        <th>Resource</th>
+                        <th>Status</th>
+                        <th>Allocated</th>
+                        <th>Dispatched</th>
+                        <th>Received</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="deliveriesTable">
+                    <tr>
+                        <td colspan="8">Loading deliveries...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel" aria-label="Delivery details">
+        <div id="deliveryDetail">
+            <div class="empty-state">
+                <h3>Select a delivery</h3>
+                <p>Open a row to review transport, receipt, handover, and history.</p>
+            </div>
+        </div>
+    </section>
 
 </section>
 
@@ -2849,6 +2952,7 @@
     <button class="nav-item" data-section="resources" type="button">Resources</button>
     <button class="nav-item" data-section="requests" type="button">Requests</button>
     <button class="nav-item" data-section="allocations" type="button">Allocations</button>
+    <button class="nav-item" data-section="deliveries" type="button" hidden>Deliveries</button>
     <button class="nav-item" data-section="exchange" type="button">Exchange</button>
 </nav>
 
@@ -2865,6 +2969,7 @@
 <script src="qr-code.js"></script>
 <script src="qr-handover.js"></script>
 <script src="app.js"></script>
+<script src="delivery.js"></script>
 
 
 </body>
