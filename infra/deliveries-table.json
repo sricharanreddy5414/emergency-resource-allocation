@@ -1,0 +1,38 @@
+{
+  "applied": true,
+  "region": "eu-north-1",
+  "note": "Deliveries table created 2026-11-04 in eu-north-1. Empty. DeletionProtectionEnabled true. Runtime IAM, API Gateway, Lambda publish, and Amplify were not part of this step. TABLES catalog in lambda_manifest.py is unchanged until a later grant.",
+  "tables": [
+    {
+      "TableName": "Deliveries",
+      "BillingMode": "PAY_PER_REQUEST",
+      "AttributeDefinitions": [
+        { "AttributeName": "delivery_id", "AttributeType": "S" },
+        { "AttributeName": "organization_id", "AttributeType": "S" },
+        { "AttributeName": "location_id", "AttributeType": "S" }
+      ],
+      "KeySchema": [
+        { "AttributeName": "delivery_id", "KeyType": "HASH" }
+      ],
+      "GlobalSecondaryIndexes": [
+        {
+          "IndexName": "OrganizationLocationIndex",
+          "KeySchema": [
+            { "AttributeName": "organization_id", "KeyType": "HASH" },
+            { "AttributeName": "location_id", "KeyType": "RANGE" }
+          ],
+          "Projection": { "ProjectionType": "ALL" }
+        }
+      ]
+    }
+  ],
+  "runtime_iam_required_on_emergency_resource_allocation_role": [
+    "dynamodb:GetItem",
+    "dynamodb:PutItem",
+    "dynamodb:Query"
+  ],
+  "runtime_iam_not_requested": [
+    "dynamodb:Scan",
+    "dynamodb:DeleteItem"
+  ]
+}

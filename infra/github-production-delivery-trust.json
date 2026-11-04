@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::481838970142:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:sricharanreddy5414@253192966/emergency-resource-allocation@1374188159:environment:production",
+          "token.actions.githubusercontent.com:job_workflow_ref": [
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-delivery.yml@refs/heads/main",
+            "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-delivery.yml@refs/heads/main"
+          ]
+        }
+      }
+    }
+  ]
+}

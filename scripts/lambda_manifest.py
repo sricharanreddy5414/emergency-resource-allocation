@@ -63,6 +63,9 @@ PACKAGES = {
         "emergency_page_token.py": "src/shared/emergency_page_token.py",
         "notifications.py": "src/shared/notifications.py",
         "emergency_notify.py": "src/shared/emergency_notify.py",
+        "delivery_model.py": "src/shared/delivery_model.py",
+        "delivery_service.py": "src/shared/delivery_service.py",
+        "delivery_handler.py": "src/shared/delivery_handler.py",
         "lambda_function.py": "src/allocation/service.py",
     },
     "emergency-resource-auto-release": {
