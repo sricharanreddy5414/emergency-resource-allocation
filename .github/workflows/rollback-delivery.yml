@@ -1,0 +1,66 @@
+# Moves alias live only for emergency-resource-allocation after a delivery publish.
+name: Rollback delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      delivery_version:
+        description: Published emergency-resource-allocation version to point alias live at
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: erap-allocation-deploy
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Require the workflow ref to be main
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
+
+      - name: Reject versions that are not numbers
+        env:
+          DELIVERY_VERSION: ${{ inputs.delivery_version }}
+        run: python -c "import os,re,sys; sys.exit(0 if re.fullmatch(r'^[1-9][0-9]{0,4}$', os.environ['DELIVERY_VERSION']) else 1)"
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-ci.txt
+
+      - name: Scan for secrets
+        run: python scripts/security_scan.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::481838970142:role/ERAP-GitHub-Production-Delivery
+          aws-region: eu-north-1
+          role-session-name: erap-rollback-delivery
+
+      - name: Move allocation alias live to the selected version
+        env:
+          ERAP_ENVIRONMENT: production
+          AWS_REGION: eu-north-1
+          DELIVERY_VERSION: ${{ inputs.delivery_version }}
+        run: python scripts/rollback_delivery.py

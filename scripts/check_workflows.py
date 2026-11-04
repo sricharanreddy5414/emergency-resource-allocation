@@ -8,6 +8,7 @@ from pathlib import Path
 from lambda_manifest import DEPLOY_ROLE, PRODUCTION_ROLE, REPO, ROOT
 
 ORGANIZATION_PRODUCTION_ROLE = "ERAP-GitHub-Production-Organization"
+DELIVERY_PRODUCTION_ROLE = "ERAP-GitHub-Production-Delivery"
 
 
 REQUIRED = {
@@ -155,6 +156,26 @@ REQUIRED = {
         "erap-get-organization",
         "erap-create-organization",
         "erap-locations",
+    ],
+    "release-delivery.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        DELIVERY_PRODUCTION_ROLE,
+        "release_delivery.py",
+        "release_provenance.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "emergency-resource-allocation",
+        "delivery_handler.py",
+    ],
+    "rollback-delivery.yml": [
+        "workflow_dispatch",
+        "environment: production",
+        DELIVERY_PRODUCTION_ROLE,
+        "rollback_delivery.py",
+        "refs/heads/main",
+        "security_scan.py",
+        "emergency-resource-allocation",
     ],
 }
 FORBIDDEN = ["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "aws_secret_access_key"]
@@ -404,6 +425,65 @@ def _auto_release_release_is_unsafe(text):
     return any(item in text for item in forbidden)
 
 
+def _delivery_release_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_resource.py",
+        "release_allocation.py",
+        "release_organization.py",
+        "release_create_request.py",
+        "release_exchange.py",
+        "release_reservation_expiry.py",
+        "release_auto_release.py",
+        "update-function-configuration",
+        "put-role-policy",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-auto-release",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+        "erap-get-organization",
+        "erap-create-organization",
+        "erap-locations",
+    )
+    return any(item in text for item in forbidden)
+
+
+def _delivery_rollback_is_unsafe(text):
+    forbidden = (
+        "deploy_backend.py",
+        "deploy_exchange.py",
+        "release_delivery.py",
+        "release_allocation.py",
+        "release_resource.py",
+        "update-function-code",
+        "publish-version",
+        "update-function-configuration",
+        "put-role-policy",
+        "inputs.commit",
+        "push:",
+        "get-resources",
+        "create-request",
+        "emergency-resource-auto-release",
+        "erap-catalog",
+        "erap-public-resources",
+        "erap-billing",
+        "erap-exchange",
+        "erap-notifications",
+        "erap-reservation-expiry",
+        "erap-get-organization",
+        "erap-create-organization",
+        "erap-locations",
+    )
+    return any(item in text for item in forbidden)
+
+
 def _organization_release_is_unsafe(text):
     forbidden = (
         "deploy_backend.py",
@@ -569,6 +649,15 @@ def main():
                 raise SystemExit(f"{name} must assume {ORGANIZATION_PRODUCTION_ROLE}")
             if re.search(r"role/ERAP-GitHub-Production(?!-Organization)", text):
                 raise SystemExit(f"{name} must not assume the shared production role")
+        if name == "release-delivery.yml" and _delivery_release_is_unsafe(text):
+            raise SystemExit("delivery release must publish only emergency-resource-allocation with delivery modules")
+        if name == "rollback-delivery.yml" and _delivery_rollback_is_unsafe(text):
+            raise SystemExit("delivery rollback must move only an existing emergency-resource-allocation version")
+        if name in {"release-delivery.yml", "rollback-delivery.yml"}:
+            if DELIVERY_PRODUCTION_ROLE not in text:
+                raise SystemExit(f"{name} must assume {DELIVERY_PRODUCTION_ROLE}")
+            if re.search(r"role/ERAP-GitHub-Production(?!-Delivery)", text):
+                raise SystemExit(f"{name} must not assume the shared production role")
         if name in {"release.yml", "rollback.yml", "release-exchange.yml", "rollback-exchange.yml"} and "release_resource.py" in text:
             raise SystemExit(f"{name} must not publish get-resources")
         if yaml is not None:
@@ -580,6 +669,7 @@ def main():
         "github-deploy-trust.json",
         "github-production-trust.json",
         "github-production-organization-trust.json",
+        "github-production-delivery-trust.json",
     ):
         trust = (ROOT / "infra" / name).read_text(encoding="utf-8")
         if REPO not in trust or "repo:*" in trust or '"*"' in trust:
@@ -740,6 +830,39 @@ def main():
         "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-organization.yml@refs/heads/main",
     ]:
         raise SystemExit("organization trust workflow refs are not the two approved files")
+    delivery_policy = json.loads(
+        (ROOT / "infra" / "github-production-delivery-policy.json").read_text(encoding="utf-8")
+    )
+    delivery_resources = {
+        "arn:aws:lambda:eu-north-1:481838970142:function:emergency-resource-allocation",
+        "arn:aws:lambda:eu-north-1:481838970142:function:emergency-resource-allocation:*",
+    }
+    for statement in delivery_policy["Statement"]:
+        actions = statement["Action"]
+        resources = statement["Resource"]
+        action_set = set(actions if isinstance(actions, list) else [actions])
+        resource_set = set(resources if isinstance(resources, list) else [resources])
+        if action_set != allowed_actions or resource_set != delivery_resources:
+            raise SystemExit("delivery production policy is not limited to emergency-resource-allocation")
+        if "lambda:CreateAlias" in action_set or "iam:PassRole" in action_set:
+            raise SystemExit("delivery production policy must not allow CreateAlias or PassRole")
+    delivery_trust = json.loads(
+        (ROOT / "infra" / "github-production-delivery-trust.json").read_text(encoding="utf-8")
+    )
+    delivery_condition = delivery_trust["Statement"][0]["Condition"]
+    if "StringLike" in delivery_condition or "StringEqualsIgnoreCase" in delivery_condition:
+        raise SystemExit("delivery trust must not use a wildcard workflow condition")
+    delivery_equals = delivery_condition["StringEquals"]
+    if delivery_equals.get("token.actions.githubusercontent.com:aud") != "sts.amazonaws.com":
+        raise SystemExit("delivery trust audience restriction changed")
+    if delivery_equals.get("token.actions.githubusercontent.com:sub") != _PRODUCTION_SUB:
+        raise SystemExit("delivery trust repository or environment restriction changed")
+    delivery_refs = delivery_equals["token.actions.githubusercontent.com:job_workflow_ref"]
+    if delivery_refs != [
+        "sricharanreddy5414/emergency-resource-allocation/.github/workflows/release-delivery.yml@refs/heads/main",
+        "sricharanreddy5414/emergency-resource-allocation/.github/workflows/rollback-delivery.yml@refs/heads/main",
+    ]:
+        raise SystemExit("delivery trust workflow refs are not the two approved files")
     print("workflow check passed")
     return 0
 

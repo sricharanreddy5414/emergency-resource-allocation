@@ -31,6 +31,7 @@ from matching import choose_resource, explain_match
 from resource_state import EMERGENCY_CLAIM_CONDITION
 from api_views import allocation_view, request_view
 from observability import begin_request, error_body, load_object, log_result
+from delivery_handler import handle_delivery, is_delivery_path
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _REQUEST_READ_PATH = re.compile(r"/requests/([^/]+)$")
@@ -255,6 +256,17 @@ def lambda_handler(event, context):
             access="write" if writing else "read",
         )
         organization_id = membership["organization_id"]
+        if is_delivery_path(path):
+            query = event.get("queryStringParameters") or {}
+            return handle_delivery(
+                method,
+                path,
+                body,
+                query,
+                organization_id,
+                _user_sub,
+                membership.get("role"),
+            )
         if method == "GET":
             request_read_id = emergency_request_read_id(path)
             if request_read_id is not None:

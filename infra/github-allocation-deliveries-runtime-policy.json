@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DeliveriesTableAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-north-1:481838970142:table/Deliveries",
+        "arn:aws:dynamodb:eu-north-1:481838970142:table/Deliveries/index/OrganizationLocationIndex"
+      ]
+    }
+  ]
+}
