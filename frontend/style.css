@@ -182,11 +182,10 @@ button {
 }
 
 .ops-state {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    white-space: nowrap;
 }
 
 .sr-only {
@@ -232,50 +231,32 @@ button {
 }
 
 .topbar {
-    display: grid;
-    gap: 16px;
-    margin: 0 -32px 20px;
-    padding: 16px 32px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px 20px;
+    margin: 0 -32px 24px;
+    padding: 12px 32px 14px;
     background: var(--band);
     color: var(--band-text);
 }
 
-.topbar-main,
-.topbar-tools,
 .topbar-left,
 .topbar-right {
     display: flex;
     align-items: center;
+    gap: 14px;
     min-width: 0;
 }
 
-.topbar-main {
-    justify-content: space-between;
-    gap: 20px;
-}
-
 .topbar-left {
-    gap: 12px;
+    flex: 1 1 180px;
 }
 
-.topbar-tools {
-    gap: 18px;
-    flex-shrink: 0;
-}
-
-.topbar-context {
-    display: flex;
+.topbar-right {
+    flex: 0 1 auto;
     flex-wrap: wrap;
-    align-items: end;
-    gap: 12px 24px;
-}
-
-.page-title {
-    margin: 0;
-    font-size: 26px;
-    font-weight: 700;
-    letter-spacing: -0.03em;
-    line-height: 1.15;
+    justify-content: flex-end;
 }
 
 .where-block h1,
@@ -297,26 +278,25 @@ button {
 }
 
 .context-line {
-    font-size: 13px;
-    opacity: 0.82;
+    min-width: 0;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    opacity: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .context-field {
     display: grid;
-    gap: 6px;
-    min-width: 220px;
-    font-size: 12px;
-    letter-spacing: 0.08em;
+    gap: 2px;
+    min-width: 0;
+    font-size: 10px;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--muted);
-}
-
-.context-field-label {
-    display: block;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    line-height: 1.2;
 }
 
 .context-select,
@@ -338,9 +318,8 @@ header.topbar label.context-field select.context-select,
 header.topbar label.context-field select.context-select:disabled,
 header.topbar #organizationSwitcher,
 header.topbar #locationSwitcher {
-    min-width: 220px;
-    max-width: min(320px, 100%);
-    min-height: 38px;
+    min-width: 160px;
+    max-width: min(280px, 100%);
     color: var(--ink);
     -webkit-text-fill-color: var(--ink);
     background-color: #fffaf2;
@@ -351,7 +330,7 @@ header.topbar #locationSwitcher {
     font-weight: 650;
     letter-spacing: 0;
     text-transform: none;
-    padding: 8px 32px 8px 10px;
+    padding: 6px 28px 6px 8px;
     color-scheme: light;
     appearance: auto;
 }
@@ -374,31 +353,10 @@ header.topbar #locationSwitcher option {
     color: inherit;
 }
 
-.notification-btn {
-    padding: 4px 6px;
-    flex-shrink: 0;
-}
-
 .profile {
     gap: 10px;
-    min-width: 0;
-    padding-left: 16px;
-    margin-left: 4px;
-    border-left: 1px solid rgba(28, 36, 48, 0.18);
-}
-
-.profile-info {
-    min-width: 0;
-}
-
-.profile-info span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 220px;
-    font-size: 14px;
-    font-weight: 650;
+    padding-left: 12px;
+    border-left: 1px solid rgba(28, 36, 48, 0.16);
 }
 
 .notification-count {
@@ -502,27 +460,23 @@ header.topbar #locationSwitcher option {
     text-transform: uppercase;
 }
 
-.desk-mast {
-    margin-bottom: 8px;
-}
-
 .desk-mast h2 {
     max-width: 22ch;
-    margin: 4px 0 10px;
-    font-size: 22px;
+    margin: 8px 0 18px;
+    font-size: 32px;
     font-weight: 650;
     letter-spacing: -0.03em;
-    line-height: 1.15;
+    line-height: 1.05;
 }
 
 .desk-situation {
     display: grid;
-    grid-template-columns: auto minmax(200px, 280px);
-    align-items: center;
+    grid-template-columns: auto minmax(180px, 240px);
+    align-items: end;
     justify-content: start;
-    width: 100%;
-    max-width: 720px;
-    gap: 8px 40px;
+    width: max-content;
+    max-width: 100%;
+    gap: 8px 28px;
 }
 
 .site-footer {
@@ -540,7 +494,7 @@ header.topbar #locationSwitcher option {
 }
 
 .situation-ready span {
-    font-size: 48px;
+    font-size: 64px;
     font-weight: 650;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.05em;
@@ -557,17 +511,16 @@ header.topbar #locationSwitcher option {
 }
 
 .situation-notes {
-    width: min(100%, 280px);
+    width: min(100%, 240px);
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .situation-notes li {
-    padding: 4px 0;
+    padding: 6px 0;
     border-top: 1px solid var(--line);
-    font-size: 13px;
-    line-height: 1.35;
+    font-size: 14px;
 }
 
 .spectrum {
@@ -581,8 +534,8 @@ header.topbar #locationSwitcher option {
 .desk-now {
     display: grid;
     grid-template-columns: minmax(0, 1.5fr) minmax(200px, 0.55fr);
-    gap: 32px;
-    margin-top: 20px;
+    gap: 56px;
+    margin-top: 36px;
 }
 
 .desk-head,
@@ -590,7 +543,7 @@ header.topbar #locationSwitcher option {
 .panel-header,
 .text-actions {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: flex-start;
     flex-wrap: wrap;
     gap: 16px;
@@ -615,7 +568,7 @@ header.topbar #locationSwitcher option {
 }
 
 .desk-feed {
-    margin-top: 24px;
+    margin-top: 40px;
 }
 
 .ops-item,
@@ -1295,7 +1248,7 @@ td {
 }
 
 @media (max-width: 1280px) {
-    .topbar-tools {
+    .topbar-right {
         flex-wrap: wrap;
         justify-content: flex-end;
         row-gap: 8px;
@@ -1318,7 +1271,7 @@ td {
     }
 
     .situation-ready span {
-        font-size: 40px;
+        font-size: 52px;
     }
 }
 
@@ -1332,25 +1285,33 @@ td {
     }
 
     .topbar {
-        margin: 0 -16px 16px;
+        display: flex;
+        flex-wrap: wrap;
+        margin: 0 -16px 20px;
         padding: 10px 16px 12px;
     }
 
-    .topbar-main {
+    .topbar-left {
+        flex: 1 1 100%;
+    }
+
+    .context-line {
+        white-space: normal;
+    }
+
+    .topbar-right {
+        display: flex;
         flex-wrap: wrap;
-        align-items: center;
-        gap: 8px 12px;
+        margin-top: 4px;
+        align-items: flex-end;
     }
 
-    .page-title {
-        font-size: 22px;
+    .profile {
+        padding-left: 0;
+        border-left: 0;
     }
 
-    .topbar-context {
-        align-items: stretch;
-    }
-
-    .topbar-context .context-field {
+    .topbar-right .context-field {
         flex: 1 1 160px;
         min-width: 0;
     }
@@ -1388,12 +1349,6 @@ td {
 
     .profile-info {
         display: none;
-    }
-
-    .profile {
-        padding-left: 0;
-        margin-left: 0;
-        border-left: 0;
     }
 
     .dock {
