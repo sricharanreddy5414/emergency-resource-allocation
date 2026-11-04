@@ -8467,6 +8467,22 @@ function renderOrganizationSwitcher() {
 
     select.innerHTML = "";
 
+    if (!organizations.length) {
+
+        const option = document.createElement("option");
+
+        option.value = "";
+
+        option.textContent = "No organization";
+
+        select.appendChild(option);
+
+        select.disabled = true;
+
+        return;
+
+    }
+
     organizations.forEach(organization => {
 
         const option = document.createElement("option");
@@ -9330,17 +9346,40 @@ async function loadLocations() {
 
     }
 
-    const response = await fetch(
-        `${LOCATIONS_API_URL}?organization_id=${encodeURIComponent(organizationId)}`,
-        {
-            method: "GET",
-            headers: {
-                "Authorization": "Bearer " + idToken
-            }
-        }
-    );
+    let response;
+    let data = {};
 
-    const data = await readJsonResponse(response);
+    try {
+
+        response = await fetch(
+            `${LOCATIONS_API_URL}?organization_id=${encodeURIComponent(organizationId)}`,
+            {
+                method: "GET",
+                headers: {
+                    "Authorization": "Bearer " + idToken
+                }
+            }
+        );
+
+        data = await readJsonResponse(response);
+
+    } catch (error) {
+
+        console.error("Location lookup failed:", error);
+
+        showToast("Unable to load locations from this page origin.");
+
+        currentUser.locations = [];
+
+        currentUser.location = null;
+
+        renderLocationSwitcher();
+
+        refreshShellContext();
+
+        return;
+
+    }
 
     if (!response.ok) {
 
@@ -9559,20 +9598,35 @@ async function createLocation() {
 
     }
 
-    const response = await fetch(LOCATIONS_API_URL, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + idToken
-        },
-        body: JSON.stringify({
-            name: name,
-            city: $("locationCity")?.value.trim() || "",
-            organization_id: selectedOrganizationId()
-        })
-    });
+    let response;
+    let data = {};
 
-    const data = await readJsonResponse(response);
+    try {
+
+        response = await fetch(LOCATIONS_API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + idToken
+            },
+            body: JSON.stringify({
+                name: name,
+                city: $("locationCity")?.value.trim() || "",
+                organization_id: selectedOrganizationId()
+            })
+        });
+
+        data = await readJsonResponse(response);
+
+    } catch (error) {
+
+        console.error("Location create failed:", error);
+
+        showToast("Unable to create a location from this page origin.");
+
+        return;
+
+    }
 
     if (!response.ok) {
 
@@ -10552,11 +10606,15 @@ async function resolveOrganization() {
 
     if (organizations === null) {
 
+        applyOrganizationContext([]);
+
         return;
 
     }
 
     if (organizations.length === 0) {
+
+        applyOrganizationContext([]);
 
         openOrganizationOnboarding();
 

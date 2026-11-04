@@ -3,9 +3,14 @@ import re
 import uuid
 from decimal import Decimal
 
-from observability import error_body, load_object, log_result
+from observability import current_request_origin, error_body, load_object, log_result
 
 ALLOWED_ORIGIN = "https://main.d3enpe7opotop5.amplifyapp.com"
+LOCAL_ORIGINS = (
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+)
+ALLOWED_ORIGINS = frozenset((ALLOWED_ORIGIN,) + LOCAL_ORIGINS)
 MAX_ORGANIZATION_NAME_LENGTH = 100
 ALLOWED_METHODS = "GET,POST,OPTIONS"
 _DECIMAL_MARKER = "\u0000erap-decimal-"
@@ -53,6 +58,14 @@ def dumps_json(payload):
     return encoded
 
 
+def cors_allow_origin(origin=""):
+    """Echo a known browser origin. Unknown origins stay on the Amplify URL."""
+    text = str(origin or "").strip()
+    if text in ALLOWED_ORIGINS:
+        return text
+    return ALLOWED_ORIGIN
+
+
 def api_response(status_code, body):
     payload = error_body(status_code, body)
     if isinstance(payload, dict):
@@ -61,7 +74,7 @@ def api_response(status_code, body):
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+            "Access-Control-Allow-Origin": cors_allow_origin(current_request_origin()),
             "Access-Control-Allow-Headers": "Content-Type,Authorization",
             "Access-Control-Allow-Methods": ALLOWED_METHODS,
         },

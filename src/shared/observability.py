@@ -77,13 +77,23 @@ def begin_request(event):
     request_id = str(context.get("requestId") or "").strip() or secrets.token_hex(8)
     method = str(event.get("httpMethod") or context.get("http", {}).get("method") or "").upper()
     path = str(event.get("path") or event.get("rawPath") or "")
+    headers = event.get("headers") or {}
+    if not isinstance(headers, dict):
+        headers = {}
+    origin = str(headers.get("origin") or headers.get("Origin") or "").strip()[:200]
     meta = {
         "request_id": request_id[:80],
         "route": f"{method} {path}"[:160],
         "started": time.monotonic(),
+        "request_origin": origin,
     }
     _meta.set(meta)
     return request_id
+
+
+def current_request_origin():
+    meta = _meta.get()
+    return meta.get("request_origin", "") if meta else ""
 
 
 def current_request_id():
