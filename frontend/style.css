@@ -182,10 +182,11 @@ button {
 }
 
 .ops-state {
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.08em;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
+    white-space: nowrap;
 }
 
 .sr-only {
@@ -232,9 +233,9 @@ button {
 
 .topbar {
     display: grid;
-    gap: 10px;
-    margin: 0 -32px 16px;
-    padding: 10px 32px 12px;
+    gap: 16px;
+    margin: 0 -32px 20px;
+    padding: 16px 32px 18px;
     background: var(--band);
     color: var(--band-text);
 }
@@ -250,27 +251,31 @@ button {
 
 .topbar-main {
     justify-content: space-between;
-    gap: 16px;
+    gap: 20px;
 }
 
-.topbar-left,
-.topbar-tools {
+.topbar-left {
     gap: 12px;
+}
+
+.topbar-tools {
+    gap: 18px;
+    flex-shrink: 0;
 }
 
 .topbar-context {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
-    gap: 12px 16px;
+    gap: 12px 24px;
 }
 
 .page-title {
     margin: 0;
-    font-size: 16px;
-    font-weight: 650;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
 }
 
 .where-block h1,
@@ -298,12 +303,20 @@ button {
 
 .context-field {
     display: grid;
-    gap: 2px;
-    min-width: 0;
-    font-size: 10px;
-    letter-spacing: 0.12em;
+    gap: 6px;
+    min-width: 220px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--muted);
+}
+
+.context-field-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    line-height: 1.2;
 }
 
 .context-select,
@@ -325,8 +338,9 @@ header.topbar label.context-field select.context-select,
 header.topbar label.context-field select.context-select:disabled,
 header.topbar #organizationSwitcher,
 header.topbar #locationSwitcher {
-    min-width: 160px;
-    max-width: min(280px, 100%);
+    min-width: 220px;
+    max-width: min(320px, 100%);
+    min-height: 38px;
     color: var(--ink);
     -webkit-text-fill-color: var(--ink);
     background-color: #fffaf2;
@@ -337,7 +351,7 @@ header.topbar #locationSwitcher {
     font-weight: 650;
     letter-spacing: 0;
     text-transform: none;
-    padding: 6px 28px 6px 8px;
+    padding: 8px 32px 8px 10px;
     color-scheme: light;
     appearance: auto;
 }
@@ -358,6 +372,33 @@ header.topbar #locationSwitcher option {
     border: 0;
     background: transparent;
     color: inherit;
+}
+
+.notification-btn {
+    padding: 4px 6px;
+    flex-shrink: 0;
+}
+
+.profile {
+    gap: 10px;
+    min-width: 0;
+    padding-left: 16px;
+    margin-left: 4px;
+    border-left: 1px solid rgba(28, 36, 48, 0.18);
+}
+
+.profile-info {
+    min-width: 0;
+}
+
+.profile-info span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px;
+    font-size: 14px;
+    font-weight: 650;
 }
 
 .notification-count {
@@ -476,12 +517,12 @@ header.topbar #locationSwitcher option {
 
 .desk-situation {
     display: grid;
-    grid-template-columns: auto minmax(180px, 240px);
-    align-items: end;
+    grid-template-columns: auto minmax(200px, 280px);
+    align-items: center;
     justify-content: start;
-    width: max-content;
-    max-width: 100%;
-    gap: 4px 24px;
+    width: 100%;
+    max-width: 720px;
+    gap: 8px 40px;
 }
 
 .site-footer {
@@ -516,16 +557,17 @@ header.topbar #locationSwitcher option {
 }
 
 .situation-notes {
-    width: min(100%, 240px);
+    width: min(100%, 280px);
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .situation-notes li {
-    padding: 6px 0;
+    padding: 4px 0;
     border-top: 1px solid var(--line);
-    font-size: 14px;
+    font-size: 13px;
+    line-height: 1.35;
 }
 
 .spectrum {
@@ -548,7 +590,7 @@ header.topbar #locationSwitcher option {
 .panel-header,
 .text-actions {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: flex-start;
     flex-wrap: wrap;
     gap: 16px;
@@ -1276,7 +1318,7 @@ td {
     }
 
     .situation-ready span {
-        font-size: 52px;
+        font-size: 40px;
     }
 }
 
@@ -1298,6 +1340,10 @@ td {
         flex-wrap: wrap;
         align-items: center;
         gap: 8px 12px;
+    }
+
+    .page-title {
+        font-size: 22px;
     }
 
     .topbar-context {
@@ -1342,6 +1388,12 @@ td {
 
     .profile-info {
         display: none;
+    }
+
+    .profile {
+        padding-left: 0;
+        margin-left: 0;
+        border-left: 0;
     }
 
     .dock {
