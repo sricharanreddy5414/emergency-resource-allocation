@@ -112,6 +112,45 @@ textarea {
     border-radius: var(--radius);
 }
 
+header.topbar label.context-field select.context-select,
+header.topbar label.context-field select.context-select:disabled,
+header.topbar #organizationSwitcher,
+header.topbar #locationSwitcher {
+    color: var(--ink);
+    -webkit-text-fill-color: var(--ink);
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--line-strong);
+    opacity: 1;
+    color-scheme: light;
+}
+
+header.topbar label.context-field select.context-select:hover,
+header.topbar #organizationSwitcher:hover,
+header.topbar #locationSwitcher:hover {
+    border-color: var(--ink);
+}
+
+header.topbar label.context-field select.context-select:focus,
+header.topbar label.context-field select.context-select:focus-visible,
+header.topbar #organizationSwitcher:focus,
+header.topbar #locationSwitcher:focus {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+header.topbar label.context-field select.context-select option,
+header.topbar #organizationSwitcher option,
+header.topbar #locationSwitcher option {
+    color: var(--ink);
+    -webkit-text-fill-color: var(--ink);
+    background: var(--surface-elevated);
+}
+
+.notification-item {
+    background: var(--surface-elevated);
+    border-color: var(--line);
+}
+
 .notification-count {
     background: var(--signal);
     color: #fffaf2;
@@ -278,6 +317,10 @@ tr:hover td {
     .sidebar {
         transform: none;
         width: var(--rail);
+        height: 100vh;
+        height: 100dvh;
+        max-height: 100dvh;
+        overflow: hidden;
     }
 
     .drawer-close,
