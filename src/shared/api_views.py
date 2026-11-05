@@ -21,6 +21,9 @@ REQUEST_FIELDS = (
     "request_type_id",
     "attributes",
     "matching_config",
+    "resource_id",
+    "quantity_requested",
+    "quantity_unit",
 )
 
 # Fields the resource screens read back: list, edit form, filters, and exchange
@@ -40,7 +43,10 @@ RESOURCE_FIELDS = (
     "attributes",
     "operational_status",
     "tracking_mode",
+    "quantity_total",
     "quantity_available",
+    "quantity_reserved",
+    "quantity_allocated",
     "quantity_unit",
     "public_name",
     "public_description",

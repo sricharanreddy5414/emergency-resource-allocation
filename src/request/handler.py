@@ -11,6 +11,13 @@ from common import ALLOWED_ORIGIN, dumps_json
 from api_views import request_view
 from emergency_notify import notify_request_cancelled, notify_request_created
 from observability import begin_request, error_body, load_object, log_event, log_result
+from resource_state import (
+    ResourceStateError,
+    emergency_matchable,
+    normalize_quantity_unit,
+    normalize_tracking_mode,
+    quantity_snapshot,
+)
 
 
 def response(status_code, body):
@@ -57,6 +64,76 @@ def request_types_table():
     import boto3
 
     return boto3.resource("dynamodb").Table(os.environ.get("REQUEST_TYPES_TABLE", "RequestTypes"))
+
+
+def resources_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("RESOURCES_TABLE", "Resources"))
+
+
+def _positive_int(value, label):
+    if isinstance(value, bool) or value is None:
+        raise ValueError(f"{label} is invalid")
+
+    if isinstance(value, int):
+        number = value
+    else:
+        try:
+            from decimal import Decimal
+        except ImportError:  # pragma: no cover
+            Decimal = ()  # type: ignore
+
+        if not isinstance(value, Decimal) or value != value.to_integral_value():
+            raise ValueError(f"{label} is invalid")
+        number = int(value)
+
+    if number < 1:
+        raise ValueError(f"{label} is invalid")
+
+    return number
+
+
+def requested_resource_fields(body, organization_id, location):
+    """Attach a specific resource and quantity without changing inventory."""
+    resource_id = str((body or {}).get("resource_id") or "").strip()
+    if not resource_id:
+        return {}
+
+    resource = resources_table().get_item(Key={"resource_id": resource_id}).get("Item")
+    require_owned(resource, organization_id)
+
+    if str(resource.get("location_id") or "") != location["location_id"]:
+        raise AccessError(409, "Resource location does not match")
+
+    quantity = _positive_int(
+        (body or {}).get("quantity_requested", (body or {}).get("quantity")),
+        "Requested quantity",
+    )
+    unit = normalize_quantity_unit((body or {}).get("quantity_unit") or resource.get("quantity_unit"))
+    mode = normalize_tracking_mode(resource.get("tracking_mode"))
+
+    if mode == "QUANTITY":
+        snapshot = quantity_snapshot(resource)
+        if quantity > snapshot["quantity_available"]:
+            raise ValueError("Requested quantity is not available")
+        if unit is None:
+            unit = normalize_quantity_unit(resource.get("quantity_unit")) or "UNITS"
+    else:
+        if quantity != 1:
+            raise ValueError("Individual resources require quantity 1")
+        if not emergency_matchable(resource):
+            raise ValueError("Resource is not available")
+        if unit is None:
+            unit = "UNITS"
+
+    return {
+        "resource_id": resource_id,
+        "quantity_requested": quantity,
+        "quantity_unit": unit,
+    }
 
 
 def request_path(event):
@@ -311,6 +388,11 @@ def lambda_handler(event, context):
             item["request_type_id"] = request_type["request_type_id"]
             item["attributes"] = attributes
             item["matching_config"] = matching_config
+
+        try:
+            item.update(requested_resource_fields(body, organization_id, location))
+        except ResourceStateError as error:
+            return response(400, {"message": str(error)})
 
         if method == "PUT":
             return update_request(item, organization_id, _user_sub, membership.get("role"), request_id)

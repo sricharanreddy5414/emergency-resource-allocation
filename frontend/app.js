@@ -4561,6 +4561,27 @@ function isQuantityResource(
 }
 
 
+function quantityDisplay(resource, field) {
+    if (!isQuantityResource(resource)) {
+        return "—";
+    }
+    const value = resource[field];
+    if (value == null || value === "") {
+        return "—";
+    }
+    return String(value);
+}
+
+
+function quantityUnitDisplay(resource) {
+    if (!isQuantityResource(resource)) {
+        return "—";
+    }
+    const unit = String(resource.quantity_unit || "").trim();
+    return unit || "—";
+}
+
+
 /* =========================================================
    RESOURCE TABLE
 ========================================================= */
@@ -4860,7 +4881,7 @@ function renderResourcesPage() {
 
             <tr>
 
-                <td colspan="7">
+                <td colspan="12">
                     ${resourceNextPageToken
                         ? "No resources in this page."
                         : "No resources registered. Add a resource for this organization to start allocation."}
@@ -4882,9 +4903,6 @@ function renderResourcesPage() {
             .map(
                 resource => {
 
-                    const emergencyLabel =
-                        getEmergencyAvailabilityLabel(resource);
-
                     const operational =
                         getOperationalStatusLabel(resource);
 
@@ -4897,15 +4915,11 @@ function renderResourcesPage() {
                         <tr data-resource-id="${escapeHtml(resource.id)}">
 
                             <td>
+                                ${escapeHtml(resource.id)}
+                            </td>
 
-                                <div class="cell-title">
-                                    ${escapeHtml(resource.name || resource.type || "Resource")}
-                                </div>
-
-                                <div class="cell-meta">
-                                    ${escapeHtml(resource.id)}
-                                </div>
-
+                            <td>
+                                ${escapeHtml(resource.name || resource.type || "Resource")}
                             </td>
 
                             <td>
@@ -4920,21 +4934,11 @@ function renderResourcesPage() {
                                 )}
                             </td>
 
-                            <td>
-
-                                <span
-                                    class="status-badge ${
-                                        emergencyLabel === "Available"
-                                            ? "available"
-                                            : "allocated"
-                                    }"
-                                >
-
-                                    ${escapeHtml(emergencyLabel)}
-
-                                </span>
-
-                            </td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_total"))}</td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_allocated"))}</td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_reserved"))}</td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_available"))}</td>
+                            <td>${escapeHtml(quantityUnitDisplay(resource))}</td>
 
                             <td>
 
@@ -8978,11 +8982,135 @@ async function loadRequestTypes() {
 }
 
 
+function requestedResourceOptions() {
+    const locationId = $("modalLocation")?.value || "";
+    return (resources || []).filter(resource => {
+        if (!resource?.id) {
+            return false;
+        }
+        if (locationId && resource.location_id !== locationId) {
+            return false;
+        }
+        return true;
+    });
+}
+
+
+function fillRequestResourceSelect() {
+    const select = $("modalRequestedResource");
+    if (!select) {
+        return;
+    }
+    const previous = select.value;
+    const options = requestedResourceOptions();
+    select.innerHTML = `<option value="">Select resource</option>` + options.map(resource => {
+        const name = resource.name || resource.type || resource.id;
+        const type = resource.type || "Resource";
+        let qty = "individual";
+        if (isQuantityResource(resource)) {
+            const available = resource.quantity_available;
+            const unit = resource.quantity_unit || "UNITS";
+            qty = (available == null || available === "")
+                ? "quantity unavailable"
+                : `${available} ${unit} available`;
+        }
+        return `<option value="${escapeHtml(resource.id)}">${escapeHtml(`${name} · ${type} · ${qty}`)}</option>`;
+    }).join("");
+    if (previous && options.some(resource => resource.id === previous)) {
+        select.value = previous;
+    }
+    updateRequestQuantityHint();
+}
+
+
+function selectedRequestResource() {
+    const resourceId = $("modalRequestedResource")?.value || "";
+    return (resources || []).find(resource => resource.id === resourceId) || null;
+}
+
+
+function updateRequestQuantityHint() {
+    const resource = selectedRequestResource();
+    const hint = $("modalRequestedResourceHint");
+    const unit = $("modalRequestedQuantityUnit");
+    const error = $("modalRequestedQuantityError");
+    if (error) {
+        error.hidden = true;
+        error.textContent = "";
+    }
+    if (!resource) {
+        if (hint) {
+            hint.textContent = "Select a registered resource for this location.";
+        }
+        if (unit) {
+            unit.textContent = "Units";
+        }
+        return;
+    }
+    if (isQuantityResource(resource)) {
+        const available = resource.quantity_available;
+        const label = resource.quantity_unit || "UNITS";
+        if (unit) {
+            unit.textContent = label;
+        }
+        if (hint) {
+            hint.textContent = (available == null || available === "")
+                ? "Available quantity is not in this authorized view."
+                : `${available} ${label} available. Request creation does not reserve inventory.`;
+        }
+        return;
+    }
+    if (unit) {
+        unit.textContent = "Units";
+    }
+    if (hint) {
+        hint.textContent = "Individual resource. Requested quantity must be 1.";
+    }
+}
+
+
+function readRequestedQuantityFields() {
+    const resource = selectedRequestResource();
+    const error = $("modalRequestedQuantityError");
+    const showError = (message) => {
+        if (error) {
+            error.textContent = message;
+            error.hidden = !message;
+        }
+        return null;
+    };
+    if (!resource) {
+        return showError("Select a registered resource.");
+    }
+    const raw = $("modalRequestedQuantity")?.value.trim() || "";
+    const quantity = Number(raw);
+    if (!raw || !Number.isInteger(quantity) || quantity < 1) {
+        return showError("Enter a whole-number quantity of at least 1.");
+    }
+    if (isQuantityResource(resource)) {
+        const available = resource.quantity_available;
+        if (available != null && available !== "" && quantity > Number(available)) {
+            return showError("Requested quantity is more than the available quantity.");
+        }
+        return {
+            resourceId: resource.id,
+            quantity,
+            unit: String(resource.quantity_unit || "UNITS").toUpperCase()
+        };
+    }
+    if (quantity !== 1) {
+        return showError("Individual resources require quantity 1.");
+    }
+    return { resourceId: resource.id, quantity: 1, unit: "UNITS" };
+}
+
+
 function prepareRequestModal() {
 
     fillCatalogSelects();
 
     fillLocationSelect($("modalLocation"));
+    fillRequestResourceSelect();
 
     const result = $("requestModalResult");
 
@@ -9027,6 +9155,7 @@ async function submitRequestModal(event) {
     const requestTypeId = $("modalRequestType")?.value || "";
     const locationId = $("modalLocation")?.value || "";
     const priority = Number($("modalPriority")?.value);
+    const quantityFields = readRequestedQuantityFields();
     const result = $("requestModalResult");
     const button = $("submitRequestModal");
 
@@ -9051,9 +9180,9 @@ async function submitRequestModal(event) {
 
     }
 
-    if (!requestId || !requestTypeId || !locationId || !priority) {
+    if (!requestId || !requestTypeId || !locationId || !priority || !quantityFields) {
 
-        show("Please complete all request fields.", "error");
+        show(quantityFields ? "Please complete all request fields." : ($("modalRequestedQuantityError")?.textContent || "Please complete all request fields."), "error");
 
         return;
 
@@ -9085,6 +9214,9 @@ async function submitRequestModal(event) {
                 location_id: locationId,
                 organization_id: selectedOrganizationId(),
                 priority: priority,
+                resource_id: quantityFields.resourceId,
+                quantity_requested: quantityFields.quantity,
+                quantity_unit: quantityFields.unit,
                 attributes: readAttributeValues("modalRequestAttributes")
             })
         });
@@ -12973,6 +13105,8 @@ async function initializeApp() {
     $("newResourceType")?.addEventListener("change", showSelectedTypeAttributes);
     $("resourceType")?.addEventListener("change", showSelectedTypeAttributes);
     $("modalRequestType")?.addEventListener("change", showSelectedTypeAttributes);
+    $("modalLocation")?.addEventListener("change", fillRequestResourceSelect);
+    $("modalRequestedResource")?.addEventListener("change", updateRequestQuantityHint);
     $("saveResourceTypeBtn")?.addEventListener("click", saveResourceType);
     $("saveRequestTypeBtn")?.addEventListener("click", saveRequestType);
     $("resourcesPageVisibilityFilter")?.addEventListener("change", applyResourcePageFilters);

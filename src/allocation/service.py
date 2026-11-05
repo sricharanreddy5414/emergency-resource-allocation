@@ -28,7 +28,13 @@ from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
 from emergency_notify import notify_allocation_created
 from matching import choose_resource, explain_match
-from resource_state import EMERGENCY_CLAIM_CONDITION
+from resource_state import (
+    EMERGENCY_CLAIM_CONDITION,
+    ResourceStateError,
+    emergency_matchable,
+    normalize_tracking_mode,
+    quantity_snapshot,
+)
 from api_views import allocation_view, request_view
 from observability import begin_request, error_body, load_object, log_result
 from delivery_handler import handle_delivery, is_delivery_path
@@ -392,6 +398,60 @@ def _encoded(values):
     return encoded
 
 
+def _quantity_claim_transact_items(resource_id, organization_id, allocation, request_id, quantity):
+    """Quantity-pool claim uses existing counters and the same request/allocation guards."""
+    return [
+        {
+            "Update": {
+                "TableName": "Resources",
+                "Key": _encoded({"resource_id": resource_id}),
+                "UpdateExpression": (
+                    "SET quantity_available = quantity_available - :qty, "
+                    "quantity_allocated = quantity_allocated + :qty"
+                ),
+                "ConditionExpression": (
+                    "attribute_exists(resource_id) AND organization_id = :organization_id "
+                    "AND tracking_mode = :quantity AND quantity_available >= :qty "
+                    "AND quantity_allocated + :qty <= quantity_total "
+                    "AND quantity_available + quantity_reserved + quantity_allocated = quantity_total "
+                    "AND (attribute_not_exists(operational_status) OR operational_status <> :retired)"
+                ),
+                "ExpressionAttributeValues": _encoded(
+                    {
+                        ":qty": quantity,
+                        ":organization_id": organization_id,
+                        ":quantity": "QUANTITY",
+                        ":retired": "RETIRED",
+                    }
+                ),
+            }
+        },
+        {
+            "Put": {
+                "TableName": "Allocations",
+                "Item": _encoded(allocation),
+                "ConditionExpression": "attribute_not_exists(allocation_id)",
+            }
+        },
+        {
+            "Update": {
+                "TableName": "EmergencyRequests",
+                "Key": _encoded({"request_id": request_id}),
+                "UpdateExpression": "SET #s = :status",
+                "ConditionExpression": "#s = :pending AND organization_id = :organization_id",
+                "ExpressionAttributeNames": {"#s": "Status"},
+                "ExpressionAttributeValues": _encoded(
+                    {
+                        ":status": "ALLOCATED",
+                        ":pending": "PENDING",
+                        ":organization_id": organization_id,
+                    }
+                ),
+            }
+        },
+    ]
+
+
 def _claim_transact_items(resource_id, organization_id, allocation, request_id):
     """Resource claim, allocation insert, and request transition are one transaction."""
     return [
@@ -494,9 +554,33 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
     if existing.get("location_id") != location["location_id"]:
         return response(409, {"message": "Request location does not match"})
 
-    resource_cache = {}
-    resources = _resources_for_match(organization_id, existing, resource_cache)
-    resource = choose_resource(resources, existing)
+    targeted_id = str(existing.get("resource_id") or "").strip()
+    quantity_claim = False
+    claim_quantity = 1
+    resource = None
+
+    if targeted_id:
+        resource = resources_table().get_item(Key={"resource_id": targeted_id}).get("Item")
+        require_owned(resource, organization_id)
+        if str(resource.get("location_id") or "") != str(existing.get("location_id") or ""):
+            return response(409, {"message": "Request location does not match"})
+        if normalize_tracking_mode(resource.get("tracking_mode")) == "QUANTITY":
+            try:
+                snapshot = quantity_snapshot(resource)
+                claim_quantity = int(existing.get("quantity_requested"))
+            except (TypeError, ValueError, ResourceStateError):
+                return response(400, {"message": "Requested quantity is invalid"})
+            if claim_quantity < 1:
+                return response(400, {"message": "Requested quantity is invalid"})
+            if claim_quantity > snapshot["quantity_available"]:
+                return response(404, {"message": "No suitable resource available", "request_id": request_id})
+            quantity_claim = True
+        elif not emergency_matchable(resource):
+            return response(404, {"message": "No suitable resource available", "request_id": request_id})
+    else:
+        resource_cache = {}
+        resources = _resources_for_match(organization_id, existing, resource_cache)
+        resource = choose_resource(resources, existing)
 
     if (
         not resource
@@ -530,6 +614,9 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         "available": True,
         "match": explain_match(resource, existing),
     }
+    if quantity_claim:
+        proposal["quantity"] = claim_quantity
+        proposal["quantity_unit"] = existing.get("quantity_unit") or resource.get("quantity_unit") or ""
     if body.get("confirm") is not True:
         return response(200, proposal)
 
@@ -554,15 +641,27 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
         "status": "ALLOCATED",
         "allocated_at": allocated_at,
     }
+    if quantity_claim:
+        allocation["quantity"] = claim_quantity
+        allocation["allocation_type"] = "QUANTITY"
     try:
-        _commit_emergency_claim(
-            _claim_transact_items(
+        claim_items = (
+            _quantity_claim_transact_items(
+                resource_id,
+                organization_id,
+                allocation,
+                request_id,
+                claim_quantity,
+            )
+            if quantity_claim
+            else _claim_transact_items(
                 resource_id,
                 organization_id,
                 allocation,
                 request_id,
             )
         )
+        _commit_emergency_claim(claim_items)
     except ClientError as error:
         code = error.response["Error"]["Code"]
         if code == "TransactionCanceledException":

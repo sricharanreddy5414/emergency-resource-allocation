@@ -49,9 +49,6 @@ LEAKS = (
     "idempotency_key",
     "updated_at",
     "created_at",
-    "quantity_total",
-    "quantity_reserved",
-    "quantity_allocated",
     "serial_number",
     "asset_tag",
     "department",
@@ -157,7 +154,10 @@ def assert_resource_contract(view):
     assert view["attributes"] == {"capacity": 2}
     assert view["operational_status"] == "AVAILABLE"
     assert view["tracking_mode"] == "QUANTITY"
+    assert view["quantity_total"] == 10
     assert view["quantity_available"] == 6
+    assert view["quantity_reserved"] == 1
+    assert view["quantity_allocated"] == 3
     assert view["public_name"] == "Public kit"
     assert view["public_description"] == "Listed"
     assert view["public_contact"] == "desk"

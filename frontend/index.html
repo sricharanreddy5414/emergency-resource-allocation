@@ -1015,11 +1015,16 @@
 
                     <tr>
 
-                        <th>Resource</th>
-                        <th>Type</th>
+                        <th>Resource ID</th>
+                        <th>Resource Name</th>
+                        <th>Resource Type</th>
                         <th>Location</th>
-                        <th>Emergency availability</th>
-                        <th>Operational status</th>
+                        <th>Total Quantity</th>
+                        <th>Allocated Quantity</th>
+                        <th>Reserved Quantity</th>
+                        <th>Available Quantity</th>
+                        <th>Unit</th>
+                        <th>Status</th>
                         <th>Visibility</th>
                         <th>Action</th>
 
@@ -1032,7 +1037,7 @@
 
                     <tr>
 
-                        <td colspan="7">
+                        <td colspan="12">
                             Loading resources...
                         </td>
 
@@ -2739,6 +2744,49 @@
                     </option>
 
                 </select>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label for="modalRequestedResource">
+                    Resource
+                </label>
+
+                <select
+                    id="modalRequestedResource"
+                    required
+                >
+                    <option value="">
+                        Select resource
+                    </option>
+                </select>
+
+                <p id="modalRequestedResourceHint" class="allocation-hint"></p>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label for="modalRequestedQuantity">
+                    Requested Quantity
+                </label>
+
+                <div class="resource-quantity-fields">
+                    <input
+                        id="modalRequestedQuantity"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value="1"
+                        required
+                        aria-describedby="modalRequestedQuantityError modalRequestedResourceHint"
+                    >
+                    <p id="modalRequestedQuantityUnit" class="quantity-unit-label">Units</p>
+                </div>
+                <p id="modalRequestedQuantityError" class="field-error" hidden></p>
 
             </div>
 
