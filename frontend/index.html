@@ -437,17 +437,34 @@
         </div>
         <h2 id="commandContext" class="sr-only">No organization selected</h2>
         <div class="desk-situation" aria-label="Operational snapshot">
-            <p class="situation-ready">
-                <span id="availableResources">0</span>
-                <em>ready</em>
-            </p>
-            <ul class="situation-notes">
-                <li><span id="totalResources">0</span> registered</li>
-                <li><span id="allocatedResources">0</span> allocated</li>
-                <li><span id="analyticsPendingRequests">0</span> pending in loaded results</li>
-                <li><span id="analyticsAllocatedRequests">0</span> allocated in loaded results</li>
-                <li><span id="analyticsTotalRequests">0</span> loaded requests, <span id="analyticsReleasedRequests">0</span> released</li>
+            <article class="ops-hero">
+                <span id="totalResources">0</span>
+                <em>Registered</em>
+                <p class="ops-hero-caption">Total operations</p>
+            </article>
+            <ul class="ops-metric-grid">
+                <li>
+                    <span id="allocatedResources">0</span>
+                    <em>Allocated</em>
+                </li>
+                <li>
+                    <span id="analyticsPendingRequests">0</span>
+                    <em>Pending</em>
+                </li>
+                <li>
+                    <span id="analyticsReleasedRequests">0</span>
+                    <em>Released</em>
+                </li>
+                <li class="ops-metric-ready">
+                    <span id="availableResources">0</span>
+                    <em>Ready</em>
+                </li>
             </ul>
+            <p class="sr-only">
+                <span id="analyticsAllocatedRequests">0</span> allocated in loaded results,
+                <span id="analyticsTotalRequests">0</span> loaded requests,
+                pending in loaded results
+            </p>
             <div class="spectrum" aria-hidden="true">
                 <span id="readinessAvailableBar"></span>
             </div>
@@ -460,13 +477,25 @@
                 <h2>Operations now</h2>
                 <button class="primary-btn" id="overviewCreateRequest" type="button">Create request</button>
             </div>
-            <div id="activeOperations"></div>
+            <div id="activeOperations">
+                <div class="ops-empty">
+                    <h3>No active operations</h3>
+                    <p>No pending or allocated requests are in the loaded results.</p>
+                </div>
+            </div>
         </div>
         <aside class="desk-readiness">
             <h2>Readiness</h2>
-            <div id="resourceStatusChart" class="analytics-chart"></div>
+            <div id="resourceStatusChart" class="analytics-chart">
+                <p class="tally-line"><span>Available</span><b>0</b></p>
+                <p class="tally-line"><span>Allocated</span><b>0</b></p>
+            </div>
             <h2>Requests</h2>
-            <div id="requestStatusChart" class="analytics-chart"></div>
+            <div id="requestStatusChart" class="analytics-chart">
+                <p class="tally-line"><span>Allocated</span><b>0</b></p>
+                <p class="tally-line"><span>Pending</span><b>0</b></p>
+                <p class="tally-line"><span>Released</span><b>0</b></p>
+            </div>
             <h2>Priority</h2>
             <div id="priorityChart" class="analytics-chart"></div>
             <button class="text-action" id="registerResourceBtn" type="button">Register resource</button>
