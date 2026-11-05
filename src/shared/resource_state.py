@@ -13,6 +13,16 @@ RESOURCE_OPERATIONAL_STATUSES = frozenset(
 )
 
 TRACKING_MODES = frozenset({"INDIVIDUAL", "QUANTITY"})
+QUANTITY_UNITS = frozenset({"UNITS", "BOXES", "PACKETS", "LITERS", "VEHICLES"})
+_QUANTITY_UNIT_ALIASES = {
+    "UNIT": "UNITS",
+    "BOX": "BOXES",
+    "PACKET": "PACKETS",
+    "LITER": "LITERS",
+    "LITRE": "LITERS",
+    "LITRES": "LITERS",
+    "VEHICLE": "VEHICLES",
+}
 
 # Fixed for every organization. This is not the 30-minute emergency auto-release.
 RESERVATION_DURATION_HOURS = 2
@@ -94,6 +104,19 @@ def normalize_tracking_mode(value):
         raise ResourceStateError("Tracking mode is invalid")
 
     return mode
+
+
+def normalize_quantity_unit(value):
+    if value is None or (isinstance(value, str) and not str(value).strip()):
+        return None
+
+    unit = str(value).strip().upper()
+    unit = _QUANTITY_UNIT_ALIASES.get(unit, unit)
+
+    if unit not in QUANTITY_UNITS:
+        raise ResourceStateError("Quantity unit is invalid")
+
+    return unit
 
 
 def effective_operational_status(resource):
@@ -185,6 +208,8 @@ def initialize_new_resource_fields(body, *, available=True):
         for name in QUANTITY_FIELD_NAMES:
             if body.get(name) is not None:
                 raise ResourceStateError("Quantity fields are not allowed for individual resources")
+        if body.get("quantity_unit") is not None and str(body.get("quantity_unit")).strip():
+            raise ResourceStateError("Quantity fields are not allowed for individual resources")
 
         fields["Available"] = True
         return fields
@@ -197,6 +222,8 @@ def initialize_new_resource_fields(body, *, available=True):
     if total < 1:
         raise ResourceStateError("Quantity total is invalid")
 
+    unit = normalize_quantity_unit(body.get("quantity_unit")) or "UNITS"
+
     fields["Available"] = False
     fields.update(
         {
@@ -204,6 +231,7 @@ def initialize_new_resource_fields(body, *, available=True):
             "quantity_available": total,
             "quantity_reserved": 0,
             "quantity_allocated": 0,
+            "quantity_unit": unit,
         }
     )
     validate_quantity_fields({**fields, "tracking_mode": "QUANTITY"})
@@ -329,5 +357,11 @@ def metadata_fields_from_body(body, current=None):
         if len(value) > limit:
             raise ResourceStateError(f"{name} is too long")
         fields[name] = value
+
+    if "quantity_unit" in body:
+        unit = normalize_quantity_unit(body.get("quantity_unit"))
+        if unit is None:
+            raise ResourceStateError("Quantity unit is invalid")
+        fields["quantity_unit"] = unit
 
     return fields

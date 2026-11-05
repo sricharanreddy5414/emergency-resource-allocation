@@ -1175,6 +1175,18 @@ td {
     margin-bottom: 12px;
 }
 
+.resource-quantity-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+}
+
+.field-error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 13px;
+}
+
 .modal,
 .modal-overlay {
     position: fixed;

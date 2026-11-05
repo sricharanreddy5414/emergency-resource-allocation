@@ -250,6 +250,33 @@ def test_quantity_create_still_requires_a_total(monkeypatch):
     assert resources.puts == []
 
 
+def test_quantity_create_persists_quantity_and_unit(monkeypatch):
+    result, resources, _history = create(
+        monkeypatch,
+        base_body(tracking_mode="QUANTITY", quantity_total=6, quantity_unit="Packets"),
+    )
+    assert result["statusCode"] == 201
+    item = stored(resources)
+    body = json.loads(result["body"])["resource"]
+    assert item["tracking_mode"] == "QUANTITY"
+    assert item["quantity_total"] == 6
+    assert item["quantity_available"] == 6
+    assert item["quantity_unit"] == "PACKETS"
+    assert body["tracking_mode"] == "QUANTITY"
+    assert body["quantity_available"] == 6
+    assert body["quantity_unit"] == "PACKETS"
+    assert "quantity_total" not in body
+
+
+def test_quantity_create_rejects_invalid_unit(monkeypatch):
+    result, resources, _history = create(
+        monkeypatch,
+        base_body(tracking_mode="QUANTITY", quantity_total=2, quantity_unit="pallets"),
+    )
+    assert result["statusCode"] == 400
+    assert resources.puts == []
+
+
 def test_create_response_stays_on_the_resource_allowlist(monkeypatch):
     result, resources, _history = create(
         monkeypatch,

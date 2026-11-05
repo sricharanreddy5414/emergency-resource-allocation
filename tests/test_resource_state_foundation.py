@@ -12,6 +12,7 @@ from resource_state import (
     effective_operational_status,
     initialize_new_resource_fields,
     normalize_operational_status,
+    normalize_quantity_unit,
     normalize_tracking_mode,
     quantity_snapshot,
     validate_quantity_fields,
@@ -133,6 +134,26 @@ def test_new_quantity_initialization():
     assert fields["quantity_available"] == 50
     assert fields["quantity_reserved"] == 0
     assert fields["quantity_allocated"] == 0
+    assert fields["quantity_unit"] == "UNITS"
+
+
+def test_new_quantity_persists_selected_unit():
+    fields = initialize_new_resource_fields(
+        {"tracking_mode": "QUANTITY", "quantity_total": 12, "quantity_unit": "boxes"},
+        available=True,
+    )
+    assert fields["quantity_unit"] == "BOXES"
+
+
+def test_quantity_unit_rejects_unknown_values():
+    assert normalize_quantity_unit("Liters") == "LITERS"
+    with pytest.raises(ResourceStateError):
+        normalize_quantity_unit("pallets")
+    with pytest.raises(ResourceStateError):
+        initialize_new_resource_fields(
+            {"tracking_mode": "QUANTITY", "quantity_total": 3, "quantity_unit": "pallets"},
+            available=True,
+        )
 
 
 def test_new_quantity_requires_total():

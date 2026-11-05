@@ -2190,6 +2190,32 @@
 
             </select>
 
+            <div class="resource-quantity-fields">
+                <div>
+                    <label for="newResourceQuantity">Quantity</label>
+                    <input
+                        id="newResourceQuantity"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value="1"
+                        required
+                        aria-describedby="newResourceQuantityError"
+                    >
+                </div>
+                <div>
+                    <label for="newResourceQuantityUnit">Unit</label>
+                    <select id="newResourceQuantityUnit" required>
+                        <option value="UNITS">Units</option>
+                        <option value="BOXES">Boxes</option>
+                        <option value="PACKETS">Packets</option>
+                        <option value="LITERS">Liters</option>
+                        <option value="VEHICLES">Vehicles</option>
+                    </select>
+                </div>
+            </div>
+            <p id="newResourceQuantityError" class="field-error" hidden></p>
+
             <div id="resourceAttributeFields"></div>
 
             <label for="newResourceVisibility">Visibility</label>
