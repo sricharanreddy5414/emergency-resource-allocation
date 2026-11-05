@@ -3389,7 +3389,6 @@ function renderActiveOperations() {
             <div class="ops-empty">
                 <h3>No active operations</h3>
                 <p>No pending or allocated requests are in the loaded results.</p>
-                <button class="primary-btn js-open-request" type="button">Create Request</button>
             </div>
         `;
 
@@ -4466,35 +4465,25 @@ function renderAnalyticsBars(
         );
 
 
-    if (total === 0) {
-
-                container.innerHTML = `
-            <div class="analytics-empty">
-                No activity in the current view.
-            </div>
-        `;
-
-        return;
-    }
-
-
     container.innerHTML =
         items
             .map(
                 item => {
 
                     const percentage =
-                        Math.max(
-                            0,
-                            Math.min(
-                                100,
-                                (
-                                    item.value /
-                                    total
-                                ) *
-                                100
-                            )
-                        );
+                        total === 0
+                            ? 0
+                            : Math.max(
+                                0,
+                                Math.min(
+                                    100,
+                                    (
+                                        item.value /
+                                        total
+                                    ) *
+                                    100
+                                )
+                            );
 
                     return `
                         <p class="tally-line">

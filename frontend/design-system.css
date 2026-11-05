@@ -191,6 +191,26 @@ header.topbar #locationSwitcher option {
     border-top-color: var(--line);
 }
 
+.ops-hero,
+.ops-metric-grid li,
+.desk-readiness {
+    background: var(--surface-elevated);
+    border-color: var(--line);
+}
+
+.ops-hero em {
+    color: var(--ink);
+}
+
+.ops-hero-caption,
+.ops-metric-grid em {
+    color: var(--muted);
+}
+
+.ops-metric-ready em {
+    color: var(--ready);
+}
+
 .desk-now {
     gap: var(--space-7);
 }
