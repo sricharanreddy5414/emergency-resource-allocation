@@ -4092,6 +4092,11 @@ function normalizeResources() {
                     quantity_allocated:
                         resource.quantity_allocated ?? null,
 
+                    quantity_unit:
+                        resource.quantity_unit ??
+                        resource.quantityUnit ??
+                        "",
+
                     condition:
                         resource.condition || "",
 
@@ -6754,6 +6759,18 @@ function prepareNewResourceForm() {
         }
     });
 
+    if ($("newResourceQuantity")) {
+        $("newResourceQuantity").value = "1";
+        $("newResourceQuantity").readOnly = false;
+    }
+
+    if ($("newResourceQuantityUnit")) {
+        $("newResourceQuantityUnit").value = "UNITS";
+        $("newResourceQuantityUnit").disabled = false;
+    }
+
+    setResourceQuantityError("");
+
     if ($("newResourceVisibility")) {
         $("newResourceVisibility").value = "PRIVATE";
     }
@@ -6804,6 +6821,36 @@ function closeRegisterModal() {
    REGISTER RESOURCE
 ========================================================= */
 
+const RESOURCE_QUANTITY_UNITS = ["UNITS", "BOXES", "PACKETS", "LITERS", "VEHICLES"];
+
+function setResourceQuantityError(message) {
+    const node = $("newResourceQuantityError");
+    if (!node) {
+        return;
+    }
+    node.textContent = message || "";
+    node.hidden = !message;
+}
+
+function readResourceQuantityFields() {
+    const raw = $("newResourceQuantity")?.value.trim() || "";
+    const unit = String($("newResourceQuantityUnit")?.value || "").trim().toUpperCase();
+    const quantity = Number(raw);
+
+    if (!raw || !Number.isInteger(quantity) || quantity < 1) {
+        setResourceQuantityError("Enter a whole-number quantity of at least 1.");
+        return null;
+    }
+
+    if (!RESOURCE_QUANTITY_UNITS.includes(unit)) {
+        setResourceQuantityError("Select a quantity unit.");
+        return null;
+    }
+
+    setResourceQuantityError("");
+    return { quantity, unit };
+}
+
 async function registerResource() {
     if (tenantContextLoading || !selectedOrganizationId()) {
         showToast("Organization context is still loading.");
@@ -6813,14 +6860,41 @@ async function registerResource() {
     const id = $("newResourceId").value.trim();
     const type = $("newResourceType").value;
     const location = $("newResourceLocation").value.trim();
+    const quantityFields = readResourceQuantityFields();
 
     if (!id || !type || !location) {
         showToast("Please complete all resource details.");
         return;
     }
 
+    if (!quantityFields) {
+        showToast("Enter a valid quantity and unit.");
+        return;
+    }
+
     try {
         const editing = Boolean(editingResourceId);
+        const payload = {
+                    resource_id: editing ? editingResourceId : id,
+                    name: $("newResourceName")?.value.trim() || "",
+                    resource_type_id: type,
+                    location_id: location,
+                    organization_id: selectedOrganizationId(),
+                    visibility: $("newResourceVisibility")?.value || "PRIVATE",
+                    public_name: $("newResourcePublicName")?.value.trim() || "",
+                    public_description: $("newResourcePublicDescription")?.value.trim() || "",
+                    public_contact: $("newResourcePublicContact")?.value.trim() || "",
+                    show_availability: $("newResourceShowAvailability")?.checked === true,
+                    attributes: readAttributeValues("resourceAttributeFields"),
+                    quantity_unit: quantityFields.unit
+        };
+        if (editing) {
+            payload.quantity_unit = quantityFields.unit;
+        } else {
+            payload.tracking_mode = "QUANTITY";
+            payload.quantity_total = quantityFields.quantity;
+            payload.quantity_unit = quantityFields.unit;
+        }
         const response = await fetch(
             RESOURCES_API_URL,
             {
@@ -6833,20 +6907,7 @@ async function registerResource() {
 
                     },
 
-                    body: JSON.stringify({
-                    resource_id: editing ? editingResourceId : id,
-                    name: $("newResourceName")?.value.trim() || "",
-                    resource_type_id: type,
-                    location_id: location,
-                    organization_id: selectedOrganizationId(),
-                    visibility: $("newResourceVisibility")?.value || "PRIVATE",
-                    public_name: $("newResourcePublicName")?.value.trim() || "",
-                    public_description: $("newResourcePublicDescription")?.value.trim() || "",
-                    public_contact: $("newResourcePublicContact")?.value.trim() || "",
-                    show_availability: $("newResourceShowAvailability")?.checked === true,
-                    attributes: readAttributeValues("resourceAttributeFields"),
-                    ...(editing ? {} : { Available: true })
-                })
+                    body: JSON.stringify(payload)
             }
         );
 
@@ -6874,6 +6935,15 @@ async function registerResource() {
         $("newResourceId").readOnly = false;
         $("newResourceType").value = "";
         $("newResourceLocation").value = "";
+        if ($("newResourceQuantity")) {
+            $("newResourceQuantity").value = "1";
+            $("newResourceQuantity").readOnly = false;
+        }
+        if ($("newResourceQuantityUnit")) {
+            $("newResourceQuantityUnit").value = "UNITS";
+            $("newResourceQuantityUnit").disabled = false;
+        }
+        setResourceQuantityError("");
 
         await loadResources();
 
@@ -7765,6 +7835,20 @@ function resourceEditDelegatedClick(event) {
     if ($("newResourceType")) {
         $("newResourceType").value = resource.resource_type_id || "";
     }
+
+    if ($("newResourceQuantity")) {
+        const quantity = resource.quantity_total ?? resource.quantity_available ?? 1;
+        $("newResourceQuantity").value = String(quantity);
+        $("newResourceQuantity").readOnly = true;
+    }
+
+    if ($("newResourceQuantityUnit")) {
+        const unit = String(resource.quantity_unit || "UNITS").toUpperCase();
+        $("newResourceQuantityUnit").value = RESOURCE_QUANTITY_UNITS.includes(unit) ? unit : "UNITS";
+        $("newResourceQuantityUnit").disabled = false;
+    }
+
+    setResourceQuantityError("");
 
     if ($("newResourceLocation")) {
         $("newResourceLocation").value = resource.location_id || "";

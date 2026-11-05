@@ -41,6 +41,7 @@ RESOURCE_FIELDS = (
     "operational_status",
     "tracking_mode",
     "quantity_available",
+    "quantity_unit",
     "public_name",
     "public_description",
     "public_contact",
