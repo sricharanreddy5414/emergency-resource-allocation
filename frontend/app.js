@@ -3363,6 +3363,16 @@ function requestRecordStatus(request) {
 }
 
 
+function withoutCreateRequestButtons(markup) {
+
+    return String(markup || "").replace(
+        /<button\b[^>]*>\s*Create\s+Request\s*<\/button>/gi,
+        ""
+    );
+
+}
+
+
 function renderActiveOperations() {
 
     const container = $("activeOperations");
@@ -3385,18 +3395,18 @@ function renderActiveOperations() {
 
     if (!active.length) {
 
-        container.innerHTML = `
+        container.innerHTML = withoutCreateRequestButtons(`
             <div class="ops-empty">
                 <h3>No active operations</h3>
                 <p>No pending or allocated requests are in the loaded results.</p>
             </div>
-        `;
+        `);
 
         return;
 
     }
 
-    container.innerHTML = active.slice(0, 6).map(request => {
+    container.innerHTML = withoutCreateRequestButtons(active.slice(0, 6).map(request => {
         const priority = request.priority ?? request.Priority ?? "—";
         const status = requestRecordStatus(request) || "PENDING";
         const type = request.resource_type ?? request.ResourceType ?? request.request_type ?? "Request";
@@ -3419,7 +3429,7 @@ function renderActiveOperations() {
                 </div>
             </article>
         `;
-    }).join("");
+    }).join(""));
 
 }
 
