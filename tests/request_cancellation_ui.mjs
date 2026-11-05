@@ -68,6 +68,7 @@ const names = [
     "formatResourceType",
     "emergencyStatusLabel",
     "requestRecordStatus",
+    "withoutCreateRequestButtons",
     "renderActiveOperations",
     "renderRequests",
     "syncCancelRequestDialog",
