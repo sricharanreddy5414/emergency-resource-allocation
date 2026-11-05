@@ -492,9 +492,12 @@
             </div>
             <h2>Requests</h2>
             <div id="requestStatusChart" class="analytics-chart">
-                <p class="tally-line"><span>Allocated</span><b>0</b></p>
-                <p class="tally-line"><span>Pending</span><b>0</b></p>
-                <p class="tally-line"><span>Released</span><b>0</b></p>
+                <p class="tally-line"><span>Allocated</span><b id="chartAllocatedRequests">0</b></p>
+                <p class="tally-line"><span>Pending</span><b id="chartPendingRequests">0</b></p>
+                <p class="tally-line"><span>Pending approval</span><b id="chartPendingApprovalRequests">0</b></p>
+                <p class="tally-line"><span>Rejected</span><b id="chartRejectedRequests">0</b></p>
+                <p class="tally-line"><span>Completed</span><b id="chartCompletedRequests">0</b></p>
+                <p class="tally-line"><span>Released</span><b id="chartReleasedRequests">0</b></p>
             </div>
             <h2>Priority</h2>
             <div id="priorityChart" class="analytics-chart"></div>
@@ -1135,8 +1138,14 @@
         <div id="emergencyRequestDetail" class="request-detail hidden" hidden role="region" aria-labelledby="emergencyRequestDetailTitle">
             <h3 id="emergencyRequestDetailTitle">Emergency request</h3>
             <dl id="emergencyRequestDetailFields"></dl>
+            <ol id="emergencyRequestWorkflow" class="ops-timeline" hidden></ol>
+            <label class="signup-field-label" for="emergencyRequestRejectReason" id="emergencyRequestRejectLabel" hidden>Rejection reason</label>
+            <textarea id="emergencyRequestRejectReason" hidden maxlength="500" rows="3"></textarea>
             <p id="emergencyRequestDetailMessage" aria-live="polite"></p>
             <div class="hero-actions">
+                <button class="primary-btn" id="emergencyRequestApproveBtn" type="button" hidden>Approve</button>
+                <button class="secondary-btn" id="emergencyRequestRejectBtn" type="button" hidden>Reject</button>
+                <button class="primary-btn" id="emergencyRequestCompleteBtn" type="button" hidden>Complete</button>
                 <button class="secondary-btn" id="emergencyRequestDetailList" type="button">Back to request list</button>
                 <button class="secondary-btn" id="emergencyRequestDetailNotifications" type="button">Back to notifications</button>
             </div>
@@ -1173,6 +1182,14 @@
             Cancelled
         </option>
 
+        <option value="REJECTED">
+            Rejected
+        </option>
+
+        <option value="COMPLETED">
+            Completed
+        </option>
+
     </select>
 
 </div>
@@ -1186,7 +1203,9 @@
 
                     <tr>
                         <th>Request</th>
+                        <th>Resource</th>
                         <th>Request Type</th>
+                        <th>Quantity</th>
                         <th>Location</th>
                         <th>Priority</th>
                         <th>Status</th>
@@ -1199,7 +1218,7 @@
                 <tbody id="requestsTable">
 
                     <tr>
-                        <td colspan="7">
+                        <td colspan="9">
                             Loading requests...
                         </td>
                     </tr>
@@ -2787,6 +2806,21 @@
                     <p id="modalRequestedQuantityUnit" class="quantity-unit-label">Units</p>
                 </div>
                 <p id="modalRequestedQuantityError" class="field-error" hidden></p>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label for="modalRequestDescription">
+                    Description
+                </label>
+
+                <textarea
+                    id="modalRequestDescription"
+                    maxlength="500"
+                    rows="2"
+                ></textarea>
 
             </div>
 

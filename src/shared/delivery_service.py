@@ -407,6 +407,18 @@ def dispatch_delivery(organization_id, actor_sub, actor_role, delivery_id, body)
     item["status"] = STATUS_DISPATCHED
     item["dispatch_at"] = utc_now()
     saved = _save(item, actor_sub, actor_role, "delivery.dispatched", from_status)
+    try:
+        from emergency_notify import notify_delivery_dispatched
+
+        notify_delivery_dispatched(
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            request_id=saved.get("request_id") or "",
+            allocation_id=saved.get("allocation_id") or "",
+            resource_id=saved.get("resource_id") or "",
+        )
+    except Exception:
+        pass
     return {"message": "Delivery dispatched", "delivery": detail_view(saved)}
 
 
@@ -464,6 +476,18 @@ def confirm_receipt(organization_id, actor_sub, actor_role, delivery_id, body):
     complete = received + damaged + missing == dispatched and missing == 0 and damaged == 0 and received == dispatched
     item["status"] = STATUS_RECEIVED if complete else STATUS_PARTIALLY_RECEIVED
     saved = _save(item, actor_sub, actor_role, "delivery.receipt_confirmed", from_status)
+    try:
+        from emergency_notify import notify_delivery_received
+
+        notify_delivery_received(
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            request_id=saved.get("request_id") or "",
+            allocation_id=saved.get("allocation_id") or "",
+            resource_id=saved.get("resource_id") or "",
+        )
+    except Exception:
+        pass
     return {"message": "Receipt confirmed", "delivery": detail_view(saved)}
 
 

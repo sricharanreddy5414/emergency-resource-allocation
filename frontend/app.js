@@ -2379,14 +2379,197 @@ function renderEmergencyRequestDetail(state) {
     const priority = request.priority ?? request.Priority ?? "";
     const status = String(request.status ?? request.Status ?? "");
     const createdAt = request.CreatedAt ?? request.created_at ?? "";
-    details.innerHTML = `
+        const resourceId = request.resource_id || "";
+        const quantity = request.quantity_requested;
+        const unit = request.quantity_unit || "";
+        const review = String(request.review_status || "").toUpperCase();
+        const description = request.description || "";
+        const quantities = state.quantities || {};
+        const allocation = state.allocation;
+        const deliveries = state.deliveries || [];
+        const events = request.workflow_events || [];
+        details.innerHTML = `
         <dt>Request</dt><dd>${escapeHtml(requestId)}</dd>
+        <dt>Resource</dt><dd>${escapeHtml(resourceId || "—")}</dd>
         <dt>Request type</dt><dd>${formatResourceType(resourceType)}</dd>
+        <dt>Organization</dt><dd>${escapeHtml(request.organization_id || "—")}</dd>
+        <dt>Requested quantity</dt><dd>${escapeHtml(quantity == null || quantity === "" ? "—" : String(quantity) + (unit ? " " + unit : ""))}</dd>
+        <dt>Allocated quantity</dt><dd>${escapeHtml(quantities.quantity_allocated == null ? "—" : String(quantities.quantity_allocated))}</dd>
+        <dt>Remaining quantity</dt><dd>${escapeHtml(quantities.quantity_remaining == null ? "—" : String(quantities.quantity_remaining))}</dd>
         <dt>Location</dt><dd>${escapeHtml(location || "—")}</dd>
         <dt>Priority</dt><dd>${escapeHtml(priority === "" ? "—" : "P" + priority)}</dd>
+        <dt>Description</dt><dd>${escapeHtml(description || "—")}</dd>
+        <dt>Review</dt><dd>${escapeHtml(emergencyStatusLabel(review || "PENDING_REVIEW"))}</dd>
         <dt>Status</dt><dd>${escapeHtml(emergencyStatusLabel(status))}</dd>
-        <dt>Created</dt><dd>${escapeHtml(createdAt || "—")}</dd>`;
-    message.textContent = "";
+        <dt>Created</dt><dd>${escapeHtml(createdAt || "—")}</dd>
+        <dt>Allocation</dt><dd>${escapeHtml(allocation ? (allocation.allocation_id + " · " + (allocation.status || "")) : "None")}</dd>
+        <dt>Delivery</dt><dd>${escapeHtml(deliveries.length ? deliveries.map(row => (row.delivery_id || "") + " · " + (row.status || "")).join("; ") : "None")}</dd>
+        <dt>Receipt</dt><dd>${escapeHtml(quantities.quantity_received == null ? "—" : String(quantities.quantity_received))}</dd>
+        <dt>Rejection reason</dt><dd>${escapeHtml(request.rejection_reason || "—")}</dd>
+        <dt>Completed</dt><dd>${escapeHtml(request.completed_at || "—")}</dd>`;
+    const history = $("emergencyRequestWorkflow");
+    if (history) {
+        history.hidden = !events.length;
+        history.innerHTML = events.map(entry => `
+            <li>
+                <strong>${escapeHtml(entry.event || "")}</strong>
+                <span>${escapeHtml(entry.detail || "")}</span>
+                <em>${escapeHtml(entry.at || "")}</em>
+            </li>
+        `).join("");
+    }
+    const pendingReview = (review === "PENDING_REVIEW" || !review) && status === "PENDING";
+    const canOperate = typeof canOperateResources === "function" && canOperateResources();
+    const approveBtn = $("emergencyRequestApproveBtn");
+    const rejectBtn = $("emergencyRequestRejectBtn");
+    const completeBtn = $("emergencyRequestCompleteBtn");
+    const rejectReason = $("emergencyRequestRejectReason");
+    const rejectLabel = $("emergencyRequestRejectLabel");
+    if (approveBtn) {
+        approveBtn.hidden = !(canOperate && pendingReview);
+        approveBtn.dataset.requestId = requestId;
+    }
+    if (rejectBtn) {
+        rejectBtn.hidden = !(canOperate && pendingReview);
+        rejectBtn.dataset.requestId = requestId;
+    }
+    if (rejectReason) {
+        rejectReason.hidden = !(canOperate && pendingReview);
+    }
+    if (rejectLabel) {
+        rejectLabel.hidden = !(canOperate && pendingReview);
+    }
+    if (completeBtn) {
+        const receiptDone = deliveries.some(row => {
+            const deliveryStatus = String(row.status || "").toUpperCase();
+            return deliveryStatus === "RECEIVED" || deliveryStatus === "HANDOVER_COMPLETED";
+        });
+        completeBtn.hidden = !(canOperate && status === "ALLOCATED" && receiptDone);
+        completeBtn.dataset.requestId = requestId;
+    }
+    message.textContent = state.partial_allocation_supported === false
+        ? "Partial allocation is not supported. A request is allocated in full or left pending."
+        : "";
+}
+
+let requestReviewInFlight = false;
+
+async function postEmergencyRequestAction(path, body) {
+    const idToken = await waitForIdToken();
+    if (!idToken) {
+        throw new Error("Sign in again to continue.");
+    }
+    const response = await fetch(REQUESTS_API_URL + path, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + idToken
+        },
+        body: JSON.stringify(body)
+    });
+    const raw = await response.text();
+    let data = {};
+    try {
+        data = raw ? JSON.parse(raw) : {};
+    } catch (_error) {
+        data = {};
+    }
+    if (!response.ok) {
+        throw new Error(getApiMessage(data) || "The request action could not be completed.");
+    }
+    return data;
+}
+
+async function submitEmergencyRequestReview(decision) {
+    const requestId = $("emergencyRequestApproveBtn")?.dataset.requestId
+        || $("emergencyRequestRejectBtn")?.dataset.requestId
+        || "";
+    if (!requestId || requestReviewInFlight) {
+        return;
+    }
+    const message = $("emergencyRequestDetailMessage");
+    if (decision === "REJECTED") {
+        const reason = $("emergencyRequestRejectReason")?.value.trim() || "";
+        if (reason.length < 3) {
+            if (message) {
+                message.textContent = "Enter a rejection reason.";
+            }
+            return;
+        }
+        if (!window.confirm("Reject this request? The request will be kept as rejected.")) {
+            return;
+        }
+        requestReviewInFlight = true;
+        try {
+            await postEmergencyRequestAction("/reject", {
+                request_id: requestId,
+                organization_id: selectedOrganizationId(),
+                reason
+            });
+            if (message) {
+                message.textContent = "Request rejected.";
+            }
+            await loadRequests();
+            await loadEmergencyRequestDetail(requestId);
+        } catch (error) {
+            if (message) {
+                message.textContent = error.message || "Request could not be rejected.";
+            }
+        } finally {
+            requestReviewInFlight = false;
+        }
+        return;
+    }
+    if (!window.confirm("Approve this request? Approval does not allocate inventory.")) {
+        return;
+    }
+    requestReviewInFlight = true;
+    try {
+        await postEmergencyRequestAction("/approve", {
+            request_id: requestId,
+            organization_id: selectedOrganizationId()
+        });
+        if (message) {
+            message.textContent = "Request approved. Inventory is unchanged until allocation.";
+        }
+        await loadRequests();
+        await loadEmergencyRequestDetail(requestId);
+    } catch (error) {
+        if (message) {
+            message.textContent = error.message || "Request could not be approved.";
+        }
+    } finally {
+        requestReviewInFlight = false;
+    }
+}
+
+async function submitEmergencyRequestComplete() {
+    const requestId = $("emergencyRequestCompleteBtn")?.dataset.requestId || "";
+    const message = $("emergencyRequestDetailMessage");
+    if (!requestId || requestReviewInFlight) {
+        return;
+    }
+    if (!window.confirm("Complete this request after confirmed receipt?")) {
+        return;
+    }
+    requestReviewInFlight = true;
+    try {
+        await postEmergencyRequestAction("/complete", {
+            request_id: requestId,
+            organization_id: selectedOrganizationId()
+        });
+        if (message) {
+            message.textContent = "Request completed.";
+        }
+        await loadRequests();
+        await loadEmergencyRequestDetail(requestId);
+    } catch (error) {
+        if (message) {
+            message.textContent = error.message || "Request could not be completed.";
+        }
+    } finally {
+        requestReviewInFlight = false;
+    }
 }
 
 function emergencyRequestReadUrl(requestId) {
@@ -2438,7 +2621,14 @@ async function loadEmergencyRequestDetail(requestId) {
             renderEmergencyRequestDetail({ mode: "error", message: "That request is not available." });
             return;
         }
-        renderEmergencyRequestDetail({ mode: "ready", request });
+        renderEmergencyRequestDetail({
+            mode: "ready",
+            request,
+            allocation: payload.allocation,
+            deliveries: payload.deliveries || [],
+            quantities: payload.quantities || {},
+            partial_allocation_supported: payload.partial_allocation_supported
+        });
     } catch (_error) {
         renderEmergencyRequestDetail({ mode: "error", message: "Unable to load this request." });
     }
@@ -3163,7 +3353,7 @@ async function loadRequests(options) {
 
             table.innerHTML = `
                 <tr>
-                    <td colspan="7">
+                    <td colspan="9">
                         Loading requests...
                     </td>
                 </tr>
@@ -3290,7 +3480,7 @@ async function loadRequests(options) {
 
             table.innerHTML = `
                 <tr>
-                    <td colspan="7">
+                    <td colspan="9">
                         Unable to load requests from AWS.
                     </td>
                 </tr>
@@ -3342,6 +3532,30 @@ function emergencyStatusLabel(status) {
     if (value === "CANCELLED") {
 
         return "Cancelled";
+
+    }
+
+    if (value === "REJECTED") {
+
+        return "Rejected";
+
+    }
+
+    if (value === "COMPLETED") {
+
+        return "Completed";
+
+    }
+
+    if (value === "PENDING_REVIEW") {
+
+        return "Pending approval";
+
+    }
+
+    if (value === "APPROVED") {
+
+        return "Approved";
 
     }
 
@@ -3573,7 +3787,7 @@ function renderRequests() {
 
         table.innerHTML = `
             <tr>
-                <td colspan="7">
+                <td colspan="9">
                     ${escapeHtml(message + continuation)}
                 </td>
             </tr>
@@ -3616,6 +3830,13 @@ const createdAt =
     request.createdAt ??
     "-";
 
+        const resourceId = request.resource_id || "—";
+        const requestedQty = request.quantity_requested;
+        const requestedUnit = request.quantity_unit || "";
+        const quantityLabel = requestedQty == null || requestedQty === ""
+            ? "—"
+            : String(requestedQty) + (requestedUnit ? " " + requestedUnit : "");
+        const review = String(request.review_status || "").toUpperCase();
 
         let statusClass = "status-badge";
 
@@ -3635,6 +3856,14 @@ const createdAt =
 
             statusClass += " status-cancelled";
 
+        } else if (status === "REJECTED") {
+
+            statusClass += " status-cancelled";
+
+        } else if (status === "COMPLETED") {
+
+            statusClass += " status-allocated";
+
         }
 
         const statusLabel = emergencyStatusLabel(status);
@@ -3645,6 +3874,10 @@ const createdAt =
         const cancelAction = canCancel
             ? `<button class="secondary-btn js-cancel-request" type="button" data-request-id="${escapeHtml(requestId)}" aria-label="Cancel pending request ${escapeHtml(requestId)}"${requestCancelInFlight ? " disabled" : ""}>${cancelLabel}</button>`
             : "";
+        const viewAction = requestId !== "—"
+            ? `<button class="secondary-btn js-view-request" type="button" data-view-request-id="${escapeHtml(requestId)}">View</button>`
+            : "";
+        const reviewLabel = review ? emergencyStatusLabel(review) : "";
 
         return `
             <tr class="${high.trim()}">
@@ -3656,7 +3889,16 @@ const createdAt =
                 </td>
 
                 <td>
+                    ${escapeHtml(resourceId)}
+                </td>
+
+                <td>
                     ${formatResourceType(resourceType)}
+                    ${reviewLabel ? `<div class="cell-meta">${escapeHtml(reviewLabel)}</div>` : ""}
+                </td>
+
+                <td>
+                    ${escapeHtml(quantityLabel)}
                 </td>
 
                 <td>
@@ -3680,6 +3922,7 @@ const createdAt =
                 </td>
 
                 <td>
+                    ${viewAction}
                     ${cancelAction}
                 </td>
 
@@ -3783,9 +4026,18 @@ function initializeRequestControls() {
 
     document.getElementById("emergencyRequestDetailNotifications")
         ?.addEventListener("click", () => navigateTo("notifications"));
+    $("emergencyRequestApproveBtn")?.addEventListener("click", () => submitEmergencyRequestReview("APPROVED"));
+    $("emergencyRequestRejectBtn")?.addEventListener("click", () => submitEmergencyRequestReview("REJECTED"));
+    $("emergencyRequestCompleteBtn")?.addEventListener("click", submitEmergencyRequestComplete);
 
     document.getElementById("requestsTable")
         ?.addEventListener("click", event => {
+
+            const viewButton = event.target.closest(".js-view-request");
+            if (viewButton) {
+                loadEmergencyRequestDetail(viewButton.getAttribute("data-view-request-id"));
+                return;
+            }
 
             const button = event.target.closest(".js-cancel-request");
 
@@ -4304,6 +4556,19 @@ function updateAnalytics() {
                 requestRecordStatus(request) === "CANCELLED"
         ).length;
 
+    const pendingApprovalRequests =
+        requests.filter(
+            request =>
+                requestRecordStatus(request) === "PENDING" &&
+                String(request.review_status || "PENDING_REVIEW").toUpperCase() === "PENDING_REVIEW"
+        ).length;
+
+    const rejectedRequests =
+        requests.filter(request => requestRecordStatus(request) === "REJECTED").length;
+
+    const completedRequests =
+        requests.filter(request => requestRecordStatus(request) === "COMPLETED").length;
+
 
     if ($("analyticsTotalRequests")) {
         $("analyticsTotalRequests")
@@ -4328,6 +4593,18 @@ function updateAnalytics() {
             .textContent =
             releasedRequests;
     }
+
+    const setText = (id, value) => {
+        if ($(id)) {
+            $(id).textContent = value;
+        }
+    };
+    setText("chartAllocatedRequests", allocatedRequests);
+    setText("chartPendingRequests", pendingRequests);
+    setText("chartPendingApprovalRequests", pendingApprovalRequests);
+    setText("chartRejectedRequests", rejectedRequests);
+    setText("chartCompletedRequests", completedRequests);
+    setText("chartReleasedRequests", releasedRequests);
 
     const availableBar = $("readinessAvailableBar");
 
@@ -9217,6 +9494,7 @@ async function submitRequestModal(event) {
                 resource_id: quantityFields.resourceId,
                 quantity_requested: quantityFields.quantity,
                 quantity_unit: quantityFields.unit,
+                description: $("modalRequestDescription")?.value.trim() || "",
                 attributes: readAttributeValues("modalRequestAttributes")
             })
         });

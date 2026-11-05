@@ -32,10 +32,13 @@ from resource_state import (
     EMERGENCY_CLAIM_CONDITION,
     ResourceStateError,
     emergency_matchable,
+    normalize_quantity_unit,
     normalize_tracking_mode,
     quantity_snapshot,
 )
 from api_views import allocation_view, request_view
+from delivery_model import detail_view
+from request_lifecycle import allocation_review_allowed, quantity_summary
 from observability import begin_request, error_body, load_object, log_result
 from delivery_handler import handle_delivery, is_delivery_path
 
@@ -75,6 +78,14 @@ def allocations_table():
     import boto3
 
     return boto3.resource("dynamodb").Table("Allocations")
+
+
+def deliveries_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("DELIVERIES_TABLE", "Deliveries"))
 
 
 def history_table():
@@ -230,13 +241,51 @@ def emergency_request_read_id(path):
     return match.group(1)
 
 
+def _related_allocation(request_id, organization_id):
+    try:
+        item = allocations_table().get_item(Key={"allocation_id": "ALLOC-" + request_id}).get("Item")
+    except Exception:
+        return None
+    if not item or item.get("organization_id") != organization_id:
+        return None
+    return item
+
+
+def _related_deliveries(organization_id, request_id, allocation_id):
+    try:
+        rows = query_by_organization(deliveries_table(), organization_id)
+    except Exception:
+        return []
+    matched = []
+    for row in rows:
+        if allocation_id and row.get("allocation_id") == allocation_id:
+            matched.append(row)
+        elif row.get("request_id") == request_id:
+            matched.append(row)
+    return matched
+
+
 def read_emergency_request(request_id, organization_id):
     """Read one owned emergency request. Missing and other-org rows are not found."""
     if not REQUEST_ID_PATTERN.fullmatch(str(request_id or "")):
         return response(400, {"message": "Request ID is invalid"})
     item = requests_table().get_item(Key={"request_id": request_id}).get("Item")
     owned = require_owned(item, organization_id)
-    return response(200, {"message": "Request retrieved successfully", "request": request_view(owned)})
+    allocation = _related_allocation(request_id, organization_id)
+    deliveries = _related_deliveries(
+        organization_id, request_id, (allocation or {}).get("allocation_id")
+    )
+    return response(
+        200,
+        {
+            "message": "Request retrieved successfully",
+            "request": request_view(owned),
+            "allocation": allocation_view(allocation) if allocation else None,
+            "deliveries": [detail_view(row) for row in deliveries],
+            "quantities": quantity_summary(owned, allocation, deliveries),
+            "partial_allocation_supported": False,
+        },
+    )
 
 
 def lambda_handler(event, context):
@@ -550,6 +599,8 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
 
     if str(existing.get("Status", "")).upper() != "PENDING":
         return response(409, {"message": "Request is not eligible for allocation"})
+    if not allocation_review_allowed(existing):
+        return response(409, {"message": "Request is not approved for allocation"})
 
     if existing.get("location_id") != location["location_id"]:
         return response(409, {"message": "Request location does not match"})
@@ -574,6 +625,13 @@ def allocate(body, organization_id, actor_sub="", actor_role=""):
                 return response(400, {"message": "Requested quantity is invalid"})
             if claim_quantity > snapshot["quantity_available"]:
                 return response(404, {"message": "No suitable resource available", "request_id": request_id})
+            try:
+                request_unit = normalize_quantity_unit(existing.get("quantity_unit") or resource.get("quantity_unit"))
+                resource_unit = normalize_quantity_unit(resource.get("quantity_unit") or existing.get("quantity_unit"))
+            except ResourceStateError:
+                return response(400, {"message": "Quantity unit is invalid"})
+            if request_unit and resource_unit and request_unit != resource_unit:
+                return response(409, {"message": "Quantity unit does not match the resource"})
             quantity_claim = True
         elif not emergency_matchable(resource):
             return response(404, {"message": "No suitable resource available", "request_id": request_id})

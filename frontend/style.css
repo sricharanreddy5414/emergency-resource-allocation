@@ -976,6 +976,12 @@ header.topbar #locationSwitcher option {
     border-radius: 8px;
 }
 
+#emergencyRequestRejectReason,
+#modalRequestDescription {
+    width: 100%;
+    max-width: 36rem;
+}
+
 .allocation-preview h3,
 .request-detail h3 {
     margin: 0 0 8px;

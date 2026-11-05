@@ -4,12 +4,37 @@ from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
 
-from access import REQUEST_ROLES, AccessError, access_body, authorize, require_location, require_owned
+from access import (
+    OPERATE_ROLES,
+    REQUEST_ROLES,
+    AccessError,
+    access_body,
+    authorize,
+    query_by_organization,
+    require_location,
+    require_owned,
+)
 from attributes import validate_attributes
 from audit import build_audit_event, record_audit
 from common import ALLOWED_ORIGIN, dumps_json
 from api_views import request_view
-from emergency_notify import notify_request_cancelled, notify_request_created
+from emergency_notify import (
+    notify_request_approved,
+    notify_request_cancelled,
+    notify_request_completed,
+    notify_request_created,
+    notify_request_rejected,
+)
+from request_lifecycle import (
+    REVIEW_APPROVED,
+    REVIEW_PENDING,
+    REVIEW_REJECTED,
+    append_workflow_event,
+    normalize_description,
+    receipt_allows_completion,
+    utc_now,
+)
+from transitions import can_complete_request, can_reject_request
 from observability import begin_request, error_body, load_object, log_event, log_result
 from resource_state import (
     ResourceStateError,
@@ -72,6 +97,40 @@ def resources_table():
     import boto3
 
     return boto3.resource("dynamodb").Table(os.environ.get("RESOURCES_TABLE", "Resources"))
+
+
+def allocations_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table("Allocations")
+
+
+def deliveries_table():
+    import os
+
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ.get("DELIVERIES_TABLE", "Deliveries"))
+
+
+def _require_operator(role):
+    if str(role or "").upper() not in OPERATE_ROLES:
+        raise AccessError(403, "You are not allowed to perform this action")
+
+
+def _notify_safe(operation, organization_id, request_id, callback):
+    try:
+        callback()
+    except Exception as error:
+        log_event(
+            "ERROR",
+            "requests",
+            operation,
+            "notification_failed",
+            organization_id=organization_id,
+            request_id=request_id,
+            error=error.__class__.__name__,
+        )
 
 
 def _positive_int(value, label):
@@ -213,6 +272,198 @@ def cancel_request(organization_id, actor_sub, actor_role, request_id):
     return response(200, {"message": "Request cancelled", "request": request_view(updated)})
 
 
+def _related_deliveries(organization_id, request_id, allocation_id):
+    try:
+        rows = query_by_organization(deliveries_table(), organization_id)
+    except Exception:
+        return []
+    matched = []
+    for row in rows:
+        if allocation_id and row.get("allocation_id") == allocation_id:
+            matched.append(row)
+        elif row.get("request_id") == request_id:
+            matched.append(row)
+    return matched
+
+
+def review_request(organization_id, actor_sub, actor_role, request_id, decision, reason=""):
+    _require_operator(actor_role)
+    if not request_id:
+        return response(400, {"message": "Request ID is required"})
+    current = requests_table().get_item(Key={"request_id": request_id}).get("Item")
+    require_owned(current, organization_id)
+    if str(current.get("Status", "")).upper() != "PENDING":
+        return response(409, {"message": "Request is not eligible for review"})
+    if str(current.get("review_status") or "").upper() not in {"", REVIEW_PENDING}:
+        return response(409, {"message": "Request is not eligible for review"})
+    created_by = str(current.get("created_by") or "")
+    if created_by and created_by == actor_sub:
+        return response(403, {"message": "Reviewers cannot approve or reject their own requests"})
+
+    approved = str(decision or "").upper() == "APPROVED"
+    if approved:
+        new_review = REVIEW_APPROVED
+        new_status = "PENDING"
+        action = "request.approve"
+        message = "Request approved"
+        event_name = "APPROVED"
+    else:
+        if not can_reject_request(current.get("Status")):
+            return response(409, {"message": "Request is not eligible for review"})
+        reason_text = str(reason or "").strip()
+        if len(reason_text) < 3:
+            return response(400, {"message": "Rejection reason is required"})
+        new_review = REVIEW_REJECTED
+        new_status = "REJECTED"
+        action = "request.reject"
+        message = "Request rejected"
+        event_name = "REJECTED"
+
+    names = {"#status": "Status"}
+    values = {
+        ":review": new_review,
+        ":reviewed_at": utc_now(),
+        ":events": append_workflow_event(current, event_name, actor_sub, reason if not approved else "Approved"),
+        ":organization_id": organization_id,
+        ":pending": "PENDING",
+        ":status": new_status,
+        ":pending_review": REVIEW_PENDING,
+    }
+    assignments = [
+        "review_status = :review",
+        "review_at = :reviewed_at",
+        "workflow_events = :events",
+        "#status = :status",
+    ]
+    condition = (
+        "organization_id = :organization_id AND #status = :pending "
+        "AND (attribute_not_exists(review_status) OR review_status = :pending_review)"
+    )
+    if not approved:
+        values[":reason"] = str(reason).strip()[:500]
+        assignments.append("rejection_reason = :reason")
+
+    try:
+        requests_table().update_item(
+            Key={"request_id": request_id},
+            UpdateExpression="SET " + ", ".join(assignments),
+            ConditionExpression=condition,
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code")
+        if code != "ConditionalCheckFailedException":
+            raise
+        return response(409, {"message": "Request is not eligible for review"})
+
+    updated = dict(current)
+    updated["review_status"] = new_review
+    updated["review_at"] = values[":reviewed_at"]
+    updated["workflow_events"] = values[":events"]
+    updated["Status"] = new_status
+    if not approved:
+        updated["rejection_reason"] = values[":reason"]
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            action,
+            "request",
+            request_id,
+            location_id=current.get("location_id") or "",
+        ),
+    )
+    notify_fn = notify_request_approved if approved else notify_request_rejected
+    _notify_safe(
+        action,
+        organization_id,
+        request_id,
+        lambda: notify_fn(
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            request_id=request_id,
+            resource_type=current.get("ResourceType") or "",
+            location=current.get("Location") or "",
+        ),
+    )
+    return response(200, {"message": message, "request": request_view(updated)})
+
+
+def complete_request(organization_id, actor_sub, actor_role, request_id):
+    _require_operator(actor_role)
+    if not request_id:
+        return response(400, {"message": "Request ID is required"})
+    current = requests_table().get_item(Key={"request_id": request_id}).get("Item")
+    require_owned(current, organization_id)
+    if not can_complete_request(current.get("Status")):
+        return response(409, {"message": "Request is not eligible for completion"})
+    allocation_id = "ALLOC-" + request_id
+    try:
+        allocation = allocations_table().get_item(Key={"allocation_id": allocation_id}).get("Item")
+    except Exception:
+        allocation = None
+    if not allocation or allocation.get("organization_id") != organization_id:
+        return response(409, {"message": "Allocation is required before completion"})
+    if str(allocation.get("status") or "").upper() != "ALLOCATED":
+        return response(409, {"message": "Allocation is not eligible for completion"})
+    deliveries = _related_deliveries(organization_id, request_id, allocation_id)
+    if not receipt_allows_completion(deliveries):
+        return response(409, {"message": "Receipt confirmation is required before completion"})
+    completed_at = utc_now()
+    events = append_workflow_event(current, "COMPLETED", actor_sub, "Receipt confirmed")
+    try:
+        requests_table().update_item(
+            Key={"request_id": request_id},
+            UpdateExpression="SET #status = :completed, completed_at = :completed_at, workflow_events = :events",
+            ConditionExpression="organization_id = :organization_id AND #status = :allocated",
+            ExpressionAttributeNames={"#status": "Status"},
+            ExpressionAttributeValues={
+                ":completed": "COMPLETED",
+                ":completed_at": completed_at,
+                ":events": events,
+                ":organization_id": organization_id,
+                ":allocated": "ALLOCATED",
+            },
+        )
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code")
+        if code != "ConditionalCheckFailedException":
+            raise
+        return response(409, {"message": "Request is not eligible for completion"})
+    updated = dict(current)
+    updated["Status"] = "COMPLETED"
+    updated["completed_at"] = completed_at
+    updated["workflow_events"] = events
+    record_audit(
+        audit_table(),
+        build_audit_event(
+            organization_id,
+            actor_sub,
+            actor_role,
+            "request.complete",
+            "request",
+            request_id,
+            location_id=current.get("location_id") or "",
+        ),
+    )
+    _notify_safe(
+        "request.complete",
+        organization_id,
+        request_id,
+        lambda: notify_request_completed(
+            organization_id=organization_id,
+            actor_sub=actor_sub,
+            request_id=request_id,
+            resource_type=current.get("ResourceType") or "",
+            location=current.get("Location") or "",
+        ),
+    )
+    return response(200, {"message": "Request completed", "request": request_view(updated)})
+
+
 def update_request(proposed, organization_id, actor_sub, actor_role, request_id):
     """Update the fields PUT /requests already changes, only while the request is pending.
 
@@ -339,8 +590,24 @@ def lambda_handler(event, context):
         organization_id = membership["organization_id"]
         request_id = str(body.get("request_id", "")).strip()
 
-        if method == "POST" and request_path(event).rstrip("/").endswith("/requests/cancel"):
+        path = request_path(event).rstrip("/")
+        if method == "POST" and path.endswith("/requests/cancel"):
             return cancel_request(organization_id, _user_sub, membership.get("role"), request_id)
+        if method == "POST" and path.endswith("/requests/approve"):
+            return review_request(
+                organization_id, _user_sub, membership.get("role"), request_id, "APPROVED"
+            )
+        if method == "POST" and path.endswith("/requests/reject"):
+            return review_request(
+                organization_id,
+                _user_sub,
+                membership.get("role"),
+                request_id,
+                "REJECTED",
+                str(body.get("reason") or body.get("rejection_reason") or ""),
+            )
+        if method == "POST" and path.endswith("/requests/complete"):
+            return complete_request(organization_id, _user_sub, membership.get("role"), request_id)
 
         request_type_id = str(body.get("request_type_id") or "").strip()
         resource_type = str(body.get("resource_type", "")).strip().upper()
@@ -382,7 +649,13 @@ def lambda_handler(event, context):
             "Priority": priority,
             "Status": "PENDING",
             "CreatedAt": datetime.now(timezone.utc).isoformat(),
+            "created_by": _user_sub,
+            "review_status": REVIEW_PENDING,
+            "workflow_events": append_workflow_event({}, "SUBMITTED", _user_sub, "Request created"),
         }
+        description = normalize_description(body.get("description") or body.get("notes"))
+        if description:
+            item["description"] = description
 
         if request_type:
             item["request_type_id"] = request_type["request_type_id"]

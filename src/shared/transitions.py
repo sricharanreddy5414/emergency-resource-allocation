@@ -1,10 +1,12 @@
 """Allowed operational state changes."""
 
 REQUEST_TRANSITIONS = {
-    "PENDING": {"ALLOCATED", "CANCELLED"},
-    "ALLOCATED": {"RELEASED"},
+    "PENDING": {"ALLOCATED", "CANCELLED", "REJECTED"},
+    "ALLOCATED": {"RELEASED", "COMPLETED"},
     "RELEASED": set(),
     "CANCELLED": set(),
+    "REJECTED": set(),
+    "COMPLETED": set(),
 }
 
 ALLOCATION_TRANSITIONS = {
@@ -35,6 +37,14 @@ def can_release_request(status):
 
 def can_release_allocation(status):
     return can_transition(status, "RELEASED", ALLOCATION_TRANSITIONS)
+
+
+def can_reject_request(status):
+    return can_transition(status, "REJECTED", REQUEST_TRANSITIONS)
+
+
+def can_complete_request(status):
+    return can_transition(status, "COMPLETED", REQUEST_TRANSITIONS)
 
 
 def can_allocate_resource(available):

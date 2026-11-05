@@ -24,6 +24,12 @@ REQUEST_FIELDS = (
     "resource_id",
     "quantity_requested",
     "quantity_unit",
+    "description",
+    "review_status",
+    "review_at",
+    "rejection_reason",
+    "workflow_events",
+    "completed_at",
 )
 
 # Fields the resource screens read back: list, edit form, filters, and exchange
