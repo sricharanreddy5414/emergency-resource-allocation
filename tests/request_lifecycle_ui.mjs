@@ -15,7 +15,7 @@ assert.equal(page.includes('id="modalRequestDescription"'), true);
 assert.equal(appSource.includes('REQUESTS_API_URL + "/approve"') || appSource.includes('postEmergencyRequestAction("/approve"'), true);
 assert.equal(appSource.includes('postEmergencyRequestAction("/reject"'), true);
 assert.equal(appSource.includes('postEmergencyRequestAction("/complete"'), true);
-assert.equal(appSource.includes("Partial allocation is not supported"), true);
+assert.equal(appSource.includes("Partial allocation is supported"), true);
 assert.equal(appSource.includes("js-view-request"), true);
 assert.equal(appSource.includes("Approval does not allocate inventory"), true);
 

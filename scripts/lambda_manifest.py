@@ -56,6 +56,8 @@ PACKAGES = {
         **SHARED,
         "notifications.py": "src/shared/notifications.py",
         "emergency_notify.py": "src/shared/emergency_notify.py",
+        "transitions.py": "src/shared/transitions.py",
+        "request_lifecycle.py": "src/shared/request_lifecycle.py",
         "lambda_function.py": "src/request/handler.py",
     },
     "emergency-resource-allocation": {
@@ -63,6 +65,8 @@ PACKAGES = {
         "emergency_page_token.py": "src/shared/emergency_page_token.py",
         "notifications.py": "src/shared/notifications.py",
         "emergency_notify.py": "src/shared/emergency_notify.py",
+        "transitions.py": "src/shared/transitions.py",
+        "request_lifecycle.py": "src/shared/request_lifecycle.py",
         "delivery_model.py": "src/shared/delivery_model.py",
         "delivery_service.py": "src/shared/delivery_service.py",
         "delivery_handler.py": "src/shared/delivery_handler.py",

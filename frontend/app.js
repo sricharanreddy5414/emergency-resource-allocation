@@ -2447,8 +2447,9 @@ function renderEmergencyRequestDetail(state) {
         completeBtn.hidden = !(canOperate && status === "ALLOCATED" && receiptDone);
         completeBtn.dataset.requestId = requestId;
     }
-    message.textContent = state.partial_allocation_supported === false
-        ? "Partial allocation is not supported. A request is allocated in full or left pending."
+    const remaining = quantities.quantity_remaining;
+    message.textContent = remaining != null && Number(remaining) > 0
+        ? `Remaining quantity: ${remaining}. Partial allocation is supported for quantity resources.`
         : "";
 }
 
@@ -3547,6 +3548,12 @@ function emergencyStatusLabel(status) {
 
     }
 
+    if (value === "PARTIALLY_ALLOCATED") {
+
+        return "Partially allocated";
+
+    }
+
     if (value === "PENDING_REVIEW") {
 
         return "Pending approval";
@@ -3863,6 +3870,10 @@ const createdAt =
         } else if (status === "COMPLETED") {
 
             statusClass += " status-allocated";
+
+        } else if (status === "PARTIALLY_ALLOCATED") {
+
+            statusClass += " status-pending";
 
         }
 
@@ -4569,6 +4580,9 @@ function updateAnalytics() {
     const completedRequests =
         requests.filter(request => requestRecordStatus(request) === "COMPLETED").length;
 
+    const partiallyAllocatedRequests =
+        requests.filter(request => requestRecordStatus(request) === "PARTIALLY_ALLOCATED").length;
+
 
     if ($("analyticsTotalRequests")) {
         $("analyticsTotalRequests")
@@ -4605,6 +4619,7 @@ function updateAnalytics() {
     setText("chartRejectedRequests", rejectedRequests);
     setText("chartCompletedRequests", completedRequests);
     setText("chartReleasedRequests", releasedRequests);
+    setText("chartPartialRequests", partiallyAllocatedRequests);
 
     const availableBar = $("readinessAvailableBar");
 

@@ -6,6 +6,7 @@ must not undo that write.
 
 from notifications import (
     EVENT_EMERGENCY_ALLOCATION_CREATED,
+    EVENT_EMERGENCY_ALLOCATION_PARTIAL,
     EVENT_EMERGENCY_ALLOCATION_RELEASED,
     EVENT_EMERGENCY_DELIVERY_DISPATCHED,
     EVENT_EMERGENCY_DELIVERY_RECEIVED,
@@ -160,6 +161,37 @@ def notify_allocation_created(
 ):
     _emit(
         EVENT_EMERGENCY_ALLOCATION_CREATED,
+        allocation_id,
+        organization_id,
+        actor_sub,
+        _payload(
+            request_id=request_id,
+            allocation_id=allocation_id,
+            resource_id=resource_id,
+            resource_type=resource_type,
+            location=location,
+        ),
+        table=table,
+        members=members,
+        organizations=organizations,
+    )
+
+
+def notify_allocation_partial(
+    *,
+    organization_id,
+    actor_sub,
+    request_id,
+    allocation_id,
+    resource_id="",
+    resource_type="",
+    location="",
+    table=None,
+    members=None,
+    organizations=None,
+):
+    _emit(
+        EVENT_EMERGENCY_ALLOCATION_PARTIAL,
         allocation_id,
         organization_id,
         actor_sub,

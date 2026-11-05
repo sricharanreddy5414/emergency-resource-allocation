@@ -52,11 +52,13 @@ def quantity_summary(request, allocation=None, deliveries=None):
     except (TypeError, ValueError):
         requested_n = None
     allocated_n = None
-    if allocation and allocation.get("quantity") is not None:
-        try:
+    try:
+        if request.get("quantity_fulfilled") is not None:
+            allocated_n = int(request.get("quantity_fulfilled"))
+        elif allocation and allocation.get("quantity") is not None:
             allocated_n = int(allocation.get("quantity"))
-        except (TypeError, ValueError):
-            allocated_n = None
+    except (TypeError, ValueError):
+        allocated_n = None
     delivered_n = None
     received_n = None
     for row in deliveries or []:
@@ -72,8 +74,8 @@ def quantity_summary(request, allocation=None, deliveries=None):
             pass
     remaining = None
     if requested_n is not None:
-        used = received_n if received_n is not None else allocated_n
-        remaining = requested_n - used if used is not None else requested_n
+        used = allocated_n if allocated_n is not None else 0
+        remaining = requested_n - used
     return {
         "quantity_requested": requested_n,
         "quantity_allocated": allocated_n,

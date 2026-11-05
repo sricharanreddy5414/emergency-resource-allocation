@@ -24,6 +24,7 @@ REQUEST_FIELDS = (
     "resource_id",
     "quantity_requested",
     "quantity_unit",
+    "quantity_fulfilled",
     "description",
     "review_status",
     "review_at",

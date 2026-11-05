@@ -35,6 +35,7 @@ EVENT_EMERGENCY_REQUEST_CANCELLED = "emergency.request.cancelled"
 EVENT_EMERGENCY_REQUEST_APPROVED = "emergency.request.approved"
 EVENT_EMERGENCY_REQUEST_REJECTED = "emergency.request.rejected"
 EVENT_EMERGENCY_ALLOCATION_CREATED = "emergency.allocation.created"
+EVENT_EMERGENCY_ALLOCATION_PARTIAL = "emergency.allocation.partial"
 EVENT_EMERGENCY_ALLOCATION_RELEASED = "emergency.allocation.released"
 EVENT_EMERGENCY_DELIVERY_DISPATCHED = "emergency.delivery.dispatched"
 EVENT_EMERGENCY_DELIVERY_RECEIVED = "emergency.delivery.received"
@@ -46,6 +47,7 @@ EMERGENCY_EVENT_CODES = {
     EVENT_EMERGENCY_REQUEST_APPROVED,
     EVENT_EMERGENCY_REQUEST_REJECTED,
     EVENT_EMERGENCY_ALLOCATION_CREATED,
+    EVENT_EMERGENCY_ALLOCATION_PARTIAL,
     EVENT_EMERGENCY_ALLOCATION_RELEASED,
     EVENT_EMERGENCY_DELIVERY_DISPATCHED,
     EVENT_EMERGENCY_DELIVERY_RECEIVED,
@@ -104,6 +106,10 @@ COPY = {
     EVENT_EMERGENCY_ALLOCATION_CREATED: (
         "Resource allocated",
         "An available resource was allocated to an emergency request.",
+    ),
+    EVENT_EMERGENCY_ALLOCATION_PARTIAL: (
+        "Partial allocation",
+        "Available quantity was allocated; the request still has remaining quantity.",
     ),
     EVENT_EMERGENCY_ALLOCATION_RELEASED: (
         "Allocation released",

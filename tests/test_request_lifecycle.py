@@ -245,8 +245,31 @@ def test_unapproved_request_is_not_allocated(monkeypatch):
     assert requests.items[0]["Status"] == "PENDING"
 
 
+def test_complete_rejects_partially_allocated_request(monkeypatch):
+    bind_request(monkeypatch, pending_request(Status="PARTIALLY_ALLOCATED", review_status=REVIEW_APPROVED, quantity_fulfilled=2))
+    result = request_handler.lambda_handler(
+        event("/requests/complete", {"request_id": "REQ-L1", "organization_id": ORG}),
+        None,
+    )
+    assert result["statusCode"] == 409
+    assert "Remaining quantity" in body_of(result)["message"]
+
+
+def test_complete_is_idempotent_when_already_completed(monkeypatch):
+    table = bind_request(monkeypatch, pending_request(Status="COMPLETED", review_status=REVIEW_APPROVED))
+    result = request_handler.lambda_handler(
+        event("/requests/complete", {"request_id": "REQ-L1", "organization_id": ORG}),
+        None,
+    )
+    assert result["statusCode"] == 200
+    assert table.item["Status"] == "COMPLETED"
+
+
 def test_complete_requires_receipt(monkeypatch):
-    table = bind_request(monkeypatch, pending_request(Status="ALLOCATED", review_status=REVIEW_APPROVED))
+    table = bind_request(
+        monkeypatch,
+        pending_request(Status="ALLOCATED", review_status=REVIEW_APPROVED, quantity_fulfilled=4),
+    )
     monkeypatch.setattr(
         request_handler,
         "allocations_table",
@@ -257,6 +280,7 @@ def test_complete_requires_receipt(monkeypatch):
                     "organization_id": ORG,
                     "status": "ALLOCATED",
                     "request_id": "REQ-L1",
+                    "quantity": 4,
                 }
             ]
         ),

@@ -31,6 +31,7 @@ from request_lifecycle import (
     REVIEW_REJECTED,
     append_workflow_event,
     normalize_description,
+    quantity_summary,
     receipt_allows_completion,
     utc_now,
 )
@@ -398,6 +399,11 @@ def complete_request(organization_id, actor_sub, actor_role, request_id):
         return response(400, {"message": "Request ID is required"})
     current = requests_table().get_item(Key={"request_id": request_id}).get("Item")
     require_owned(current, organization_id)
+    current_status = str(current.get("Status") or "").upper()
+    if current_status == "COMPLETED":
+        return response(200, {"message": "Request completed", "request": request_view(current)})
+    if current_status == "PARTIALLY_ALLOCATED":
+        return response(409, {"message": "Remaining quantity must be allocated before completion"})
     if not can_complete_request(current.get("Status")):
         return response(409, {"message": "Request is not eligible for completion"})
     allocation_id = "ALLOC-" + request_id
@@ -412,6 +418,10 @@ def complete_request(organization_id, actor_sub, actor_role, request_id):
     deliveries = _related_deliveries(organization_id, request_id, allocation_id)
     if not receipt_allows_completion(deliveries):
         return response(409, {"message": "Receipt confirmation is required before completion"})
+    summary = quantity_summary(current, allocation, deliveries)
+    remaining = summary.get("quantity_remaining")
+    if remaining is not None and remaining > 0:
+        return response(409, {"message": "Remaining quantity must be allocated before completion"})
     completed_at = utc_now()
     events = append_workflow_event(current, "COMPLETED", actor_sub, "Receipt confirmed")
     try:

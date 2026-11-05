@@ -473,8 +473,46 @@ def test_quantity_allocation_cannot_exceed_available(monkeypatch):
     world = AllocationWorld(quantity_resource(quantity_available=2, quantity_allocated=8), quantity_request())
     world.bind(monkeypatch)
     status, body = world.allocate()
+    assert status == 200
+    assert body["status"] == "PARTIALLY_ALLOCATED"
+    assert body["quantity"] == 2
+    assert body["quantity_remaining"] == 2
+    assert world.resources.items[0]["quantity_available"] == 0
+    assert world.resources.items[0]["quantity_allocated"] == 10
+    assert world.requests.items[0]["Status"] == "PARTIALLY_ALLOCATED"
+    assert world.requests.items[0]["quantity_fulfilled"] == 2
+    assert world.allocations.items[0]["quantity"] == 2
+
+
+def test_quantity_allocation_rejects_zero_available(monkeypatch):
+    world = AllocationWorld(quantity_resource(quantity_available=0, quantity_allocated=10), quantity_request())
+    world.bind(monkeypatch)
+    status, body = world.allocate()
     assert status == 404
     assert body["message"] == "No suitable resource available"
-    assert world.resources.items[0]["quantity_available"] == 2
     assert world.allocations.items == []
     assert world.requests.items[0]["Status"] == "PENDING"
+
+
+def test_quantity_partial_then_remaining_allocation(monkeypatch):
+    world = AllocationWorld(quantity_resource(quantity_available=2, quantity_allocated=8), quantity_request())
+    world.bind(monkeypatch)
+    first, body = world.allocate()
+    assert first == 200
+    assert body["status"] == "PARTIALLY_ALLOCATED"
+    world.resources.items[0]["quantity_available"] = 5
+    world.resources.items[0]["quantity_allocated"] = 5
+    world.resources.items[0]["quantity_reserved"] = 0
+    world.resources.items[0]["quantity_total"] = 10
+    second, filled = world.allocate()
+    assert second == 200
+    assert filled["status"] == "ALLOCATED"
+    assert filled["quantity"] == 4
+    assert filled["quantity_remaining"] == 0
+    assert world.requests.items[0]["Status"] == "ALLOCATED"
+    assert world.requests.items[0]["quantity_fulfilled"] == 4
+    assert world.allocations.items[0]["quantity"] == 4
+    assert len(world.allocations.items) == 1
+    third, retry = world.allocate()
+    assert third == 409
+    assert world.resources.items[0]["quantity_available"] == 3

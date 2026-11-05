@@ -1,7 +1,8 @@
 """Allowed operational state changes."""
 
 REQUEST_TRANSITIONS = {
-    "PENDING": {"ALLOCATED", "CANCELLED", "REJECTED"},
+    "PENDING": {"ALLOCATED", "PARTIALLY_ALLOCATED", "CANCELLED", "REJECTED"},
+    "PARTIALLY_ALLOCATED": {"ALLOCATED", "PARTIALLY_ALLOCATED"},
     "ALLOCATED": {"RELEASED", "COMPLETED"},
     "RELEASED": set(),
     "CANCELLED": set(),
@@ -24,7 +25,8 @@ def can_transition(current, target, transitions):
 
 
 def can_allocate_request(status):
-    return can_transition(status, "ALLOCATED", REQUEST_TRANSITIONS)
+    current = _normalized(status)
+    return current in {"PENDING", "PARTIALLY_ALLOCATED"}
 
 
 def can_cancel_request(status):
