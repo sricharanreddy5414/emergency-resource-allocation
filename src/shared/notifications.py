@@ -32,14 +32,26 @@ EVENT_REQUEST_EXPIRED = "exchange.request.expired"
 EVENT_RESERVATION_EXPIRED = "resource.reservation.expired"
 EVENT_EMERGENCY_REQUEST_CREATED = "emergency.request.created"
 EVENT_EMERGENCY_REQUEST_CANCELLED = "emergency.request.cancelled"
+EVENT_EMERGENCY_REQUEST_APPROVED = "emergency.request.approved"
+EVENT_EMERGENCY_REQUEST_REJECTED = "emergency.request.rejected"
 EVENT_EMERGENCY_ALLOCATION_CREATED = "emergency.allocation.created"
+EVENT_EMERGENCY_ALLOCATION_PARTIAL = "emergency.allocation.partial"
 EVENT_EMERGENCY_ALLOCATION_RELEASED = "emergency.allocation.released"
+EVENT_EMERGENCY_DELIVERY_DISPATCHED = "emergency.delivery.dispatched"
+EVENT_EMERGENCY_DELIVERY_RECEIVED = "emergency.delivery.received"
+EVENT_EMERGENCY_REQUEST_COMPLETED = "emergency.request.completed"
 
 EMERGENCY_EVENT_CODES = {
     EVENT_EMERGENCY_REQUEST_CREATED,
     EVENT_EMERGENCY_REQUEST_CANCELLED,
+    EVENT_EMERGENCY_REQUEST_APPROVED,
+    EVENT_EMERGENCY_REQUEST_REJECTED,
     EVENT_EMERGENCY_ALLOCATION_CREATED,
+    EVENT_EMERGENCY_ALLOCATION_PARTIAL,
     EVENT_EMERGENCY_ALLOCATION_RELEASED,
+    EVENT_EMERGENCY_DELIVERY_DISPATCHED,
+    EVENT_EMERGENCY_DELIVERY_RECEIVED,
+    EVENT_EMERGENCY_REQUEST_COMPLETED,
 }
 
 COPY = {
@@ -95,9 +107,33 @@ COPY = {
         "Resource allocated",
         "An available resource was allocated to an emergency request.",
     ),
+    EVENT_EMERGENCY_ALLOCATION_PARTIAL: (
+        "Partial allocation",
+        "Available quantity was allocated; the request still has remaining quantity.",
+    ),
     EVENT_EMERGENCY_ALLOCATION_RELEASED: (
         "Allocation released",
         "An emergency allocation was released and the resource is available again.",
+    ),
+    EVENT_EMERGENCY_REQUEST_APPROVED: (
+        "Emergency request approved",
+        "An emergency request was approved and is eligible for allocation.",
+    ),
+    EVENT_EMERGENCY_REQUEST_REJECTED: (
+        "Emergency request rejected",
+        "An emergency request was rejected.",
+    ),
+    EVENT_EMERGENCY_DELIVERY_DISPATCHED: (
+        "Allocation dispatched",
+        "An allocated resource was marked dispatched.",
+    ),
+    EVENT_EMERGENCY_DELIVERY_RECEIVED: (
+        "Delivery receipt confirmed",
+        "Receipt was confirmed for a dispatched allocation.",
+    ),
+    EVENT_EMERGENCY_REQUEST_COMPLETED: (
+        "Emergency request completed",
+        "An emergency request was completed after receipt.",
     ),
 }
 

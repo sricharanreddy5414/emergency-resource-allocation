@@ -95,9 +95,19 @@ def owned_request():
     }
 
 
+class EmptyTable:
+    def get_item(self, Key):
+        return {}
+
+    def query(self, **kwargs):
+        return {"Items": []}
+
+
 def bind(monkeypatch, rows):
     table = RequestTable(rows)
     monkeypatch.setattr(allocation, "requests_table", lambda: table)
+    monkeypatch.setattr(allocation, "allocations_table", lambda: EmptyTable())
+    monkeypatch.setattr(allocation, "deliveries_table", lambda: EmptyTable())
     return table
 
 

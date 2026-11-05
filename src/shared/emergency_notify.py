@@ -6,9 +6,15 @@ must not undo that write.
 
 from notifications import (
     EVENT_EMERGENCY_ALLOCATION_CREATED,
+    EVENT_EMERGENCY_ALLOCATION_PARTIAL,
     EVENT_EMERGENCY_ALLOCATION_RELEASED,
+    EVENT_EMERGENCY_DELIVERY_DISPATCHED,
+    EVENT_EMERGENCY_DELIVERY_RECEIVED,
+    EVENT_EMERGENCY_REQUEST_APPROVED,
     EVENT_EMERGENCY_REQUEST_CANCELLED,
+    EVENT_EMERGENCY_REQUEST_COMPLETED,
     EVENT_EMERGENCY_REQUEST_CREATED,
+    EVENT_EMERGENCY_REQUEST_REJECTED,
     emit_notification_event,
 )
 
@@ -77,6 +83,69 @@ def notify_request_cancelled(
     )
 
 
+def _request_notice(event_code):
+    def notify(
+        *,
+        organization_id,
+        actor_sub,
+        request_id,
+        resource_type="",
+        location="",
+        table=None,
+        members=None,
+        organizations=None,
+    ):
+        _emit(
+            event_code,
+            request_id,
+            organization_id,
+            actor_sub,
+            _payload(request_id=request_id, resource_type=resource_type, location=location),
+            table=table,
+            members=members,
+            organizations=organizations,
+        )
+
+    return notify
+
+
+notify_request_approved = _request_notice(EVENT_EMERGENCY_REQUEST_APPROVED)
+notify_request_rejected = _request_notice(EVENT_EMERGENCY_REQUEST_REJECTED)
+notify_request_completed = _request_notice(EVENT_EMERGENCY_REQUEST_COMPLETED)
+
+
+def notify_delivery_event(
+    event_code,
+    *,
+    organization_id,
+    actor_sub,
+    request_id,
+    allocation_id="",
+    resource_id="",
+    table=None,
+    members=None,
+    organizations=None,
+):
+    _emit(
+        event_code,
+        allocation_id or request_id,
+        organization_id,
+        actor_sub,
+        _payload(request_id=request_id, allocation_id=allocation_id, resource_id=resource_id),
+        table=table,
+        members=members,
+        organizations=organizations,
+    )
+
+
+def notify_delivery_dispatched(**kwargs):
+    notify_delivery_event(EVENT_EMERGENCY_DELIVERY_DISPATCHED, **kwargs)
+
+
+def notify_delivery_received(**kwargs):
+    notify_delivery_event(EVENT_EMERGENCY_DELIVERY_RECEIVED, **kwargs)
+
+
 def notify_allocation_created(
     *,
     organization_id,
@@ -92,6 +161,37 @@ def notify_allocation_created(
 ):
     _emit(
         EVENT_EMERGENCY_ALLOCATION_CREATED,
+        allocation_id,
+        organization_id,
+        actor_sub,
+        _payload(
+            request_id=request_id,
+            allocation_id=allocation_id,
+            resource_id=resource_id,
+            resource_type=resource_type,
+            location=location,
+        ),
+        table=table,
+        members=members,
+        organizations=organizations,
+    )
+
+
+def notify_allocation_partial(
+    *,
+    organization_id,
+    actor_sub,
+    request_id,
+    allocation_id,
+    resource_id="",
+    resource_type="",
+    location="",
+    table=None,
+    members=None,
+    organizations=None,
+):
+    _emit(
+        EVENT_EMERGENCY_ALLOCATION_PARTIAL,
         allocation_id,
         organization_id,
         actor_sub,

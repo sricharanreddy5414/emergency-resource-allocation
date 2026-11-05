@@ -55,6 +55,12 @@ const names = [
     "recordChangedMessage",
     "syncAllocationRequestHint",
     "canOperateResources",
+    "isQuantityResource",
+    "requestedResourceOptions",
+    "fillRequestResourceSelect",
+    "selectedRequestResource",
+    "updateRequestQuantityHint",
+    "readRequestedQuantityFields",
     "renderRequests",
     "renderAllocations",
     "submitRequestModal",
@@ -120,6 +126,11 @@ element("modalRequestId", { value: "REQ-NEW" });
 element("modalRequestType", { value: "TYPE-1" });
 element("modalLocation", { value: "LOC-1" });
 element("modalPriority", { value: "1" });
+element("modalRequestedResource", { value: "RES-Q" });
+element("modalRequestedQuantity", { value: "1" });
+element("modalRequestedQuantityUnit", { textContent: "UNITS" });
+element("modalRequestedQuantityError");
+element("modalRequestedResourceHint");
 element("requestModal");
 element("requestModalForm");
 
@@ -135,6 +146,9 @@ const context = {
     RELEASE_RESOURCE_API_URL: "https://example.test/allocate/resources/release",
     requests: [],
     allocations: [],
+    resources: [
+        { id: "RES-Q", name: "Water", type: "Water", location_id: "LOC-1", tracking_mode: "QUANTITY", quantity_available: 8, quantity_unit: "LITERS" }
+    ],
     currentUser: { organization: { role: "OPERATOR" } },
     requestCancelInFlight: false,
     requestCreateInFlight: false,

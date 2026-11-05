@@ -105,6 +105,7 @@ def wire(monkeypatch, types, locations=None):
     requests = Store()
     monkeypatch.setattr(request_handler, "requests_table", lambda: requests)
     monkeypatch.setattr(request_handler, "audit_table", lambda: Store())
+    monkeypatch.setattr(request_handler, "resources_table", lambda: Store())
     return requests
 
 

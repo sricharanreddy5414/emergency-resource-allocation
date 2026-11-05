@@ -976,6 +976,12 @@ header.topbar #locationSwitcher option {
     border-radius: 8px;
 }
 
+#emergencyRequestRejectReason,
+#modalRequestDescription {
+    width: 100%;
+    max-width: 36rem;
+}
+
 .allocation-preview h3,
 .request-detail h3 {
     margin: 0 0 8px;
@@ -1179,12 +1185,28 @@ td {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px;
+    align-items: end;
+}
+
+.quantity-unit-label {
+    margin: 0;
+    padding: 6px 0;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .field-error {
     margin: 0;
     color: var(--danger);
     font-size: 13px;
+}
+
+.ops-table .qty-cell {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .modal,

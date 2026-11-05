@@ -265,7 +265,7 @@ def test_quantity_create_persists_quantity_and_unit(monkeypatch):
     assert body["tracking_mode"] == "QUANTITY"
     assert body["quantity_available"] == 6
     assert body["quantity_unit"] == "PACKETS"
-    assert "quantity_total" not in body
+    assert body["quantity_total"] == 6
 
 
 def test_quantity_create_rejects_invalid_unit(monkeypatch):

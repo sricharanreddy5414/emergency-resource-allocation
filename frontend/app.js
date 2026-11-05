@@ -2379,14 +2379,198 @@ function renderEmergencyRequestDetail(state) {
     const priority = request.priority ?? request.Priority ?? "";
     const status = String(request.status ?? request.Status ?? "");
     const createdAt = request.CreatedAt ?? request.created_at ?? "";
-    details.innerHTML = `
+        const resourceId = request.resource_id || "";
+        const quantity = request.quantity_requested;
+        const unit = request.quantity_unit || "";
+        const review = String(request.review_status || "").toUpperCase();
+        const description = request.description || "";
+        const quantities = state.quantities || {};
+        const allocation = state.allocation;
+        const deliveries = state.deliveries || [];
+        const events = request.workflow_events || [];
+        details.innerHTML = `
         <dt>Request</dt><dd>${escapeHtml(requestId)}</dd>
+        <dt>Resource</dt><dd>${escapeHtml(resourceId || "—")}</dd>
         <dt>Request type</dt><dd>${formatResourceType(resourceType)}</dd>
+        <dt>Organization</dt><dd>${escapeHtml(request.organization_id || "—")}</dd>
+        <dt>Requested quantity</dt><dd>${escapeHtml(quantity == null || quantity === "" ? "—" : String(quantity) + (unit ? " " + unit : ""))}</dd>
+        <dt>Allocated quantity</dt><dd>${escapeHtml(quantities.quantity_allocated == null ? "—" : String(quantities.quantity_allocated))}</dd>
+        <dt>Remaining quantity</dt><dd>${escapeHtml(quantities.quantity_remaining == null ? "—" : String(quantities.quantity_remaining))}</dd>
         <dt>Location</dt><dd>${escapeHtml(location || "—")}</dd>
         <dt>Priority</dt><dd>${escapeHtml(priority === "" ? "—" : "P" + priority)}</dd>
+        <dt>Description</dt><dd>${escapeHtml(description || "—")}</dd>
+        <dt>Review</dt><dd>${escapeHtml(emergencyStatusLabel(review || "PENDING_REVIEW"))}</dd>
         <dt>Status</dt><dd>${escapeHtml(emergencyStatusLabel(status))}</dd>
-        <dt>Created</dt><dd>${escapeHtml(createdAt || "—")}</dd>`;
-    message.textContent = "";
+        <dt>Created</dt><dd>${escapeHtml(createdAt || "—")}</dd>
+        <dt>Allocation</dt><dd>${escapeHtml(allocation ? (allocation.allocation_id + " · " + (allocation.status || "")) : "None")}</dd>
+        <dt>Delivery</dt><dd>${escapeHtml(deliveries.length ? deliveries.map(row => (row.delivery_id || "") + " · " + (row.status || "")).join("; ") : "None")}</dd>
+        <dt>Receipt</dt><dd>${escapeHtml(quantities.quantity_received == null ? "—" : String(quantities.quantity_received))}</dd>
+        <dt>Rejection reason</dt><dd>${escapeHtml(request.rejection_reason || "—")}</dd>
+        <dt>Completed</dt><dd>${escapeHtml(request.completed_at || "—")}</dd>`;
+    const history = $("emergencyRequestWorkflow");
+    if (history) {
+        history.hidden = !events.length;
+        history.innerHTML = events.map(entry => `
+            <li>
+                <strong>${escapeHtml(entry.event || "")}</strong>
+                <span>${escapeHtml(entry.detail || "")}</span>
+                <em>${escapeHtml(entry.at || "")}</em>
+            </li>
+        `).join("");
+    }
+    const pendingReview = (review === "PENDING_REVIEW" || !review) && status === "PENDING";
+    const canOperate = typeof canOperateResources === "function" && canOperateResources();
+    const approveBtn = $("emergencyRequestApproveBtn");
+    const rejectBtn = $("emergencyRequestRejectBtn");
+    const completeBtn = $("emergencyRequestCompleteBtn");
+    const rejectReason = $("emergencyRequestRejectReason");
+    const rejectLabel = $("emergencyRequestRejectLabel");
+    if (approveBtn) {
+        approveBtn.hidden = !(canOperate && pendingReview);
+        approveBtn.dataset.requestId = requestId;
+    }
+    if (rejectBtn) {
+        rejectBtn.hidden = !(canOperate && pendingReview);
+        rejectBtn.dataset.requestId = requestId;
+    }
+    if (rejectReason) {
+        rejectReason.hidden = !(canOperate && pendingReview);
+    }
+    if (rejectLabel) {
+        rejectLabel.hidden = !(canOperate && pendingReview);
+    }
+    if (completeBtn) {
+        const receiptDone = deliveries.some(row => {
+            const deliveryStatus = String(row.status || "").toUpperCase();
+            return deliveryStatus === "RECEIVED" || deliveryStatus === "HANDOVER_COMPLETED";
+        });
+        completeBtn.hidden = !(canOperate && status === "ALLOCATED" && receiptDone);
+        completeBtn.dataset.requestId = requestId;
+    }
+    const remaining = quantities.quantity_remaining;
+    message.textContent = remaining != null && Number(remaining) > 0
+        ? `Remaining quantity: ${remaining}. Partial allocation is supported for quantity resources.`
+        : "";
+}
+
+let requestReviewInFlight = false;
+
+async function postEmergencyRequestAction(path, body) {
+    const idToken = await waitForIdToken();
+    if (!idToken) {
+        throw new Error("Sign in again to continue.");
+    }
+    const response = await fetch(REQUESTS_API_URL + path, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + idToken
+        },
+        body: JSON.stringify(body)
+    });
+    const raw = await response.text();
+    let data = {};
+    try {
+        data = raw ? JSON.parse(raw) : {};
+    } catch (_error) {
+        data = {};
+    }
+    if (!response.ok) {
+        throw new Error(getApiMessage(data) || "The request action could not be completed.");
+    }
+    return data;
+}
+
+async function submitEmergencyRequestReview(decision) {
+    const requestId = $("emergencyRequestApproveBtn")?.dataset.requestId
+        || $("emergencyRequestRejectBtn")?.dataset.requestId
+        || "";
+    if (!requestId || requestReviewInFlight) {
+        return;
+    }
+    const message = $("emergencyRequestDetailMessage");
+    if (decision === "REJECTED") {
+        const reason = $("emergencyRequestRejectReason")?.value.trim() || "";
+        if (reason.length < 3) {
+            if (message) {
+                message.textContent = "Enter a rejection reason.";
+            }
+            return;
+        }
+        if (!window.confirm("Reject this request? The request will be kept as rejected.")) {
+            return;
+        }
+        requestReviewInFlight = true;
+        try {
+            await postEmergencyRequestAction("/reject", {
+                request_id: requestId,
+                organization_id: selectedOrganizationId(),
+                reason
+            });
+            if (message) {
+                message.textContent = "Request rejected.";
+            }
+            await loadRequests();
+            await loadEmergencyRequestDetail(requestId);
+        } catch (error) {
+            if (message) {
+                message.textContent = error.message || "Request could not be rejected.";
+            }
+        } finally {
+            requestReviewInFlight = false;
+        }
+        return;
+    }
+    if (!window.confirm("Approve this request? Approval does not allocate inventory.")) {
+        return;
+    }
+    requestReviewInFlight = true;
+    try {
+        await postEmergencyRequestAction("/approve", {
+            request_id: requestId,
+            organization_id: selectedOrganizationId()
+        });
+        if (message) {
+            message.textContent = "Request approved. Inventory is unchanged until allocation.";
+        }
+        await loadRequests();
+        await loadEmergencyRequestDetail(requestId);
+    } catch (error) {
+        if (message) {
+            message.textContent = error.message || "Request could not be approved.";
+        }
+    } finally {
+        requestReviewInFlight = false;
+    }
+}
+
+async function submitEmergencyRequestComplete() {
+    const requestId = $("emergencyRequestCompleteBtn")?.dataset.requestId || "";
+    const message = $("emergencyRequestDetailMessage");
+    if (!requestId || requestReviewInFlight) {
+        return;
+    }
+    if (!window.confirm("Complete this request after confirmed receipt?")) {
+        return;
+    }
+    requestReviewInFlight = true;
+    try {
+        await postEmergencyRequestAction("/complete", {
+            request_id: requestId,
+            organization_id: selectedOrganizationId()
+        });
+        if (message) {
+            message.textContent = "Request completed.";
+        }
+        await loadRequests();
+        await loadEmergencyRequestDetail(requestId);
+    } catch (error) {
+        if (message) {
+            message.textContent = error.message || "Request could not be completed.";
+        }
+    } finally {
+        requestReviewInFlight = false;
+    }
 }
 
 function emergencyRequestReadUrl(requestId) {
@@ -2438,7 +2622,14 @@ async function loadEmergencyRequestDetail(requestId) {
             renderEmergencyRequestDetail({ mode: "error", message: "That request is not available." });
             return;
         }
-        renderEmergencyRequestDetail({ mode: "ready", request });
+        renderEmergencyRequestDetail({
+            mode: "ready",
+            request,
+            allocation: payload.allocation,
+            deliveries: payload.deliveries || [],
+            quantities: payload.quantities || {},
+            partial_allocation_supported: payload.partial_allocation_supported
+        });
     } catch (_error) {
         renderEmergencyRequestDetail({ mode: "error", message: "Unable to load this request." });
     }
@@ -3163,7 +3354,7 @@ async function loadRequests(options) {
 
             table.innerHTML = `
                 <tr>
-                    <td colspan="7">
+                    <td colspan="9">
                         Loading requests...
                     </td>
                 </tr>
@@ -3290,7 +3481,7 @@ async function loadRequests(options) {
 
             table.innerHTML = `
                 <tr>
-                    <td colspan="7">
+                    <td colspan="9">
                         Unable to load requests from AWS.
                     </td>
                 </tr>
@@ -3342,6 +3533,36 @@ function emergencyStatusLabel(status) {
     if (value === "CANCELLED") {
 
         return "Cancelled";
+
+    }
+
+    if (value === "REJECTED") {
+
+        return "Rejected";
+
+    }
+
+    if (value === "COMPLETED") {
+
+        return "Completed";
+
+    }
+
+    if (value === "PARTIALLY_ALLOCATED") {
+
+        return "Partially allocated";
+
+    }
+
+    if (value === "PENDING_REVIEW") {
+
+        return "Pending approval";
+
+    }
+
+    if (value === "APPROVED") {
+
+        return "Approved";
 
     }
 
@@ -3573,7 +3794,7 @@ function renderRequests() {
 
         table.innerHTML = `
             <tr>
-                <td colspan="7">
+                <td colspan="9">
                     ${escapeHtml(message + continuation)}
                 </td>
             </tr>
@@ -3616,6 +3837,13 @@ const createdAt =
     request.createdAt ??
     "-";
 
+        const resourceId = request.resource_id || "—";
+        const requestedQty = request.quantity_requested;
+        const requestedUnit = request.quantity_unit || "";
+        const quantityLabel = requestedQty == null || requestedQty === ""
+            ? "—"
+            : String(requestedQty) + (requestedUnit ? " " + requestedUnit : "");
+        const review = String(request.review_status || "").toUpperCase();
 
         let statusClass = "status-badge";
 
@@ -3635,6 +3863,18 @@ const createdAt =
 
             statusClass += " status-cancelled";
 
+        } else if (status === "REJECTED") {
+
+            statusClass += " status-cancelled";
+
+        } else if (status === "COMPLETED") {
+
+            statusClass += " status-allocated";
+
+        } else if (status === "PARTIALLY_ALLOCATED") {
+
+            statusClass += " status-pending";
+
         }
 
         const statusLabel = emergencyStatusLabel(status);
@@ -3645,6 +3885,10 @@ const createdAt =
         const cancelAction = canCancel
             ? `<button class="secondary-btn js-cancel-request" type="button" data-request-id="${escapeHtml(requestId)}" aria-label="Cancel pending request ${escapeHtml(requestId)}"${requestCancelInFlight ? " disabled" : ""}>${cancelLabel}</button>`
             : "";
+        const viewAction = requestId !== "—"
+            ? `<button class="secondary-btn js-view-request" type="button" data-view-request-id="${escapeHtml(requestId)}">View</button>`
+            : "";
+        const reviewLabel = review ? emergencyStatusLabel(review) : "";
 
         return `
             <tr class="${high.trim()}">
@@ -3656,7 +3900,16 @@ const createdAt =
                 </td>
 
                 <td>
+                    ${escapeHtml(resourceId)}
+                </td>
+
+                <td>
                     ${formatResourceType(resourceType)}
+                    ${reviewLabel ? `<div class="cell-meta">${escapeHtml(reviewLabel)}</div>` : ""}
+                </td>
+
+                <td>
+                    ${escapeHtml(quantityLabel)}
                 </td>
 
                 <td>
@@ -3680,6 +3933,7 @@ const createdAt =
                 </td>
 
                 <td>
+                    ${viewAction}
                     ${cancelAction}
                 </td>
 
@@ -3783,9 +4037,18 @@ function initializeRequestControls() {
 
     document.getElementById("emergencyRequestDetailNotifications")
         ?.addEventListener("click", () => navigateTo("notifications"));
+    $("emergencyRequestApproveBtn")?.addEventListener("click", () => submitEmergencyRequestReview("APPROVED"));
+    $("emergencyRequestRejectBtn")?.addEventListener("click", () => submitEmergencyRequestReview("REJECTED"));
+    $("emergencyRequestCompleteBtn")?.addEventListener("click", submitEmergencyRequestComplete);
 
     document.getElementById("requestsTable")
         ?.addEventListener("click", event => {
+
+            const viewButton = event.target.closest(".js-view-request");
+            if (viewButton) {
+                loadEmergencyRequestDetail(viewButton.getAttribute("data-view-request-id"));
+                return;
+            }
 
             const button = event.target.closest(".js-cancel-request");
 
@@ -4304,6 +4567,22 @@ function updateAnalytics() {
                 requestRecordStatus(request) === "CANCELLED"
         ).length;
 
+    const pendingApprovalRequests =
+        requests.filter(
+            request =>
+                requestRecordStatus(request) === "PENDING" &&
+                String(request.review_status || "PENDING_REVIEW").toUpperCase() === "PENDING_REVIEW"
+        ).length;
+
+    const rejectedRequests =
+        requests.filter(request => requestRecordStatus(request) === "REJECTED").length;
+
+    const completedRequests =
+        requests.filter(request => requestRecordStatus(request) === "COMPLETED").length;
+
+    const partiallyAllocatedRequests =
+        requests.filter(request => requestRecordStatus(request) === "PARTIALLY_ALLOCATED").length;
+
 
     if ($("analyticsTotalRequests")) {
         $("analyticsTotalRequests")
@@ -4328,6 +4607,19 @@ function updateAnalytics() {
             .textContent =
             releasedRequests;
     }
+
+    const setText = (id, value) => {
+        if ($(id)) {
+            $(id).textContent = value;
+        }
+    };
+    setText("chartAllocatedRequests", allocatedRequests);
+    setText("chartPendingRequests", pendingRequests);
+    setText("chartPendingApprovalRequests", pendingApprovalRequests);
+    setText("chartRejectedRequests", rejectedRequests);
+    setText("chartCompletedRequests", completedRequests);
+    setText("chartReleasedRequests", releasedRequests);
+    setText("chartPartialRequests", partiallyAllocatedRequests);
 
     const availableBar = $("readinessAvailableBar");
 
@@ -4558,6 +4850,27 @@ function isQuantityResource(
 
     return String(resource.tracking_mode || "INDIVIDUAL").toUpperCase() === "QUANTITY";
 
+}
+
+
+function quantityDisplay(resource, field) {
+    if (!isQuantityResource(resource)) {
+        return "—";
+    }
+    const value = resource[field];
+    if (value == null || value === "") {
+        return "—";
+    }
+    return String(value);
+}
+
+
+function quantityUnitDisplay(resource) {
+    if (!isQuantityResource(resource)) {
+        return "—";
+    }
+    const unit = String(resource.quantity_unit || "").trim();
+    return unit || "—";
 }
 
 
@@ -4860,7 +5173,7 @@ function renderResourcesPage() {
 
             <tr>
 
-                <td colspan="7">
+                <td colspan="12">
                     ${resourceNextPageToken
                         ? "No resources in this page."
                         : "No resources registered. Add a resource for this organization to start allocation."}
@@ -4882,9 +5195,6 @@ function renderResourcesPage() {
             .map(
                 resource => {
 
-                    const emergencyLabel =
-                        getEmergencyAvailabilityLabel(resource);
-
                     const operational =
                         getOperationalStatusLabel(resource);
 
@@ -4897,15 +5207,11 @@ function renderResourcesPage() {
                         <tr data-resource-id="${escapeHtml(resource.id)}">
 
                             <td>
+                                ${escapeHtml(resource.id)}
+                            </td>
 
-                                <div class="cell-title">
-                                    ${escapeHtml(resource.name || resource.type || "Resource")}
-                                </div>
-
-                                <div class="cell-meta">
-                                    ${escapeHtml(resource.id)}
-                                </div>
-
+                            <td>
+                                ${escapeHtml(resource.name || resource.type || "Resource")}
                             </td>
 
                             <td>
@@ -4920,21 +5226,11 @@ function renderResourcesPage() {
                                 )}
                             </td>
 
-                            <td>
-
-                                <span
-                                    class="status-badge ${
-                                        emergencyLabel === "Available"
-                                            ? "available"
-                                            : "allocated"
-                                    }"
-                                >
-
-                                    ${escapeHtml(emergencyLabel)}
-
-                                </span>
-
-                            </td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_total"))}</td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_allocated"))}</td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_reserved"))}</td>
+                            <td class="qty-cell">${escapeHtml(quantityDisplay(resource, "quantity_available"))}</td>
+                            <td>${escapeHtml(quantityUnitDisplay(resource))}</td>
 
                             <td>
 
@@ -8978,11 +9274,135 @@ async function loadRequestTypes() {
 }
 
 
+function requestedResourceOptions() {
+    const locationId = $("modalLocation")?.value || "";
+    return (resources || []).filter(resource => {
+        if (!resource?.id) {
+            return false;
+        }
+        if (locationId && resource.location_id !== locationId) {
+            return false;
+        }
+        return true;
+    });
+}
+
+
+function fillRequestResourceSelect() {
+    const select = $("modalRequestedResource");
+    if (!select) {
+        return;
+    }
+    const previous = select.value;
+    const options = requestedResourceOptions();
+    select.innerHTML = `<option value="">Select resource</option>` + options.map(resource => {
+        const name = resource.name || resource.type || resource.id;
+        const type = resource.type || "Resource";
+        let qty = "individual";
+        if (isQuantityResource(resource)) {
+            const available = resource.quantity_available;
+            const unit = resource.quantity_unit || "UNITS";
+            qty = (available == null || available === "")
+                ? "quantity unavailable"
+                : `${available} ${unit} available`;
+        }
+        return `<option value="${escapeHtml(resource.id)}">${escapeHtml(`${name} · ${type} · ${qty}`)}</option>`;
+    }).join("");
+    if (previous && options.some(resource => resource.id === previous)) {
+        select.value = previous;
+    }
+    updateRequestQuantityHint();
+}
+
+
+function selectedRequestResource() {
+    const resourceId = $("modalRequestedResource")?.value || "";
+    return (resources || []).find(resource => resource.id === resourceId) || null;
+}
+
+
+function updateRequestQuantityHint() {
+    const resource = selectedRequestResource();
+    const hint = $("modalRequestedResourceHint");
+    const unit = $("modalRequestedQuantityUnit");
+    const error = $("modalRequestedQuantityError");
+    if (error) {
+        error.hidden = true;
+        error.textContent = "";
+    }
+    if (!resource) {
+        if (hint) {
+            hint.textContent = "Select a registered resource for this location.";
+        }
+        if (unit) {
+            unit.textContent = "Units";
+        }
+        return;
+    }
+    if (isQuantityResource(resource)) {
+        const available = resource.quantity_available;
+        const label = resource.quantity_unit || "UNITS";
+        if (unit) {
+            unit.textContent = label;
+        }
+        if (hint) {
+            hint.textContent = (available == null || available === "")
+                ? "Available quantity is not in this authorized view."
+                : `${available} ${label} available. Request creation does not reserve inventory.`;
+        }
+        return;
+    }
+    if (unit) {
+        unit.textContent = "Units";
+    }
+    if (hint) {
+        hint.textContent = "Individual resource. Requested quantity must be 1.";
+    }
+}
+
+
+function readRequestedQuantityFields() {
+    const resource = selectedRequestResource();
+    const error = $("modalRequestedQuantityError");
+    const showError = (message) => {
+        if (error) {
+            error.textContent = message;
+            error.hidden = !message;
+        }
+        return null;
+    };
+    if (!resource) {
+        return showError("Select a registered resource.");
+    }
+    const raw = $("modalRequestedQuantity")?.value.trim() || "";
+    const quantity = Number(raw);
+    if (!raw || !Number.isInteger(quantity) || quantity < 1) {
+        return showError("Enter a whole-number quantity of at least 1.");
+    }
+    if (isQuantityResource(resource)) {
+        const available = resource.quantity_available;
+        if (available != null && available !== "" && quantity > Number(available)) {
+            return showError("Requested quantity is more than the available quantity.");
+        }
+        return {
+            resourceId: resource.id,
+            quantity,
+            unit: String(resource.quantity_unit || "UNITS").toUpperCase()
+        };
+    }
+    if (quantity !== 1) {
+        return showError("Individual resources require quantity 1.");
+    }
+    return { resourceId: resource.id, quantity: 1, unit: "UNITS" };
+}
+
+
 function prepareRequestModal() {
 
     fillCatalogSelects();
 
     fillLocationSelect($("modalLocation"));
+    fillRequestResourceSelect();
 
     const result = $("requestModalResult");
 
@@ -9027,6 +9447,7 @@ async function submitRequestModal(event) {
     const requestTypeId = $("modalRequestType")?.value || "";
     const locationId = $("modalLocation")?.value || "";
     const priority = Number($("modalPriority")?.value);
+    const quantityFields = readRequestedQuantityFields();
     const result = $("requestModalResult");
     const button = $("submitRequestModal");
 
@@ -9051,9 +9472,9 @@ async function submitRequestModal(event) {
 
     }
 
-    if (!requestId || !requestTypeId || !locationId || !priority) {
+    if (!requestId || !requestTypeId || !locationId || !priority || !quantityFields) {
 
-        show("Please complete all request fields.", "error");
+        show(quantityFields ? "Please complete all request fields." : ($("modalRequestedQuantityError")?.textContent || "Please complete all request fields."), "error");
 
         return;
 
@@ -9085,6 +9506,10 @@ async function submitRequestModal(event) {
                 location_id: locationId,
                 organization_id: selectedOrganizationId(),
                 priority: priority,
+                resource_id: quantityFields.resourceId,
+                quantity_requested: quantityFields.quantity,
+                quantity_unit: quantityFields.unit,
+                description: $("modalRequestDescription")?.value.trim() || "",
                 attributes: readAttributeValues("modalRequestAttributes")
             })
         });
@@ -12973,6 +13398,8 @@ async function initializeApp() {
     $("newResourceType")?.addEventListener("change", showSelectedTypeAttributes);
     $("resourceType")?.addEventListener("change", showSelectedTypeAttributes);
     $("modalRequestType")?.addEventListener("change", showSelectedTypeAttributes);
+    $("modalLocation")?.addEventListener("change", fillRequestResourceSelect);
+    $("modalRequestedResource")?.addEventListener("change", updateRequestQuantityHint);
     $("saveResourceTypeBtn")?.addEventListener("click", saveResourceType);
     $("saveRequestTypeBtn")?.addEventListener("click", saveRequestType);
     $("resourcesPageVisibilityFilter")?.addEventListener("change", applyResourcePageFilters);
