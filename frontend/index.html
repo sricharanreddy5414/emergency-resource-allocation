@@ -435,14 +435,19 @@
         <div class="desk-kicker">
             <span>Operations</span>
         </div>
-        <h2 id="commandContext" class="sr-only">No organization selected</h2>
+        <h2 class="desk-title">ERAP Operations Dashboard</h2>
+        <h3 id="commandContext" class="sr-only">No organization selected</h3>
         <div class="desk-situation" aria-label="Operational snapshot">
-            <article class="ops-hero">
-                <span id="totalResources">0</span>
-                <em>Registered</em>
-                <p class="ops-hero-caption">Total operations</p>
-            </article>
             <ul class="ops-metric-grid">
+                <li>
+                    <span id="analyticsTotalRequests">0</span>
+                    <em>Total Operations</em>
+                    <p class="ops-hero-caption">Loaded requests</p>
+                </li>
+                <li class="ops-hero">
+                    <span id="totalResources">0</span>
+                    <em>Registered</em>
+                </li>
                 <li>
                     <span id="allocatedResources">0</span>
                     <em>Allocated</em>
@@ -462,7 +467,6 @@
             </ul>
             <p class="sr-only">
                 <span id="analyticsAllocatedRequests">0</span> allocated in loaded results,
-                <span id="analyticsTotalRequests">0</span> loaded requests,
                 pending in loaded results
             </p>
             <div class="spectrum" aria-hidden="true">
@@ -472,7 +476,7 @@
     </header>
 
     <section class="desk-now">
-        <div class="desk-queue">
+        <div class="desk-queue dash-card">
             <div class="desk-head">
                 <h2>Operations now</h2>
                 <button class="primary-btn" id="overviewCreateRequest" type="button">Create request</button>
@@ -484,36 +488,57 @@
                 </div>
             </div>
         </div>
-        <aside class="desk-readiness">
+        <aside class="desk-readiness dash-card">
             <h2>Readiness</h2>
-            <div id="resourceStatusChart" class="analytics-chart">
-                <p class="tally-line"><span>Available</span><b>0</b></p>
-                <p class="tally-line"><span>Allocated</span><b>0</b></p>
+            <div class="readiness-dial" id="readinessDial" style="--ready: 0;">
+                <strong id="readinessPercent">—</strong>
+                <span>Available share of loaded registered resources</span>
+            </div>
+            <h2>Resource status</h2>
+            <div id="resourceStatusChart" class="analytics-chart status-card-grid">
+                <p class="tally-line status-available"><span>Available</span><b>0</b></p>
+                <p class="tally-line status-allocated"><span>Allocated</span><b>0</b></p>
             </div>
             <h2>Requests</h2>
-            <div id="requestStatusChart" class="analytics-chart">
-                <p class="tally-line"><span>Allocated</span><b id="chartAllocatedRequests">0</b></p>
-                <p class="tally-line"><span>Pending</span><b id="chartPendingRequests">0</b></p>
-                <p class="tally-line"><span>Pending approval</span><b id="chartPendingApprovalRequests">0</b></p>
-                <p class="tally-line"><span>Rejected</span><b id="chartRejectedRequests">0</b></p>
-                <p class="tally-line"><span>Completed</span><b id="chartCompletedRequests">0</b></p>
-                <p class="tally-line"><span>Partially allocated</span><b id="chartPartialRequests">0</b></p>
-                <p class="tally-line"><span>Released</span><b id="chartReleasedRequests">0</b></p>
-            </div>
+            <p class="sr-only">Pending approval, rejected, completed, and partially allocated counts come from loaded requests.</p>
+            <div id="requestStatusChart" class="analytics-chart request-bars"></div>
+            <p class="sr-only">
+                <span id="chartAllocatedRequests">0</span>
+                <span id="chartPendingRequests">0</span>
+                <span id="chartPendingApprovalRequests">0</span>
+                <span id="chartRejectedRequests">0</span>
+                <span id="chartCompletedRequests">0</span>
+                <span id="chartPartialRequests">0</span>
+                <span id="chartReleasedRequests">0</span>
+            </p>
             <h2>Priority</h2>
             <div id="priorityChart" class="analytics-chart"></div>
-            <button class="text-action" id="registerResourceBtn" type="button">Register resource</button>
         </aside>
     </section>
 
-    <section class="desk-feed">
-        <div class="desk-head">
-            <h2>Movement</h2>
-            <div class="text-actions">
+    <section class="desk-split">
+        <div class="dash-card">
+            <div class="desk-head">
+                <h2>Recent activity</h2>
+            </div>
+            <div id="recentActivity"></div>
+        </div>
+        <div class="dash-card">
+            <div class="desk-head">
+                <h2>Quick actions</h2>
+            </div>
+            <div class="quick-actions">
+                <button class="text-action" id="registerResourceBtn" type="button">Register resource</button>
                 <button class="text-action" id="refreshDataBtn" type="button">Refresh</button>
                 <button class="text-action" id="viewAllocationsBtn" type="button">Allocations</button>
                 <button class="text-action" id="settingsBtn" type="button">Organization</button>
             </div>
+        </div>
+    </section>
+
+    <section class="desk-feed dash-card">
+        <div class="desk-head">
+            <h2>Movement</h2>
         </div>
         <div id="recentOperations"></div>
     </section>
@@ -2587,7 +2612,7 @@
 
 <footer class="site-footer">
     <erap-logo size="footer"></erap-logo>
-    <span>Emergency resource coordination</span>
+    <span>ERAP · Emergency Resource Allocation Platform</span>
     <a href="legal/terms.html">Terms</a>
     <a href="legal/privacy.html">Privacy</a>
     <a href="legal/cancellation.html">Cancellation</a>
