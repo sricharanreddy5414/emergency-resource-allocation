@@ -89,10 +89,20 @@ const COGNITO_CLIENT_ID =
 
 window.ERAP_COGNITO_CLIENT_ID = COGNITO_CLIENT_ID;
 
-const REDIRECT_URI = window.location.origin;
+const AMPLIFY_ORIGIN =
+    "https://main.d3enpe7opotop5.amplifyapp.com";
 
 const COGNITO_SCOPES =
     "openid aws.cognito.signin.user.admin";
+
+function cognitoRedirectUri() {
+    const origin = String(window.location.origin || AMPLIFY_ORIGIN).replace(/\/$/, "");
+    return origin;
+}
+
+function oauthRedirectUri() {
+    return sessionStorage.getItem("erap_oauth_redirect") || cognitoRedirectUri();
+}
 
 /* =========================================================
    APPLICATION STATE
@@ -362,6 +372,9 @@ async function loginWithCognito() {
             verifier
         );
 
+        const redirectUri = cognitoRedirectUri();
+        sessionStorage.setItem("erap_oauth_redirect", redirectUri);
+
 
         const params =
             new URLSearchParams({
@@ -376,7 +389,7 @@ async function loginWithCognito() {
                     COGNITO_SCOPES,
 
                 redirect_uri:
-                    REDIRECT_URI,
+                    redirectUri,
 
                 code_challenge:
                     challenge,
@@ -471,7 +484,7 @@ async function handleCognitoCallback() {
                     code,
 
                 redirect_uri:
-                    REDIRECT_URI,
+                    oauthRedirectUri(),
 
                 code_verifier:
                     verifier
@@ -533,8 +546,9 @@ async function handleCognitoCallback() {
         window.history.replaceState(
             {},
             document.title,
-            REDIRECT_URI
+            oauthRedirectUri()
         );
+        sessionStorage.removeItem("erap_oauth_redirect");
 
 
         return true;
@@ -1349,7 +1363,7 @@ function logoutFromCognito() {
                 COGNITO_CLIENT_ID,
 
             logout_uri:
-                REDIRECT_URI
+                cognitoRedirectUri()
 
         });
 
@@ -3690,26 +3704,54 @@ function renderRecentOperations() {
         });
     });
 
-    if (!events.length) {
-
-        container.innerHTML = `
+    const emptyMarkup = `
             <div class="ops-empty">
                 <h3>No recent operations</h3>
                 <p>Requests and allocations already loaded for this organization will appear here.</p>
             </div>
         `;
+    const activity = $("recentActivity");
+
+    if (!events.length) {
+
+        container.innerHTML = emptyMarkup;
+        if (activity) {
+            activity.innerHTML = emptyMarkup;
+        }
 
         return;
 
     }
 
-    container.innerHTML = `<ol class="ops-timeline">${events.slice(0, 8).map(event => `
+    const rows = events.slice(0, 8);
+    if (activity) {
+        activity.innerHTML = `<ol class="ops-timeline">${rows.map(event => `
         <li>
             <strong>${escapeHtml(event.title)}</strong>
             <span>${escapeHtml(event.detail)}</span>
             <em>${escapeHtml(event.time)}</em>
         </li>
     `).join("")}</ol>`;
+    }
+
+    container.innerHTML = `<div class="table-container"><table class="ops-table">
+        <thead>
+            <tr>
+                <th>Activity</th>
+                <th>Detail</th>
+                <th>When</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${rows.map(event => `
+                <tr>
+                    <td>${escapeHtml(event.title)}</td>
+                    <td>${escapeHtml(event.detail)}</td>
+                    <td>${escapeHtml(event.time || "—")}</td>
+                </tr>
+            `).join("")}
+        </tbody>
+    </table></div>`;
 
 }
 
@@ -4622,15 +4664,22 @@ function updateAnalytics() {
     setText("chartPartialRequests", partiallyAllocatedRequests);
 
     const availableBar = $("readinessAvailableBar");
+    const width = totalResources
+        ? Math.round((availableResources / totalResources) * 100)
+        : 0;
 
     if (availableBar) {
-
-        const width = totalResources
-            ? Math.round((availableResources / totalResources) * 100)
-            : 0;
-
         availableBar.style.width = width + "%";
+    }
 
+    const dial = $("readinessDial");
+    const percentLabel = $("readinessPercent");
+    if (dial) {
+        dial.style.setProperty("--ready", String(width));
+        dial.classList.toggle("is-empty", !totalResources);
+    }
+    if (percentLabel) {
+        percentLabel.textContent = totalResources ? width + "%" : "—";
     }
 
     renderActiveOperations();
@@ -4678,6 +4727,22 @@ function updateAnalytics() {
             {
                 label: "Pending",
                 value: pendingRequests
+            },
+            {
+                label: "Pending approval",
+                value: pendingApprovalRequests
+            },
+            {
+                label: "Rejected",
+                value: rejectedRequests
+            },
+            {
+                label: "Completed",
+                value: completedRequests
+            },
+            {
+                label: "Partially allocated",
+                value: partiallyAllocatedRequests
             },
             {
                 label: "Released",

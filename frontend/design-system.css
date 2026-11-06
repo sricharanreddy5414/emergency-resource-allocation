@@ -2,23 +2,23 @@
    Paper operations ledger. Ink for structure, color only for state. */
 
 :root {
-    --bg: #efe8dc;
-    --surface: #f7f1e6;
-    --surface-elevated: #fffaf2;
-    --surface-strong: #241f1a;
+    --bg: #f3eadc;
+    --surface: #f7f0e4;
+    --surface-elevated: #fffaf3;
+    --surface-strong: #3a1814;
     --ink: #1c1915;
     --muted: #5e564c;
-    --line: #d9cfc0;
+    --line: #e2d5c4;
     --line-strong: #1c1915;
-    --band: #241f1a;
+    --band: #3a1814;
     --band-text: #f6f1e8;
-    --ready: #1d6a43;
-    --hold: #3e5168;
-    --wait: #8a5a12;
-    --signal: #8d4b24;
+    --ready: #1f7a4d;
+    --hold: #2f5f9a;
+    --wait: #d3542c;
+    --signal: #d3542c;
     --danger: #8f2d24;
-    --info: #3e5168;
-    --focus: #8d4b24;
+    --info: #6b3fa0;
+    --focus: #d3542c;
     --font: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     --space-1: 4px;
     --space-2: 8px;
@@ -27,8 +27,8 @@
     --space-5: 24px;
     --space-6: 32px;
     --space-7: 48px;
-    --radius: 2px;
-    --shadow: 0 18px 40px rgba(28, 25, 21, 0.12);
+    --radius: 14px;
+    --shadow: 0 10px 28px rgba(58, 24, 20, 0.08);
     --motion: 160ms ease;
     --rail: 228px;
 }
@@ -47,7 +47,7 @@ body {
 
 .sidebar {
     background: var(--band);
-    border-right: 1px solid #3a332c;
+    border-right: 1px solid #5a2a24;
 }
 
 .nav-label {
@@ -76,10 +76,21 @@ body {
 .topbar {
     align-items: center;
     margin: 0 0 var(--space-5);
-    padding: var(--space-3) 0 var(--space-4);
-    background: transparent;
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-elevated);
     color: var(--ink);
-    border-bottom: 1px solid var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.topbar .mobile-menu-btn span {
+    background: var(--ink);
+}
+
+.topbar .notification-btn,
+.topbar .profile {
+    color: var(--ink);
 }
 
 .profile {
@@ -272,8 +283,12 @@ header.topbar #locationSwitcher option {
 .primary-btn,
 .allocate-btn,
 .edit-profile-btn {
-    background: var(--ink);
-    border-radius: var(--radius);
+    background: var(--signal);
+    color: #fffaf3;
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-weight: 650;
 }
 
 .secondary-btn,
@@ -347,6 +362,12 @@ tr:hover td {
         overflow: hidden;
     }
 
+    .sidebar-nav {
+        overflow-y: auto;
+        min-height: 0;
+        flex: 1 1 auto;
+    }
+
     .drawer-close,
     .mobile-menu-btn,
     .nav-overlay,
@@ -393,5 +414,197 @@ tr:hover td {
     .nav-item,
     .ops-timeline li::before {
         transition: none;
+    }
+}
+
+.desk-title {
+    max-width: none;
+    margin: 6px 0 18px;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+}
+
+.desk-situation {
+    display: block;
+}
+
+.ops-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.ops-hero,
+.ops-metric-grid li {
+    min-height: 118px;
+    padding: 16px 16px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-elevated);
+    box-shadow: var(--shadow);
+    flex: none;
+}
+
+.ops-hero span,
+.ops-metric-grid span {
+    font-size: 28px;
+}
+
+.ops-metric-grid li:nth-child(1) em { color: var(--ink); }
+.ops-metric-grid li:nth-child(2) em { color: var(--hold); }
+.ops-metric-grid li:nth-child(3) em { color: var(--info); }
+.ops-metric-grid li:nth-child(4) em { color: var(--wait); }
+.ops-metric-grid li:nth-child(5) em { color: var(--muted); }
+.ops-metric-ready em { color: var(--ready); }
+
+.dash-card {
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-elevated);
+    box-shadow: var(--shadow);
+}
+
+.desk-readiness {
+    padding: 16px 18px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-elevated);
+}
+
+.readiness-dial {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 148px;
+    height: 148px;
+    margin: 8px auto 18px;
+    border-radius: 50%;
+    background: conic-gradient(var(--ready) calc(var(--ready) * 1%), #eadccb 0);
+}
+
+.readiness-dial::before {
+    content: "";
+    position: absolute;
+    inset: 18px;
+    border-radius: 50%;
+    background: var(--surface-elevated);
+}
+
+.readiness-dial strong,
+.readiness-dial span {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+}
+
+.readiness-dial strong {
+    font-size: 28px;
+    letter-spacing: -0.04em;
+}
+
+.readiness-dial span {
+    position: absolute;
+    bottom: 28px;
+    left: 18px;
+    right: 18px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.3;
+}
+
+.readiness-dial.is-empty {
+    background: conic-gradient(#eadccb 0 100%);
+}
+
+.status-card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+#resourceStatusChart .tally-line {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+
+#resourceStatusChart .tally-line:first-child {
+    box-shadow: inset 3px 0 0 var(--ready);
+}
+
+#resourceStatusChart .tally-line:last-child {
+    box-shadow: inset 3px 0 0 var(--hold);
+}
+
+#requestStatusChart .tally-line:nth-child(1) .tally-share { background: linear-gradient(90deg, var(--hold) var(--share), var(--line) var(--share)); }
+#requestStatusChart .tally-line:nth-child(2) .tally-share { background: linear-gradient(90deg, var(--wait) var(--share), var(--line) var(--share)); }
+#requestStatusChart .tally-line:nth-child(3) .tally-share { background: linear-gradient(90deg, #c2780a var(--share), var(--line) var(--share)); }
+#requestStatusChart .tally-line:nth-child(4) .tally-share { background: linear-gradient(90deg, var(--danger) var(--share), var(--line) var(--share)); }
+#requestStatusChart .tally-line:nth-child(5) .tally-share { background: linear-gradient(90deg, var(--ready) var(--share), var(--line) var(--share)); }
+#requestStatusChart .tally-line:nth-child(6) .tally-share { background: linear-gradient(90deg, var(--info) var(--share), var(--line) var(--share)); }
+#requestStatusChart .tally-line:nth-child(7) .tally-share { background: linear-gradient(90deg, var(--muted) var(--share), var(--line) var(--share)); }
+
+.desk-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.quick-actions {
+    display: grid;
+    gap: 8px;
+}
+
+.quick-actions .text-action {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    text-align: left;
+}
+
+.desk-feed {
+    margin-top: 16px;
+}
+
+.site-footer {
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 32px;
+    padding: 16px 4px 8px;
+    border-top: 1px solid var(--line);
+}
+
+.allocate-drawer,
+.inventory-log {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-elevated);
+}
+
+@media (max-width: 1100px) {
+    .ops-metric-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .desk-split,
+    .status-card-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ops-metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
