@@ -93,7 +93,28 @@ body {
     color: var(--ink);
 }
 
+header.topbar .topbar-org {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    gap: 16px;
+    width: max-content;
+    max-width: 100%;
+}
+
+header.topbar .topbar-org .context-field {
+    flex: 0 0 10rem;
+    min-width: 10rem;
+}
+
+header.topbar .topbar-right > .context-field {
+    flex: 0 0 10rem;
+    min-width: 10rem;
+}
+
 header.topbar .topbar-text-btn {
+    flex: 0 0 auto;
     align-self: flex-end;
     margin: 0;
     padding: 6px 0;
@@ -162,6 +183,11 @@ header.topbar label.context-field select.context-select,
 header.topbar label.context-field select.context-select:disabled,
 header.topbar #organizationSwitcher,
 header.topbar #locationSwitcher {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     color: var(--ink);
     -webkit-text-fill-color: var(--ink);
     background-color: var(--surface-elevated);
