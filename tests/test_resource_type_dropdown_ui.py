@@ -43,6 +43,7 @@ def test_resource_type_loader_does_not_treat_missing_types_as_empty_success():
     assert "throw catalogLoadError(\"http\")" in loader
     assert "throw catalogLoadError(\"network\")" in loader
     assert "waitForIdToken()" in loader
+    assert "page_token=" in loader
     assert "resourceTypesLoadFailed = true" in resource_loader
     assert "resourceTypesLoading = true" in resource_loader
     assert "await loadCatalog(RESOURCE_TYPES_API_URL)" in resource_loader
@@ -65,3 +66,7 @@ def test_resource_type_management_form_remains():
     assert 'id="resourceTypeName"' in page
     assert "async function saveResourceType(" in app
     assert "await loadResourceTypes();" in app[app.index("async function saveResourceType(") :]
+    save = app[app.index("async function saveResourceType(") : app.index("async function saveRequestType(")]
+    assert "waitForIdToken()" in save
+    assert '$(id).value = ""' in save
+    assert 'id="resourceTypeCatalogHint"' in page
