@@ -9342,27 +9342,43 @@ async function loadCatalog(url) {
         throw catalogLoadError("network");
     }
 
-    let response;
-    try {
-        response = await fetch(url + tenantQuery(), {
-            headers: { "Authorization": "Bearer " + idToken }
-        });
-    } catch (error) {
-        throw catalogLoadError("network");
+    const collected = [];
+    let pageToken = "";
+
+    for (let page = 0; page < 20; page += 1) {
+        const query = tenantQuery();
+        const pageQuery = pageToken
+            ? query + (query ? "&" : "?") + "page_token=" + encodeURIComponent(pageToken)
+            : query;
+
+        let response;
+        try {
+            response = await fetch(url + pageQuery, {
+                headers: { "Authorization": "Bearer " + idToken }
+            });
+        } catch (error) {
+            throw catalogLoadError("network");
+        }
+
+        if (!response.ok) {
+            throw catalogLoadError("http");
+        }
+
+        let data;
+        try {
+            data = await response.json();
+        } catch (error) {
+            throw catalogLoadError("malformed");
+        }
+
+        collected.push(...parseCatalogTypes(data));
+        pageToken = typeof data.next_token === "string" && data.next_token ? data.next_token : "";
+        if (!pageToken) {
+            break;
+        }
     }
 
-    if (!response.ok) {
-        throw catalogLoadError("http");
-    }
-
-    let data;
-    try {
-        data = await response.json();
-    } catch (error) {
-        throw catalogLoadError("malformed");
-    }
-
-    return parseCatalogTypes(data);
+    return collected;
 }
 
 
@@ -9769,15 +9785,27 @@ async function saveResourceType() {
 
     }
 
+    const idToken = await waitForIdToken() || getIdToken();
+
+    if (!idToken) {
+
+        showToast("Cognito ID token is not available.");
+
+        return;
+
+    }
+
+    const name = $("resourceTypeName")?.value.trim() || "";
+
     const response = await fetch(RESOURCE_TYPES_API_URL, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "Authorization": "Bearer " + getIdToken()
+            "Authorization": "Bearer " + idToken
         },
         body: JSON.stringify({
             organization_id: selectedOrganizationId(),
-            name: $("resourceTypeName")?.value.trim() || "",
+            name: name,
             description: $("resourceTypeDescription")?.value.trim() || "",
             category: $("resourceTypeCategory")?.value.trim() || "",
             attributes_schema: parseAttributeSchema($("resourceTypeSchema")?.value || ""),
@@ -9795,7 +9823,13 @@ async function saveResourceType() {
 
     }
 
-    showToast("Resource type saved.");
+    ["resourceTypeName", "resourceTypeDescription", "resourceTypeCategory", "resourceTypeSchema"].forEach(id => {
+        if ($(id)) {
+            $(id).value = "";
+        }
+    });
+
+    showToast(name ? "Resource type saved. Enter another name to add a separate type." : "Resource type saved.");
 
     await loadResourceTypes();
 

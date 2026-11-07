@@ -96,6 +96,10 @@ element("newResourceType", { innerHTML: '<option value="">Select resource type</
 element("newResourceTypeHint");
 element("newResourceCategory", { value: "" });
 element("saveResourceTypeBtn");
+element("resourceTypeName", { value: "Medical supplies" });
+element("resourceTypeDescription");
+element("resourceTypeCategory");
+element("resourceTypeSchema");
 
 let organizationId = "ORG-A";
 let fetchImpl = async () => {
@@ -115,6 +119,8 @@ const context = vm.createContext({
     tenantQuery: () => "?organization_id=ORG-A",
     selectedOrganizationId: () => organizationId,
     canManageCatalog: () => true,
+    showToast: () => {},
+    parseAttributeSchema: () => ({ fields: [] }),
     renderCatalogAdmin: () => {},
     showSelectedTypeAttributes: () => {},
     escapeHtml: undefined,
@@ -133,7 +139,8 @@ vm.runInContext(
         extractFunction(appSource, "parseCatalogTypes"),
         extractFunction(appSource, "fillCatalogSelects"),
         extractFunction(appSource, "loadCatalog"),
-        extractFunction(appSource, "loadResourceTypes")
+        extractFunction(appSource, "loadResourceTypes"),
+        extractFunction(appSource, "saveResourceType")
     ].join("\n"),
     context
 );
@@ -255,5 +262,77 @@ assert.equal(page.includes('id="saveResourceTypeBtn"'), true);
 assert.match(appSource, /async function saveResourceType\(/);
 assert.match(appSource, /method:\s*"POST"/);
 assert.equal(hosts.saveResourceTypeBtn.hidden, false);
+assert.equal(page.includes("id=\"resourceTypeCatalogHint\""), true);
+
+context.resourceTypes = [
+    { resource_type_id: "RT-EE", name: "Emergency equipment", status: "ACTIVE" },
+    { resource_type_id: "RT-MS", name: "Medical supplies", status: "ACTIVE" },
+    { resource_type_id: "RT-VE", name: "Vehicles", status: "ACTIVE" }
+];
+context.resourceTypesLoadFailed = false;
+context.resourceTypesLoading = false;
+context.fillCatalogSelects();
+assert.deepEqual(optionLabels(), ["Select resource type", "Emergency equipment", "Medical supplies", "Vehicles"]);
+hosts.newResourceType.value = "RT-MS";
+context.fillCatalogSelects();
+assert.equal(hosts.newResourceType.value, "RT-MS");
+
+let catalogPages = 0;
+fetchImpl = async (url) => {
+    catalogPages += 1;
+    if (String(url).includes("page_token=page-2")) {
+        return {
+            ok: true,
+            json: async () => ({
+                types: [{ resource_type_id: "RT-FOOD", name: "Food and water", status: "ACTIVE" }],
+                next_token: null
+            })
+        };
+    }
+    return {
+        ok: true,
+        json: async () => ({
+            types: [{ resource_type_id: "RT-EE", name: "Emergency equipment", status: "ACTIVE" }],
+            next_token: "page-2"
+        })
+    };
+};
+await context.loadResourceTypes();
+assert.equal(catalogPages, 2);
+assert.equal(
+    JSON.stringify(context.resourceTypes.map((item) => item.resource_type_id)),
+    JSON.stringify(["RT-EE", "RT-FOOD"])
+);
+assert.deepEqual(optionLabels(), ["Select resource type", "Emergency equipment", "Food and water"]);
+
+let savedBody = null;
+fetchImpl = async (url, options) => {
+    if (options?.method === "POST") {
+        savedBody = JSON.parse(options.body);
+        assert.equal(options.headers.Authorization, "Bearer id-token");
+        return {
+            ok: true,
+            json: async () => ({
+                message: "Resource type created",
+                type: { resource_type_id: "RT-GEN", name: savedBody.name, status: "ACTIVE" }
+            })
+        };
+    }
+    return {
+        ok: true,
+        json: async () => ({
+            types: [
+                { resource_type_id: "RT-EE", name: "Emergency equipment", status: "ACTIVE" },
+                { resource_type_id: "RT-GEN", name: "Generators", status: "ACTIVE" }
+            ],
+            next_token: null
+        })
+    };
+};
+hosts.resourceTypeName.value = "Generators";
+await context.saveResourceType();
+assert.equal(savedBody.name, "Generators");
+assert.equal(hosts.resourceTypeName.value, "");
+assert.deepEqual(optionLabels(), ["Select resource type", "Emergency equipment", "Generators"]);
 
 console.log("resource type dropdown ui passed");
