@@ -70,6 +70,8 @@ clearTenantData = () => {};
 loadResources = async () => {};
 loadRequests = async () => {};
 loadAllocations = async () => {};
+loadResourceTypes = async () => {};
+loadRequestTypes = async () => {};
 
 function heading() {
     return document.getElementById("commandContext").textContent;

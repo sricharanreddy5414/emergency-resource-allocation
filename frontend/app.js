@@ -118,6 +118,8 @@ let allocations = [];
 let tenantContextLoading = false;
 
 let resourceTypes = [];
+let resourceTypesLoadFailed = false;
+let resourceTypesLoading = false;
 
 let requestTypes = [];
 let requestTypesLoadFailed = false;
@@ -7140,6 +7142,12 @@ function prepareNewResourceForm() {
         $("newResourceShowAvailability").checked = false;
     }
 
+    if (selectedOrganizationId() && !resourceTypesLoading && (resourceTypesLoadFailed || !(resourceTypes || []).length)) {
+        loadResourceTypes();
+    } else {
+        fillCatalogSelects();
+    }
+
     showSelectedTypeAttributes();
     openRegisterModal();
 
@@ -9138,13 +9146,49 @@ function fillCatalogSelects() {
     if (resourceSelect) {
 
         const current = resourceSelect.value;
+        const activeTypes = (resourceTypes || []).filter(item =>
+            item &&
+            item.resource_type_id &&
+            String(item.status || "ACTIVE").toUpperCase() === "ACTIVE"
+        );
+        const hint = $("newResourceTypeHint");
 
-        resourceSelect.innerHTML = `<option value="">Select resource type</option>` +
-            resourceTypes.filter(item => item.status === "ACTIVE").map(item =>
-                `<option value="${escapeHtml(item.resource_type_id)}">${escapeHtml(item.name)}</option>`
-            ).join("");
+        if (!selectedOrganizationId()) {
+            resourceSelect.innerHTML = `<option value="">Select an organization first</option>`;
+            resourceSelect.disabled = false;
+            if (hint) {
+                hint.textContent = "Resource types load for the selected organization.";
+            }
+        } else if (resourceTypesLoading) {
+            resourceSelect.innerHTML = `<option value="">Loading resource types</option>`;
+            resourceSelect.disabled = true;
+            if (hint) {
+                hint.textContent = "Loading resource types for this organization.";
+            }
+        } else if (resourceTypesLoadFailed) {
+            resourceSelect.innerHTML = `<option value="">Unable to load resource types</option>`;
+            resourceSelect.disabled = false;
+            if (hint) {
+                hint.textContent = "Resource types could not be loaded. Try again after the organization is selected.";
+            }
+        } else if (!activeTypes.length) {
+            resourceSelect.innerHTML = `<option value="">No resource types in this organization</option>`;
+            resourceSelect.disabled = false;
+            if (hint) {
+                hint.textContent = "Add a resource type in Management before registering a resource. Do not invent types here.";
+            }
+        } else {
+            resourceSelect.innerHTML = `<option value="">Select resource type</option>` +
+                activeTypes.map(item =>
+                    `<option value="${escapeHtml(item.resource_type_id)}">${escapeHtml(item.name)}</option>`
+                ).join("");
+            resourceSelect.disabled = false;
+            if (hint) {
+                hint.textContent = "";
+            }
+        }
 
-        if (current) {
+        if (!resourceTypesLoading && current && activeTypes.some(item => item.resource_type_id === current)) {
 
             resourceSelect.value = current;
 
@@ -9273,32 +9317,81 @@ function renderCatalogAdmin() {
 }
 
 
+function catalogLoadError(kind) {
+    const error = new Error("Unable to load resource types");
+    error.catalogLoadFailed = true;
+    error.catalogLoadKind = kind;
+    return error;
+}
+
+
+function parseCatalogTypes(data) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw catalogLoadError("malformed");
+    }
+    if (!Array.isArray(data.types)) {
+        throw catalogLoadError("malformed");
+    }
+    return data.types.filter(item => item && typeof item === "object");
+}
+
+
 async function loadCatalog(url) {
-
-    const response = await fetch(url + tenantQuery(), {
-        headers: { "Authorization": "Bearer " + getIdToken() }
-    });
-
-    if (!response.ok) {
-
-        return [];
-
+    const idToken = await waitForIdToken() || getIdToken();
+    if (!idToken) {
+        throw catalogLoadError("network");
     }
 
-    const data = await response.json();
+    let response;
+    try {
+        response = await fetch(url + tenantQuery(), {
+            headers: { "Authorization": "Bearer " + idToken }
+        });
+    } catch (error) {
+        throw catalogLoadError("network");
+    }
 
-    return data.types || [];
+    if (!response.ok) {
+        throw catalogLoadError("http");
+    }
 
+    let data;
+    try {
+        data = await response.json();
+    } catch (error) {
+        throw catalogLoadError("malformed");
+    }
+
+    return parseCatalogTypes(data);
 }
 
 
 async function loadResourceTypes() {
 
-    resourceTypes = selectedOrganizationId() ? await loadCatalog(RESOURCE_TYPES_API_URL) : [];
+    if (!selectedOrganizationId()) {
+        resourceTypes = [];
+        resourceTypesLoadFailed = false;
+        resourceTypesLoading = false;
+        fillCatalogSelects();
+        renderCatalogAdmin();
+        return;
+    }
 
+    resourceTypesLoading = true;
+    resourceTypesLoadFailed = false;
     fillCatalogSelects();
 
-    renderCatalogAdmin();
+    try {
+        resourceTypes = await loadCatalog(RESOURCE_TYPES_API_URL);
+        resourceTypesLoadFailed = false;
+    } catch (error) {
+        resourceTypes = [];
+        resourceTypesLoadFailed = true;
+    } finally {
+        resourceTypesLoading = false;
+        fillCatalogSelects();
+        renderCatalogAdmin();
+    }
 
 }
 
@@ -9810,6 +9903,8 @@ function clearTenantData() {
     }
 
     resourceTypes = [];
+    resourceTypesLoadFailed = false;
+    resourceTypesLoading = false;
 
     requestTypes = [];
 
@@ -10172,6 +10267,10 @@ async function switchLocation(locationId) {
     await loadRequests();
 
     await loadAllocations();
+
+    await loadResourceTypes();
+
+    await loadRequestTypes();
 
 }
 
